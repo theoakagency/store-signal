@@ -147,7 +147,6 @@ export interface FlowStatRow {
     delivered?: number
     opens_unique?: number
     clicks_unique?: number
-    conversions_unique?: number
     revenue_per_recipient?: number
     recipients?: number
   }
@@ -370,7 +369,6 @@ export async function getFlowStats(
             'delivered',
             'opens_unique',
             'clicks_unique',
-            'conversions_unique',
             'revenue_per_recipient',
           ],
         },
@@ -481,8 +479,6 @@ export async function getEnrichedFlows(apiKey: string): Promise<FlowWithStats[]>
     const delivered = stats.delivered ?? stats.recipients ?? 0
     const opensUnique = stats.opens_unique ?? 0
     const clicksUnique = stats.clicks_unique ?? 0
-    const conversions = stats.conversions_unique ?? 0
-
     return {
       id: f.id,
       name: f.attributes.name,
@@ -493,7 +489,7 @@ export async function getEnrichedFlows(apiKey: string): Promise<FlowWithStats[]>
       recipient_count: delivered,
       open_rate: delivered > 0 ? opensUnique / delivered : null,
       click_rate: delivered > 0 ? clicksUnique / delivered : null,
-      conversion_rate: delivered > 0 ? conversions / delivered : null,
+      conversion_rate: null,
       revenue_attributed: (stats.revenue_per_recipient ?? 0) * delivered,
     }
   })
