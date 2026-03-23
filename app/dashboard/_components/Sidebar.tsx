@@ -1,6 +1,12 @@
 import NavLinks from './NavLinks'
 
-export default function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
+export default function Sidebar({
+  onNavigate,
+  klaviyoConnected,
+}: {
+  onNavigate?: () => void
+  klaviyoConnected?: boolean
+}) {
   return (
     <div className="flex h-full flex-col">
       {/* Brand */}
@@ -12,7 +18,7 @@ export default function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
 
       {/* Nav */}
       <div className="flex-1 overflow-y-auto py-4">
-        <NavLinks onNavigate={onNavigate} />
+        <NavLinks onNavigate={onNavigate} klaviyoConnected={klaviyoConnected} />
       </div>
 
       {/* Footer */}

@@ -1,15 +1,19 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 
 interface Props {
   shopifyConnected: boolean
   shopifyDomain: string | null
   lastSyncedAt: string | null
+  klaviyoConnected: boolean
+  klaviyoAccountId: string | null
 }
 
-function toast(msg: string) {
-  // Simple DOM toast — no library needed
+// ── Toast ─────────────────────────────────────────────────────────────────────
+
+function showToast(msg: string) {
   const el = document.createElement('div')
   el.textContent = msg
   el.style.cssText = `
@@ -18,11 +22,12 @@ function toast(msg: string) {
     padding:10px 16px;border-radius:10px;
     font-size:13px;font-family:Jost,sans-serif;
     box-shadow:0 4px 24px rgba(0,0,0,0.18);
-    animation:slideUp .25s ease;
   `
   document.body.appendChild(el)
   setTimeout(() => el.remove(), 3000)
 }
+
+// ── Badges ────────────────────────────────────────────────────────────────────
 
 function ConnectedBadge() {
   return (
@@ -40,6 +45,8 @@ function ComingSoonBadge() {
     </span>
   )
 }
+
+// ── Card ──────────────────────────────────────────────────────────────────────
 
 interface IntegrationCardProps {
   name: string
@@ -70,155 +77,354 @@ function IntegrationCard({ name, description, logo, status, meta, action }: Inte
   )
 }
 
-export default function IntegrationsClient({ shopifyConnected, shopifyDomain, lastSyncedAt }: Props) {
-  const [showInstall, setShowInstall] = useState(false)
+// ── Klaviyo Connect Modal ─────────────────────────────────────────────────────
 
-  const lastSync = lastSyncedAt
-    ? new Intl.DateTimeFormat('en-US', {
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      }).format(new Date(lastSyncedAt))
-    : null
+interface KlaviyoModalProps {
+  onClose: () => void
+  onSuccess: () => void
+}
+
+function KlaviyoModal({ onClose, onSuccess }: KlaviyoModalProps) {
+  const [apiKey, setApiKey] = useState('')
+  const [accountId, setAccountId] = useState('')
+  const [showKey, setShowKey] = useState(false)
+  const [testState, setTestState] = useState<'idle' | 'testing' | 'ok' | 'fail'>('idle')
+  const [testMsg, setTestMsg] = useState('')
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'done' | 'fail'>('idle')
+
+  const inputCls =
+    'w-full rounded-lg border border-cream-3 bg-cream px-3 py-2 text-sm text-ink focus:border-teal focus:outline-none focus:ring-1 focus:ring-teal transition'
+
+  async function handleTest() {
+    if (!apiKey.trim()) return
+    setTestState('testing')
+    setTestMsg('')
+    try {
+      const res = await fetch('/api/klaviyo/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apiKey }),
+      })
+      const data = await res.json()
+      if (data.error) {
+        setTestState('fail')
+        setTestMsg(data.error)
+      } else {
+        setTestState('ok')
+        setTestMsg(`Connected to ${data.org_name ?? data.account_id} (${data.currency})`)
+        if (data.account_id && !accountId) setAccountId(data.account_id)
+      }
+    } catch {
+      setTestState('fail')
+      setTestMsg('Network error — check console')
+    }
+  }
+
+  async function handleSave() {
+    if (!apiKey.trim()) return
+    setSaveState('saving')
+    try {
+      const res = await fetch('/api/klaviyo/connect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apiKey, accountId }),
+      })
+      const data = await res.json()
+      if (data.error) {
+        setSaveState('fail')
+        showToast(`Error: ${data.error}`)
+        return
+      }
+      setSaveState('done')
+      // Trigger initial sync
+      fetch('/api/klaviyo/sync', { method: 'POST' }).catch(() => null)
+      onSuccess()
+    } catch {
+      setSaveState('fail')
+      showToast('Network error — could not save')
+    }
+  }
 
   return (
-    <div className="space-y-8">
-      {/* E-Commerce */}
-      <section>
-        <h2 className="font-display text-base font-semibold text-ink mb-3">E-Commerce</h2>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <IntegrationCard
-            name="Shopify"
-            description="Sync orders, customers, and products from your Shopify store. Supports incremental and full historical imports."
-            logo={
-              <svg viewBox="0 0 109 124" className="h-6 w-6" fill="#96BF48">
-                <path d="M74.7 14.8s-.3-.1-.8-.1c-3.8-1-7.2-1.4-10.3-1.4C56 6.1 51.6 1 45.5 1c-1.4 0-2.8.3-4 .9C38.4-.4 34.9 0 31.7 2.4 19.5 10.5 14 32.4 12.2 43.7c-5.5 1.7-9.4 2.9-9.9 3.1C-.1 47.8 0 48 0 49.4L.2 108c0 1.1.7 2 1.7 2.3l72.4 13.6c.2 0 .3.1.5.1s.3 0 .5-.1l30.6-5.7c1.2-.2 2.1-1.3 2.1-2.5V14.1c0-1.2-.8-2.2-2.1-2.4zM80 19.5l-6.9 2.1c-1.5-9.7-4.4-17.7-9.1-22.2C72.8 2.7 79 10.7 80 19.5zm-34.5-14c-1.3.8-2.6 2.1-3.8 3.9C39 13.7 37 18 35.4 24.4l-13.7 4.2c3-12.4 10.5-24.2 23.8-23zM56 106.3L18.5 112V54.8l37.6-6v57.5zm9.4-88.9c2.4 3.3 4.3 7.9 5.4 13.6l-5.4 1.6V17.4zm-16.8 3.7c2.7-8.8 7.1-14.1 11.4-15.8 4.7 4.5 8.2 12.8 9.8 23.5l-15.8 4.8c.3-4.9.9-9.1 1.7-12.5zm-1.9.5c-.8 3.5-1.3 7.6-1.5 12.2l-16.3 5c2-7 5.1-12.5 9-16.3l8.8-2.7-.1 1.8zM55.5 32c-.2 0-.5.1-.7.1l-35.9 10.9-.8.2c.1-.7.1-1.4.2-2.1l37.2-11.3v2.2zm0 6.6v12.4l-37 5.9v-12l37-6.3zm0 59.2L18.5 97V65.8l37 5.9v26.1zm10.5 2.7V44.1l17.7-5.4v63.4l-17.7-7.6zm22.5-68.3l-4.9 1.5V21l4.9.6v10.6z" />
-              </svg>
-            }
-            status={shopifyConnected ? 'connected' : 'not_connected'}
-            meta={
-              shopifyConnected
-                ? `${shopifyDomain}${lastSync ? ` · Last sync: ${lastSync}` : ''}`
-                : 'Not connected'
-            }
-            action={
-              shopifyConnected ? (
-                <a
-                  href="/api/shopify/install"
-                  className="text-xs text-teal hover:text-teal-dark font-medium transition"
-                >
-                  Re-authorize
-                </a>
-              ) : (
-                <a
-                  href="/api/shopify/install"
-                  className="inline-flex items-center rounded-lg bg-teal px-3 py-1.5 text-xs font-semibold text-white hover:bg-teal-dark transition"
-                >
-                  Connect Shopify
-                </a>
-              )
-            }
-          />
-
-          <IntegrationCard
-            name="WooCommerce"
-            description="Connect your WooCommerce store to sync orders and customer data for unified analytics."
-            logo={
-              <svg viewBox="0 0 100 100" className="h-6 w-6" fill="#7f54b3">
-                <circle cx="50" cy="50" r="50" fill="#7f54b3" />
-                <path d="M16 36.4a5.6 5.6 0 0 1 4.9-3.3h59.6a5.4 5.4 0 0 1 4.9 3.3 5.9 5.9 0 0 1-.2 5.3L72.6 74a5.6 5.6 0 0 1-4.9 3H33.3a5.5 5.5 0 0 1-4.9-3L16.2 41.7a5.9 5.9 0 0 1-.2-5.3zm26.8 27.7 5.9-16.3 7.3 14.4a2.4 2.4 0 0 0 4.3-.3l8-22.8a2 2 0 0 0-3.8-1.3l-5.8 16.7-7.1-14.1a2.4 2.4 0 0 0-4.4.2l-8 22.8a2 2 0 0 0 3.6 1.7z" fill="white" />
-              </svg>
-            }
-            status="coming_soon"
-          />
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-charcoal/50 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative z-10 w-full max-w-md rounded-2xl bg-white shadow-2xl">
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-cream-2 px-6 py-5">
+          <div className="flex items-center gap-3">
+            <div className="h-8 w-8 rounded-lg bg-[#FF6200] flex items-center justify-center">
+              <span className="text-xs font-bold text-white">K</span>
+            </div>
+            <h2 className="font-display text-lg font-semibold text-ink">Connect Klaviyo</h2>
+          </div>
+          <button onClick={onClose} className="rounded-lg p-1.5 hover:bg-cream-2 transition text-ink-3">
+            <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M4.293 4.293a1 1 0 0 1 1.414 0L10 8.586l4.293-4.293a1 1 0 1 1 1.414 1.414L11.414 10l4.293 4.293a1 1 0 0 1-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 0 1-1.414-1.414L8.586 10 4.293 5.707a1 1 0 0 1 0-1.414z" clipRule="evenodd" />
+            </svg>
+          </button>
         </div>
-      </section>
 
-      {/* Email & Marketing */}
-      <section>
-        <h2 className="font-display text-base font-semibold text-ink mb-3">Email & Marketing</h2>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {[
-            { name: 'Klaviyo', desc: 'Sync customer segments and trigger flows based on purchase behavior.' },
-            { name: 'Mailchimp', desc: 'Push customer lists and revenue data to Mailchimp audiences.' },
-            { name: 'Postscript', desc: 'Connect SMS campaigns to order and customer data.' },
-          ].map((i) => (
-            <IntegrationCard
-              key={i.name}
-              name={i.name}
-              description={i.desc}
-              logo={
-                <div className="text-xs font-bold text-ink-3">{i.name[0]}</div>
-              }
-              status="coming_soon"
-              action={
-                <button
-                  onClick={() => toast(`${i.name} integration coming soon — join the waitlist`)}
-                  className="text-xs text-teal hover:text-teal-dark font-medium transition"
-                >
-                  Join waitlist
-                </button>
-              }
+        <div className="px-6 py-5 space-y-4">
+          {/* API Key */}
+          <div>
+            <label className="block text-xs font-medium text-ink-2 mb-1">
+              Private API Key *
+            </label>
+            <div className="relative">
+              <input
+                type={showKey ? 'text' : 'password'}
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                placeholder="pk_•••••••••••••••••••"
+                className={inputCls + ' pr-10'}
+              />
+              <button
+                type="button"
+                onClick={() => setShowKey((v) => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-3 hover:text-ink transition"
+              >
+                {showKey ? (
+                  <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path d="M3.707 2.293a1 1 0 0 0-1.414 1.414l14 14a1 1 0 0 0 1.414-1.414l-1.473-1.473A10.014 10.014 0 0 0 19.542 10C18.268 5.943 14.478 3 10 3a9.958 9.958 0 0 0-4.512 1.074l-1.78-1.781zm4.261 4.26 1.514 1.515a2.003 2.003 0 0 1 2.45 2.45l1.514 1.514a4 4 0 0 0-5.478-5.478z" /><path d="M12.454 16.697 9.75 13.992a4 4 0 0 1-3.742-3.741L2.335 6.578A9.98 9.98 0 0 0 .458 10c1.274 4.057 5.065 7 9.542 7 .847 0 1.669-.105 2.454-.303z" /></svg>
+                ) : (
+                  <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path d="M10 12a2 2 0 1 0 0-4 2 2 0 0 0 0 4z" /><path fillRule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 1 1-8 0 4 4 0 0 1 8 0z" clipRule="evenodd" /></svg>
+                )}
+              </button>
+            </div>
+            <p className="mt-1.5 text-xs text-ink-3">
+              Find this in Klaviyo → Settings → API Keys → Create Private API Key.
+              Required scopes: <span className="font-data">read-only</span> on Campaigns, Flows, Lists, Metrics.
+            </p>
+          </div>
+
+          {/* Account ID */}
+          <div>
+            <label className="block text-xs font-medium text-ink-2 mb-1">
+              Account ID <span className="text-ink-3 font-normal">(optional — auto-detected)</span>
+            </label>
+            <input
+              type="text"
+              value={accountId}
+              onChange={(e) => setAccountId(e.target.value)}
+              placeholder="e.g. ABC123"
+              className={inputCls}
             />
-          ))}
-        </div>
-      </section>
+            <p className="mt-1.5 text-xs text-ink-3">
+              Find this in Klaviyo → Settings → Account → Account ID (6-character code in the URL).
+            </p>
+          </div>
 
-      {/* Analytics */}
-      <section>
-        <h2 className="font-display text-base font-semibold text-ink mb-3">Analytics</h2>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {[
-            { name: 'Google Analytics 4', desc: 'Cross-reference session data with order revenue.' },
-            { name: 'Triple Whale', desc: 'Import ROAS and attributed revenue from paid channels.' },
-            { name: 'Northbeam', desc: 'Multi-touch attribution data alongside CRM analytics.' },
-          ].map((i) => (
-            <IntegrationCard
-              key={i.name}
-              name={i.name}
-              description={i.desc}
-              logo={<div className="text-xs font-bold text-ink-3">{i.name[0]}</div>}
-              status="coming_soon"
-              action={
-                <button
-                  onClick={() => toast(`${i.name} integration coming soon`)}
-                  className="text-xs text-teal hover:text-teal-dark font-medium transition"
-                >
-                  Join waitlist
-                </button>
-              }
-            />
-          ))}
-        </div>
-      </section>
+          {/* Test result */}
+          {testMsg && (
+            <div className={`rounded-lg px-3 py-2.5 text-xs ${testState === 'ok' ? 'bg-teal-pale text-teal-deep' : 'bg-red-50 text-red-700'}`}>
+              {testState === 'ok' ? '✓ ' : '✗ '}{testMsg}
+            </div>
+          )}
 
-      {/* Team & Collaboration */}
-      <section>
-        <h2 className="font-display text-base font-semibold text-ink mb-3">Team & Collaboration</h2>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          {[
-            { name: 'Slack', desc: 'Get daily revenue digests and sync alerts in your Slack channels.' },
-            { name: 'Notion', desc: 'Export promotion scores and customer segments to Notion databases.' },
-          ].map((i) => (
-            <IntegrationCard
-              key={i.name}
-              name={i.name}
-              description={i.desc}
-              logo={<div className="text-xs font-bold text-ink-3">{i.name[0]}</div>}
-              status="coming_soon"
-              action={
-                <button
-                  onClick={() => toast(`${i.name} integration coming soon`)}
-                  className="text-xs text-teal hover:text-teal-dark font-medium transition"
-                >
-                  Join waitlist
-                </button>
-              }
-            />
-          ))}
+          {/* Actions */}
+          <div className="flex gap-2 pt-1">
+            <button
+              onClick={handleTest}
+              disabled={!apiKey.trim() || testState === 'testing'}
+              className="flex-1 rounded-lg border border-cream-3 px-4 py-2.5 text-sm font-medium text-ink-2 hover:bg-cream disabled:opacity-50 disabled:cursor-not-allowed transition"
+            >
+              {testState === 'testing' ? (
+                <span className="flex items-center justify-center gap-2">
+                  <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-cream-3 border-t-teal" />
+                  Testing…
+                </span>
+              ) : 'Test Connection'}
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={!apiKey.trim() || saveState === 'saving' || saveState === 'done'}
+              className="flex-1 rounded-lg bg-teal px-4 py-2.5 text-sm font-semibold text-white hover:bg-teal-dark disabled:opacity-50 disabled:cursor-not-allowed transition"
+            >
+              {saveState === 'saving' ? (
+                <span className="flex items-center justify-center gap-2">
+                  <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+                  Saving…
+                </span>
+              ) : saveState === 'done' ? '✓ Saved' : 'Save & Sync'}
+            </button>
+          </div>
         </div>
-      </section>
+      </div>
     </div>
+  )
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
+
+export default function IntegrationsClient({
+  shopifyConnected,
+  shopifyDomain,
+  lastSyncedAt,
+  klaviyoConnected,
+  klaviyoAccountId,
+}: Props) {
+  const router = useRouter()
+  const [showKlaviyoModal, setShowKlaviyoModal] = useState(false)
+
+  const lastSync = lastSyncedAt
+    ? new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+        .format(new Date(lastSyncedAt))
+    : null
+
+  function handleKlaviyoSuccess() {
+    setShowKlaviyoModal(false)
+    showToast('Klaviyo connected — initial sync started')
+    router.refresh()
+  }
+
+  return (
+    <>
+      {showKlaviyoModal && (
+        <KlaviyoModal onClose={() => setShowKlaviyoModal(false)} onSuccess={handleKlaviyoSuccess} />
+      )}
+
+      <div className="space-y-8">
+        {/* E-Commerce */}
+        <section>
+          <h2 className="font-display text-base font-semibold text-ink mb-3">E-Commerce</h2>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <IntegrationCard
+              name="Shopify"
+              description="Sync orders, customers, and products from your Shopify store. Supports incremental and full historical imports."
+              logo={
+                <svg viewBox="0 0 109 124" className="h-6 w-6" fill="#96BF48">
+                  <path d="M74.7 14.8s-.3-.1-.8-.1c-3.8-1-7.2-1.4-10.3-1.4C56 6.1 51.6 1 45.5 1c-1.4 0-2.8.3-4 .9C38.4-.4 34.9 0 31.7 2.4 19.5 10.5 14 32.4 12.2 43.7c-5.5 1.7-9.4 2.9-9.9 3.1C-.1 47.8 0 48 0 49.4L.2 108c0 1.1.7 2 1.7 2.3l72.4 13.6c.2 0 .3.1.5.1s.3 0 .5-.1l30.6-5.7c1.2-.2 2.1-1.3 2.1-2.5V14.1c0-1.2-.8-2.2-2.1-2.4zM80 19.5l-6.9 2.1c-1.5-9.7-4.4-17.7-9.1-22.2C72.8 2.7 79 10.7 80 19.5zm-34.5-14c-1.3.8-2.6 2.1-3.8 3.9C39 13.7 37 18 35.4 24.4l-13.7 4.2c3-12.4 10.5-24.2 23.8-23zM56 106.3L18.5 112V54.8l37.6-6v57.5zm9.4-88.9c2.4 3.3 4.3 7.9 5.4 13.6l-5.4 1.6V17.4zm-16.8 3.7c2.7-8.8 7.1-14.1 11.4-15.8 4.7 4.5 8.2 12.8 9.8 23.5l-15.8 4.8c.3-4.9.9-9.1 1.7-12.5zm-1.9.5c-.8 3.5-1.3 7.6-1.5 12.2l-16.3 5c2-7 5.1-12.5 9-16.3l8.8-2.7-.1 1.8zM55.5 32c-.2 0-.5.1-.7.1l-35.9 10.9-.8.2c.1-.7.1-1.4.2-2.1l37.2-11.3v2.2zm0 6.6v12.4l-37 5.9v-12l37-6.3zm0 59.2L18.5 97V65.8l37 5.9v26.1zm10.5 2.7V44.1l17.7-5.4v63.4l-17.7-7.6zm22.5-68.3l-4.9 1.5V21l4.9.6v10.6z" />
+                </svg>
+              }
+              status={shopifyConnected ? 'connected' : 'not_connected'}
+              meta={shopifyConnected ? `${shopifyDomain}${lastSync ? ` · Last sync: ${lastSync}` : ''}` : 'Not connected'}
+              action={
+                shopifyConnected ? (
+                  <a href="/api/shopify/install" className="text-xs text-teal hover:text-teal-dark font-medium transition">
+                    Re-authorize
+                  </a>
+                ) : (
+                  <a href="/api/shopify/install" className="inline-flex items-center rounded-lg bg-teal px-3 py-1.5 text-xs font-semibold text-white hover:bg-teal-dark transition">
+                    Connect Shopify
+                  </a>
+                )
+              }
+            />
+            <IntegrationCard
+              name="WooCommerce"
+              description="Connect your WooCommerce store to sync orders and customer data for unified analytics."
+              logo={<svg viewBox="0 0 100 100" className="h-6 w-6"><circle cx="50" cy="50" r="50" fill="#7f54b3" /><path d="M16 36.4a5.6 5.6 0 0 1 4.9-3.3h59.6a5.4 5.4 0 0 1 4.9 3.3 5.9 5.9 0 0 1-.2 5.3L72.6 74a5.6 5.6 0 0 1-4.9 3H33.3a5.5 5.5 0 0 1-4.9-3L16.2 41.7a5.9 5.9 0 0 1-.2-5.3zm26.8 27.7 5.9-16.3 7.3 14.4a2.4 2.4 0 0 0 4.3-.3l8-22.8a2 2 0 0 0-3.8-1.3l-5.8 16.7-7.1-14.1a2.4 2.4 0 0 0-4.4.2l-8 22.8a2 2 0 0 0 3.6 1.7z" fill="white" /></svg>}
+              status="coming_soon"
+            />
+          </div>
+        </section>
+
+        {/* Email & Marketing */}
+        <section>
+          <h2 className="font-display text-base font-semibold text-ink mb-3">Email & Marketing</h2>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {/* Klaviyo — live */}
+            <IntegrationCard
+              name="Klaviyo"
+              description="Sync campaign performance, flow revenue, and email metrics. Unlocks Email Intelligence in the sidebar."
+              logo={
+                <div className="h-6 w-6 rounded bg-[#FF6200] flex items-center justify-center">
+                  <span className="text-xs font-bold text-white">K</span>
+                </div>
+              }
+              status={klaviyoConnected ? 'connected' : 'not_connected'}
+              meta={klaviyoConnected ? `Account ${klaviyoAccountId ?? 'connected'}` : undefined}
+              action={
+                klaviyoConnected ? (
+                  <div className="flex items-center gap-3">
+                    <a href="/dashboard/klaviyo" className="text-xs text-teal hover:text-teal-dark font-medium transition">
+                      View dashboard →
+                    </a>
+                    <button
+                      onClick={() => setShowKlaviyoModal(true)}
+                      className="text-xs text-ink-3 hover:text-ink transition"
+                    >
+                      Update key
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setShowKlaviyoModal(true)}
+                    className="inline-flex items-center rounded-lg bg-[#FF6200] px-3 py-1.5 text-xs font-semibold text-white hover:bg-orange-600 transition"
+                  >
+                    Connect Klaviyo
+                  </button>
+                )
+              }
+            />
+            {[
+              { name: 'Mailchimp', desc: 'Push customer lists and revenue data to Mailchimp audiences.' },
+              { name: 'Postscript', desc: 'Connect SMS campaigns to order and customer data.' },
+            ].map((i) => (
+              <IntegrationCard
+                key={i.name}
+                name={i.name}
+                description={i.desc}
+                logo={<div className="text-xs font-bold text-ink-3">{i.name[0]}</div>}
+                status="coming_soon"
+                action={
+                  <button onClick={() => showToast(`${i.name} integration coming soon`)} className="text-xs text-teal hover:text-teal-dark font-medium transition">
+                    Join waitlist
+                  </button>
+                }
+              />
+            ))}
+          </div>
+        </section>
+
+        {/* Analytics */}
+        <section>
+          <h2 className="font-display text-base font-semibold text-ink mb-3">Analytics</h2>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {[
+              { name: 'Google Analytics 4', desc: 'Cross-reference session data with order revenue.' },
+              { name: 'Triple Whale', desc: 'Import ROAS and attributed revenue from paid channels.' },
+              { name: 'Northbeam', desc: 'Multi-touch attribution data alongside CRM analytics.' },
+            ].map((i) => (
+              <IntegrationCard
+                key={i.name}
+                name={i.name}
+                description={i.desc}
+                logo={<div className="text-xs font-bold text-ink-3">{i.name[0]}</div>}
+                status="coming_soon"
+                action={
+                  <button onClick={() => showToast(`${i.name} integration coming soon`)} className="text-xs text-teal hover:text-teal-dark font-medium transition">
+                    Join waitlist
+                  </button>
+                }
+              />
+            ))}
+          </div>
+        </section>
+
+        {/* Team */}
+        <section>
+          <h2 className="font-display text-base font-semibold text-ink mb-3">Team & Collaboration</h2>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {[
+              { name: 'Slack', desc: 'Get daily revenue digests and sync alerts in your Slack channels.' },
+              { name: 'Notion', desc: 'Export promotion scores and customer segments to Notion databases.' },
+            ].map((i) => (
+              <IntegrationCard
+                key={i.name}
+                name={i.name}
+                description={i.desc}
+                logo={<div className="text-xs font-bold text-ink-3">{i.name[0]}</div>}
+                status="coming_soon"
+                action={
+                  <button onClick={() => showToast(`${i.name} integration coming soon`)} className="text-xs text-teal hover:text-teal-dark font-medium transition">
+                    Join waitlist
+                  </button>
+                }
+              />
+            ))}
+          </div>
+        </section>
+      </div>
+    </>
   )
 }

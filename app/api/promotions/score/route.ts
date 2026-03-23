@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
 
   // Fetch store context for the AI prompt
   const service = createSupabaseServiceClient()
-  const [{ data: statsRows }, { data: topCustomers }, { data: allCustomers }] = await Promise.all([
+  const [{ data: statsRows }, { data: topCustomers }, { data: allCustomers }, { data: klaviyoMetrics }, { data: recentCampaigns }] = await Promise.all([
     service
       .from('orders')
       .select('total_price, financial_status')
@@ -51,6 +51,16 @@ export async function POST(req: NextRequest) {
       .from('customers')
       .select('orders_count, updated_at')
       .eq('store_id', STORE_ID),
+    service
+      .from('klaviyo_metrics_cache')
+      .select('metric_name, metric_value')
+      .eq('tenant_id', TENANT_ID),
+    service
+      .from('klaviyo_campaigns')
+      .select('name, open_rate, click_rate, revenue_attributed, unsubscribe_count, recipient_count')
+      .eq('tenant_id', TENANT_ID)
+      .order('send_time', { ascending: false })
+      .limit(5),
   ])
 
   const totalRevenue = (statsRows ?? []).reduce((s, r) => s + Number(r.total_price), 0)
@@ -67,6 +77,33 @@ export async function POST(req: NextRequest) {
   ).length
   const totalCustomers = (allCustomers ?? []).length
 
+  // Build Klaviyo email context if available
+  const kvMetrics: Record<string, number> = {}
+  for (const row of klaviyoMetrics ?? []) kvMetrics[row.metric_name] = Number(row.metric_value)
+  const hasKlaviyo = Object.keys(kvMetrics).length > 0
+  const avgOpenRate = kvMetrics['avg_campaign_open_rate']
+  const avgClickRate = kvMetrics['avg_campaign_click_rate']
+  const avgCampaignRevenue = (klaviyoMetrics ?? []).length > 0 && (recentCampaigns ?? []).length > 0
+    ? (recentCampaigns ?? []).reduce((s, c) => s + Number(c.revenue_attributed), 0) / (recentCampaigns ?? []).length
+    : null
+  const recentUnsubs = (recentCampaigns ?? []).reduce((s, c) => s + (c.unsubscribe_count ?? 0), 0)
+  const flowRevenueRatio = kvMetrics['total_flow_revenue'] && kvMetrics['total_campaign_revenue']
+    ? kvMetrics['total_flow_revenue'] / Math.max(kvMetrics['total_campaign_revenue'], 1)
+    : null
+
+  const emailContext = hasKlaviyo
+    ? `
+EMAIL PERFORMANCE (Klaviyo):
+- Avg campaign open rate: ${avgOpenRate != null ? (avgOpenRate * 100).toFixed(1) + '%' : 'N/A'}
+- Avg campaign click rate: ${avgClickRate != null ? (avgClickRate * 100).toFixed(1) + '%' : 'N/A'}
+- Avg revenue per recent campaign send: ${avgCampaignRevenue != null ? '$' + avgCampaignRevenue.toFixed(0) : 'N/A'}
+- Unsubscribes from last 5 campaigns: ${recentUnsubs}
+- Flow revenue vs broadcast ratio: ${flowRevenueRatio != null ? flowRevenueRatio.toFixed(2) + '× (flows earn more per recipient)' : 'N/A'}
+${channel?.toLowerCase().includes('email') && avgOpenRate
+  ? `- Est. email reach for this promo: ${Math.round((avgOpenRate) * 100)}% of list will open, ${avgClickRate ? Math.round(avgClickRate * 100) + '%' : 'N/A'} will click`
+  : ''}`.trim()
+    : ''
+
   const storeContext = `
 Store: LashBox LA (beauty/lash retail, 10+ years in business)
 Total paid orders (all time): ${orderCount}
@@ -75,9 +112,13 @@ Average order value: $${aov.toFixed(2)}
 Average LTV (top 20 customers): $${avgLTV.toFixed(2)}
 Total customers in CRM: ${totalCustomers}
 Lapsed customers (90+ days inactive): ${lapsedCount} (${totalCustomers > 0 ? Math.round((lapsedCount / totalCustomers) * 100) : 0}%)
-  `.trim()
+${emailContext}`.trim()
 
-  const prompt = `You are a retail promotion strategist. A beauty brand (LashBox LA) wants to evaluate a promotion idea. Use the real store data below to give a grounded, honest assessment — validate or challenge the team's thinking.
+  const emailInstruction = hasKlaviyo && avgOpenRate
+    ? `This store's email campaigns average ${(avgOpenRate * 100).toFixed(1)}% open rate and ${avgCampaignRevenue != null ? '$' + avgCampaignRevenue.toFixed(0) : 'an unknown amount'} revenue per send. Their automated flows generate ${flowRevenueRatio != null ? flowRevenueRatio.toFixed(1) + '×' : 'more'} revenue per recipient than broadcast campaigns. Factor this into the audience fit and buying motivation scores when the channel involves email.`
+    : ''
+
+  const prompt = `You are a retail promotion strategist. A beauty brand (LashBox LA) wants to evaluate a promotion idea. Use the real store data below to give a grounded, honest assessment — validate or challenge the team's thinking.${emailInstruction ? ' ' + emailInstruction : ''}
 
 STORE DATA:
 ${storeContext}

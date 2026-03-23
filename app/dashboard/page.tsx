@@ -1,8 +1,11 @@
 import { createSupabaseServerClient } from '@/lib/supabase'
+import Link from 'next/link'
 
 export const metadata = {
   title: 'Executive Summary — Store Signal',
 }
+
+const TENANT_ID = '00000000-0000-0000-0000-000000000001'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -130,36 +133,74 @@ export default async function DashboardPage() {
   const twelveMonthsAgo = new Date(now)
   twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12)
 
-  // ── Fetch paid orders for stats (current + prior 30 days) ──────────────────
-  const [{ data: currentRows }, { data: priorRows }, { data: recentOrders }, { data: topCustomers }] =
-    await Promise.all([
-      supabase
-        .from('orders')
-        .select('total_price, currency, processed_at')
-        .eq('financial_status', 'paid')
-        .gte('processed_at', thirtyDaysAgo.toISOString()),
-      supabase
-        .from('orders')
-        .select('total_price, currency')
-        .eq('financial_status', 'paid')
-        .gte('processed_at', sixtyDaysAgo.toISOString())
-        .lt('processed_at', thirtyDaysAgo.toISOString()),
-      supabase
-        .from('orders')
-        .select('id, order_number, email, financial_status, fulfillment_status, total_price, currency, processed_at')
-        .order('processed_at', { ascending: false })
-        .limit(20),
-      supabase
-        .from('customers')
-        .select('shopify_customer_id, email, first_name, last_name, orders_count, total_spent')
-        .order('total_spent', { ascending: false })
-        .limit(10),
-    ])
+  // ── Fetch all data in parallel ──────────────────────────────────────────────
+  const [
+    { data: currentRows },
+    { data: priorRows },
+    { data: recentOrders },
+    { data: topCustomers },
+    { data: storeRow },
+    { data: klaviyoMetricsRows },
+    { data: topCampaignRows },
+    { data: topFlowRows },
+  ] = await Promise.all([
+    supabase
+      .from('orders')
+      .select('total_price, currency, processed_at')
+      .eq('financial_status', 'paid')
+      .gte('processed_at', thirtyDaysAgo.toISOString()),
+    supabase
+      .from('orders')
+      .select('total_price, currency')
+      .eq('financial_status', 'paid')
+      .gte('processed_at', sixtyDaysAgo.toISOString())
+      .lt('processed_at', thirtyDaysAgo.toISOString()),
+    supabase
+      .from('orders')
+      .select('id, order_number, email, financial_status, fulfillment_status, total_price, currency, processed_at')
+      .order('processed_at', { ascending: false })
+      .limit(20),
+    supabase
+      .from('customers')
+      .select('shopify_customer_id, email, first_name, last_name, orders_count, total_spent')
+      .order('total_spent', { ascending: false })
+      .limit(10),
+    supabase
+      .from('stores')
+      .select('klaviyo_api_key')
+      .eq('id', '00000000-0000-0000-0000-000000000002')
+      .single(),
+    supabase
+      .from('klaviyo_metrics_cache')
+      .select('metric_name, metric_value, metric_metadata')
+      .eq('tenant_id', TENANT_ID),
+    supabase
+      .from('klaviyo_campaigns')
+      .select('name, revenue_attributed')
+      .eq('tenant_id', TENANT_ID)
+      .order('revenue_attributed', { ascending: false })
+      .limit(1),
+    supabase
+      .from('klaviyo_flows')
+      .select('name, revenue_attributed')
+      .eq('tenant_id', TENANT_ID)
+      .order('revenue_attributed', { ascending: false })
+      .limit(1),
+  ])
 
   const curr = currentRows ?? []
   const prior = priorRows ?? []
   const orders = (recentOrders ?? []) as Order[]
   const customers = (topCustomers ?? []) as Customer[]
+
+  // Klaviyo derived data
+  const klaviyoConnected = !!storeRow?.klaviyo_api_key
+  const kvMetrics: Record<string, number> = {}
+  for (const row of klaviyoMetricsRows ?? []) kvMetrics[row.metric_name] = Number(row.metric_value)
+  const emailRevenue = kvMetrics['email_revenue_total'] ?? 0
+  const avgOpenRate = kvMetrics['avg_campaign_open_rate'] ?? 0
+  const bestCampaignName = (topCampaignRows?.[0] as { name: string } | undefined)?.name ?? null
+  const bestFlowName = (topFlowRows?.[0] as { name: string } | undefined)?.name ?? null
 
   const currRevenue = curr.reduce((s, r) => s + Number(r.total_price), 0)
   const priorRevenue = prior.reduce((s, r) => s + Number(r.total_price), 0)
@@ -251,6 +292,59 @@ export default async function DashboardPage() {
           <span className="font-data text-xs text-ink-3">Last 12 months</span>
         </div>
         <BarChart data={chartData} />
+      </section>
+
+      {/* Email Intelligence card */}
+      <section className="rounded-2xl border border-cream-3 bg-white p-6 shadow-sm">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <h2 className="font-display text-base font-semibold text-ink">Email Performance</h2>
+            <span className="inline-flex items-center rounded-full bg-orange-50 px-2 py-0.5 text-xs font-medium text-orange-700">Klaviyo</span>
+          </div>
+          <Link href="/dashboard/klaviyo" className="font-data text-xs text-teal-deep hover:underline">
+            View full report →
+          </Link>
+        </div>
+        {!klaviyoConnected ? (
+          <div className="mt-4 flex items-center gap-3 rounded-xl border border-dashed border-cream-3 bg-cream px-5 py-4">
+            <svg className="h-5 w-5 shrink-0 text-ink-3" viewBox="0 0 20 20" fill="currentColor">
+              <path d="M2.003 5.884 10 9.882l7.997-3.998A2 2 0 0 0 16 4H4a2 2 0 0 0-1.997 1.884z" />
+              <path d="m18 8.118-8 4-8-4V14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8.118z" />
+            </svg>
+            <div>
+              <p className="text-sm font-medium text-ink">Connect Klaviyo to unlock email insights</p>
+              <p className="text-xs text-ink-3 mt-0.5">
+                See campaign revenue, open rates, and flow performance.{' '}
+                <Link href="/dashboard/integrations" className="text-teal-deep hover:underline">Set up integration →</Link>
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div className="rounded-xl border border-cream-2 bg-cream px-4 py-3">
+              <p className="font-data text-xs uppercase tracking-wider text-ink-3">Email Revenue</p>
+              <p className="mt-1 font-display text-xl font-semibold text-ink">{fmt(emailRevenue)}</p>
+            </div>
+            <div className="rounded-xl border border-cream-2 bg-cream px-4 py-3">
+              <p className="font-data text-xs uppercase tracking-wider text-ink-3">Avg Open Rate</p>
+              <p className="mt-1 font-display text-xl font-semibold text-ink">
+                {avgOpenRate > 0 ? `${(avgOpenRate * 100).toFixed(1)}%` : '—'}
+              </p>
+            </div>
+            <div className="rounded-xl border border-cream-2 bg-cream px-4 py-3">
+              <p className="font-data text-xs uppercase tracking-wider text-ink-3">Top Campaign</p>
+              <p className="mt-1 text-sm font-medium text-ink truncate" title={bestCampaignName ?? undefined}>
+                {bestCampaignName ?? '—'}
+              </p>
+            </div>
+            <div className="rounded-xl border border-cream-2 bg-cream px-4 py-3">
+              <p className="font-data text-xs uppercase tracking-wider text-ink-3">Top Flow</p>
+              <p className="mt-1 text-sm font-medium text-ink truncate" title={bestFlowName ?? undefined}>
+                {bestFlowName ?? '—'}
+              </p>
+            </div>
+          </div>
+        )}
       </section>
 
       {/* Top customers + recent orders */}

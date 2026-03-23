@@ -15,10 +15,9 @@ export default async function DashboardLayout({
 
   if (!user) redirect('/login')
 
-  // Fetch last synced time for topbar indicator
   const { data: store } = await supabase
     .from('stores')
-    .select('last_synced_at')
+    .select('last_synced_at, klaviyo_api_key')
     .eq('id', '00000000-0000-0000-0000-000000000002')
     .single()
 
@@ -26,6 +25,7 @@ export default async function DashboardLayout({
     <DashboardShell
       userEmail={user.email ?? ''}
       lastSyncedAt={store?.last_synced_at ?? null}
+      klaviyoConnected={!!store?.klaviyo_api_key}
     >
       {children}
     </DashboardShell>

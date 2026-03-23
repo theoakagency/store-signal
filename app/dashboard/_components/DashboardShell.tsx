@@ -8,12 +8,14 @@ interface DashboardShellProps {
   children: React.ReactNode
   userEmail: string
   lastSyncedAt: string | null
+  klaviyoConnected: boolean
 }
 
 export default function DashboardShell({
   children,
   userEmail,
   lastSyncedAt,
+  klaviyoConnected,
 }: DashboardShellProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
@@ -21,7 +23,7 @@ export default function DashboardShell({
     <div className="flex h-full">
       {/* ── Desktop sidebar ────────────────────────────────────── */}
       <aside className="hidden lg:flex lg:w-[230px] lg:shrink-0 bg-charcoal flex-col">
-        <Sidebar />
+        <Sidebar klaviyoConnected={klaviyoConnected} />
       </aside>
 
       {/* ── Mobile sidebar overlay ─────────────────────────────── */}
@@ -34,7 +36,7 @@ export default function DashboardShell({
           />
           {/* Drawer */}
           <aside className="absolute inset-y-0 left-0 z-50 w-[230px] bg-charcoal animate-slide-in-right">
-            <Sidebar onNavigate={() => setSidebarOpen(false)} />
+            <Sidebar onNavigate={() => setSidebarOpen(false)} klaviyoConnected={klaviyoConnected} />
           </aside>
         </div>
       )}
