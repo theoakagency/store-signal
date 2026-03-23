@@ -25,14 +25,14 @@ export async function GET(req: NextRequest) {
   const startDate = new Date()
   startDate.setFullYear(startDate.getFullYear() - 1)
 
-  // Test the exact body our sync now sends
+  // Try without any revenue stat first — just to get a successful response and see actual field names in the result
   const body = {
     data: {
       type: 'campaign-values-report',
       attributes: {
         timeframe: { start: startDate.toISOString(), end: endDate.toISOString() },
         conversion_metric_id: metricId,
-        statistics: ['delivered', 'opens_unique', 'clicks_unique', 'unsubscribes', 'revenue'],
+        statistics: ['delivered', 'opens_unique', 'clicks_unique', 'unsubscribes'],
       },
     },
   }
@@ -52,9 +52,5 @@ export async function GET(req: NextRequest) {
   let parsed: unknown
   try { parsed = JSON.parse(text) } catch { parsed = text }
 
-  return Response.json({
-    metricId,
-    requestBody: body,
-    response: { status: res.status, body: parsed },
-  })
+  return Response.json({ metricId, response: { status: res.status, body: parsed } })
 }
