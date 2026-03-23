@@ -5,9 +5,8 @@ import { createSupabaseServerClient, createSupabaseServiceClient } from '@/lib/s
 const TENANT_ID = '00000000-0000-0000-0000-000000000001'
 const STORE_ID = '00000000-0000-0000-0000-000000000002'
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
-
 export async function POST(req: NextRequest) {
+  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
   // Auth check
   const supabase = await createSupabaseServerClient()
   const { data: { user } } = await supabase.auth.getUser()
