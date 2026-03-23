@@ -250,13 +250,17 @@ export default function KlaviyoDashboard({ connected, campaigns, flows, metrics 
   const avgClickRate = m('avg_campaign_click_rate')
   const estUnsubCost = m('estimated_unsubscribe_cost')
 
-  // Broadcast vs Flow comparison
+  // Broadcast vs Flow comparison — use cached totals for accurate RPR
   const broadcastRevenue = m('total_campaign_revenue')
   const flowRevenue = m('total_flow_revenue')
-  const totalCampaignRecip = campaigns.reduce((s, c) => s + c.recipient_count, 0)
-  const totalFlowRecip = flows.reduce((s, f) => s + f.recipient_count, 0)
+  const totalCampaignRecip = m('total_campaign_recipients')
+  const totalFlowRecip = m('total_flow_recipients')
   const broadcastRPR = totalCampaignRecip > 0 ? broadcastRevenue / totalCampaignRecip : 0
   const flowRPR = totalFlowRecip > 0 ? flowRevenue / totalFlowRecip : 0
+  const rprMultiplier = broadcastRPR > 0 && flowRPR > 0
+    ? (flowRPR > broadcastRPR ? flowRPR / broadcastRPR : broadcastRPR / flowRPR)
+    : null
+  const flowsWin = flowRPR > broadcastRPR
 
   return (
     <div className="space-y-6">
@@ -447,34 +451,69 @@ export default function KlaviyoDashboard({ connected, campaigns, flows, metrics 
             )}
           </section>
 
-          {/* Broadcast vs Automated comparison */}
-          <section className="rounded-2xl border border-cream-3 bg-white p-6 shadow-sm">
-            <h2 className="font-display text-base font-semibold text-ink mb-4">Broadcast vs Automated</h2>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          {/* Broadcast vs Automated — hero comparison */}
+          <section className="rounded-2xl bg-charcoal overflow-hidden shadow-lg">
+            <div className="px-6 pt-6 pb-2">
+              <p className="font-data text-xs uppercase tracking-widest text-white/40 mb-1">Channel Efficiency</p>
+              <h2 className="font-display text-xl font-semibold text-white">Broadcast vs Automated</h2>
+            </div>
+
+            {/* Central multiplier callout */}
+            {rprMultiplier !== null && (
+              <div className="flex flex-col items-center py-6 border-y border-white/10 mx-6 my-4">
+                <p className="font-display text-7xl font-bold text-teal leading-none">
+                  {rprMultiplier.toFixed(1)}×
+                </p>
+                <p className="mt-2 text-sm text-white/70 text-center max-w-xs">
+                  {flowsWin
+                    ? 'more revenue per recipient from automated flows vs broadcast campaigns'
+                    : 'more revenue per recipient from broadcast campaigns vs automated flows'}
+                </p>
+              </div>
+            )}
+
+            {/* Two-column breakdown */}
+            <div className="grid grid-cols-2 gap-px bg-white/10 mx-6 mb-6 rounded-xl overflow-hidden">
               {[
-                { label: 'Broadcast Campaigns', revenue: broadcastRevenue, rpr: broadcastRPR, count: campaigns.length, color: 'bg-teal' },
-                { label: 'Automated Flows', revenue: flowRevenue, rpr: flowRPR, count: flows.length, color: 'bg-charcoal-700' },
+                {
+                  label: 'Automated Flows',
+                  revenue: flowRevenue,
+                  rpr: flowRPR,
+                  count: flows.length,
+                  winner: flowsWin,
+                },
+                {
+                  label: 'Broadcast Campaigns',
+                  revenue: broadcastRevenue,
+                  rpr: broadcastRPR,
+                  count: campaigns.length,
+                  winner: !flowsWin,
+                },
               ].map((s) => (
-                <div key={s.label} className="rounded-xl bg-cream px-5 py-4">
-                  <p className="text-xs font-medium text-ink-2 mb-3">{s.label}</p>
-                  <p className="font-display text-2xl font-semibold text-ink mb-1">{usd(s.revenue)}</p>
-                  <p className="font-data text-xs text-ink-3 mb-3">{usd(s.rpr)} per recipient · {s.count} total</p>
-                  {/* Visual bar */}
-                  <div className="h-2 rounded-full bg-cream-2 overflow-hidden">
+                <div key={s.label} className={`px-5 py-4 ${s.winner ? 'bg-teal/20' : 'bg-white/5'}`}>
+                  <div className="flex items-center gap-1.5 mb-3">
+                    {s.winner && <span className="h-1.5 w-1.5 rounded-full bg-teal shrink-0" />}
+                    <p className="font-data text-xs text-white/50 uppercase tracking-wider">{s.label}</p>
+                  </div>
+                  <p className="font-display text-2xl font-semibold text-white mb-0.5">{usd(s.revenue)}</p>
+                  <p className={`font-data text-sm font-semibold mb-3 ${s.winner ? 'text-teal' : 'text-white/40'}`}>
+                    {usd(s.rpr)}<span className="font-normal text-xs"> / recipient</span>
+                  </p>
+                  {/* Revenue bar relative to larger */}
+                  <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
                     <div
-                      className={`h-full rounded-full ${s.color} transition-all duration-700`}
-                      style={{ width: `${Math.min(100, (s.revenue / Math.max(broadcastRevenue, flowRevenue, 1)) * 100)}%` }}
+                      className={`h-full rounded-full transition-all duration-700 ${s.winner ? 'bg-teal' : 'bg-white/30'}`}
+                      style={{ width: `${Math.min(100, (s.rpr / Math.max(broadcastRPR, flowRPR, 0.001)) * 100)}%` }}
                     />
                   </div>
                 </div>
               ))}
             </div>
-            <p className="mt-4 text-xs text-ink-3 leading-relaxed">
-              {flowRPR > broadcastRPR
-                ? `Automated flows generate ${((flowRPR / broadcastRPR - 1) * 100).toFixed(0)}× more revenue per recipient than broadcast campaigns — consider investing in additional flow sequences.`
-                : broadcastRPR > flowRPR
-                ? `Broadcast campaigns outperform flows by revenue per recipient. Your list is highly engaged with promotional sends.`
-                : `Comparable performance between broadcast and automated — a balanced email strategy.`}
+
+            <p className="px-6 pb-5 text-xs text-white/40 leading-relaxed">
+              {flowsWin
+                ? `Flows convert at ${usd(flowRPR)}/recipient vs ${usd(broadcastRPR)}/recipient for broadcasts. Every dollar invested in flow automation returns ${rprMultiplier?.toFixed(1)}× more than a broadcast send.`
+                : `Broadcast campaigns outperform flows at ${usd(broadcastRPR)}/recipient vs ${usd(flowRPR)}/recipient. Your list responds strongly to promotional sends.`}
             </p>
           </section>
 

@@ -124,8 +124,11 @@ export async function POST(req: NextRequest) {
       return c.revenue_attributed < estCost
     }).length
 
+    const totalCampaignRecipients = campaigns.reduce((s, c) => s + c.recipient_count, 0)
+
     const campaignMetrics = [
       { metric_name: 'total_campaign_revenue', metric_value: totalCampaignRevenue, metric_metadata: {} },
+      { metric_name: 'total_campaign_recipients', metric_value: totalCampaignRecipients, metric_metadata: {} },
       { metric_name: 'avg_campaign_open_rate', metric_value: avgOpenRate, metric_metadata: {} },
       { metric_name: 'avg_campaign_click_rate', metric_value: avgClickRate, metric_metadata: {} },
       { metric_name: 'total_campaign_unsubscribes', metric_value: totalUnsubscribes, metric_metadata: {} },
@@ -186,6 +189,7 @@ export async function POST(req: NextRequest) {
     // Flow metrics
     const now = new Date().toISOString()
     const totalFlowRevenue = flows.reduce((s, f) => s + f.revenue_attributed, 0)
+    const totalFlowRecipients = flows.reduce((s, f) => s + f.recipient_count, 0)
     const sortedFlows = [...flows].sort((a, b) => b.revenue_attributed - a.revenue_attributed)
     const bestFlow = sortedFlows[0]
 
@@ -209,6 +213,7 @@ export async function POST(req: NextRequest) {
 
     const flowMetrics = [
       { metric_name: 'total_flow_revenue', metric_value: totalFlowRevenue, metric_metadata: {} },
+      { metric_name: 'total_flow_recipients', metric_value: totalFlowRecipients, metric_metadata: {} },
       { metric_name: 'email_revenue_total', metric_value: emailRevenue, metric_metadata: {} },
       { metric_name: 'email_revenue_vs_total', metric_value: emailVsTotal, metric_metadata: { shopify_revenue: shopifyRevenue } },
       {
