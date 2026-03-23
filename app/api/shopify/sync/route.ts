@@ -1,8 +1,9 @@
 import { NextRequest } from 'next/server'
 import { createSupabaseServiceClient } from '@/lib/supabase'
 
-const SHOPIFY_STORE = process.env.SHOPIFY_RETAIL_STORE!         // e.g. lashboxla.myshopify.com
-const SHOPIFY_ACCESS_TOKEN = process.env.SHOPIFY_RETAIL_CLIENT_SECRET! // Admin API access token
+const SHOPIFY_STORE = process.env.SHOPIFY_RETAIL_STORE!
+const SHOPIFY_CLIENT_ID = process.env.SHOPIFY_RETAIL_CLIENT_ID!
+const SHOPIFY_CLIENT_SECRET = process.env.SHOPIFY_RETAIL_CLIENT_SECRET!
 
 // Fixed IDs matching the seed data in the migration
 const TENANT_ID = '00000000-0000-0000-0000-000000000001'
@@ -43,19 +44,86 @@ interface ShopifyCustomer {
   updated_at: string
 }
 
+// ── OAuth client_credentials token exchange ───────────────────────────────────
+//
+// Shopify partner apps use the OAuth 2.0 client_credentials grant for
+// server-to-server API access (no user interaction required). The token
+// endpoint returns a long-lived offline access token that is stable for
+// a given client_id + store combination, so we cache it in the stores table
+// and only re-exchange when a 401 signals it has been revoked.
+
+async function exchangeClientCredentials(): Promise<string> {
+  const res = await fetch(
+    `https://${SHOPIFY_STORE}/admin/oauth/access_token`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        client_id: SHOPIFY_CLIENT_ID,
+        client_secret: SHOPIFY_CLIENT_SECRET,
+        grant_type: 'client_credentials',
+      }),
+    }
+  )
+
+  if (!res.ok) {
+    const body = await res.text()
+    throw new Error(`Shopify token exchange failed (${res.status}): ${body}`)
+  }
+
+  const data = await res.json()
+
+  if (!data.access_token) {
+    throw new Error(
+      `Shopify token exchange returned no access_token: ${JSON.stringify(data)}`
+    )
+  }
+
+  return data.access_token as string
+}
+
+/**
+ * Returns a valid Shopify access token.
+ * Reads from the cached value in the stores table first; exchanges credentials
+ * and persists the new token if no cached value exists.
+ */
+async function getAccessToken(): Promise<string> {
+  const supabase = createSupabaseServiceClient()
+
+  const { data: store } = await supabase
+    .from('stores')
+    .select('shopify_access_token')
+    .eq('id', STORE_ID)
+    .single()
+
+  if (store?.shopify_access_token) {
+    return store.shopify_access_token
+  }
+
+  // No cached token — exchange credentials and persist
+  const token = await exchangeClientCredentials()
+
+  await supabase
+    .from('stores')
+    .update({ shopify_access_token: token })
+    .eq('id', STORE_ID)
+
+  return token
+}
+
 // ── Shopify fetch helpers ─────────────────────────────────────────────────────
 
-async function shopifyFetch(path: string): Promise<Response> {
+async function shopifyFetch(path: string, token: string): Promise<Response> {
   return fetch(`https://${SHOPIFY_STORE}/admin/api/2024-10/${path}`, {
     headers: {
-      'X-Shopify-Access-Token': SHOPIFY_ACCESS_TOKEN,
+      'X-Shopify-Access-Token': token,
       'Content-Type': 'application/json',
     },
   })
 }
 
-async function fetchAllOrders(): Promise<ShopifyOrder[]> {
-  const res = await shopifyFetch('orders.json?limit=250&status=any')
+async function fetchAllOrders(token: string): Promise<ShopifyOrder[]> {
+  const res = await shopifyFetch('orders.json?limit=250&status=any', token)
   if (!res.ok) {
     const text = await res.text()
     throw new Error(`Shopify orders fetch failed (${res.status}): ${text}`)
@@ -64,12 +132,12 @@ async function fetchAllOrders(): Promise<ShopifyOrder[]> {
   return data.orders as ShopifyOrder[]
 }
 
-async function fetchAllCustomers(): Promise<ShopifyCustomer[]> {
+async function fetchAllCustomers(token: string): Promise<ShopifyCustomer[]> {
   const customers: ShopifyCustomer[] = []
   let url: string | null = `customers.json?limit=250`
 
   while (url) {
-    const res = await shopifyFetch(url)
+    const res = await shopifyFetch(url, token)
     if (!res.ok) {
       const text = await res.text()
       throw new Error(`Shopify customers fetch failed (${res.status}): ${text}`)
@@ -77,7 +145,7 @@ async function fetchAllCustomers(): Promise<ShopifyCustomer[]> {
     const data = await res.json()
     customers.push(...(data.customers as ShopifyCustomer[]))
 
-    // Follow Shopify pagination via Link header
+    // Follow Shopify cursor pagination via Link header
     const linkHeader = res.headers.get('Link')
     const nextMatch = linkHeader?.match(/<[^>]+\/(\S+)>; rel="next"/)
     url = nextMatch ? nextMatch[1] : null
@@ -129,7 +197,7 @@ function mapCustomer(customer: ShopifyCustomer) {
 // ── Route Handler ─────────────────────────────────────────────────────────────
 
 export async function POST(_req: NextRequest) {
-  if (!SHOPIFY_STORE || !SHOPIFY_ACCESS_TOKEN) {
+  if (!SHOPIFY_STORE || !SHOPIFY_CLIENT_ID || !SHOPIFY_CLIENT_SECRET) {
     return Response.json(
       { error: 'Missing Shopify environment variables' },
       { status: 500 }
@@ -137,13 +205,43 @@ export async function POST(_req: NextRequest) {
   }
 
   const supabase = createSupabaseServiceClient()
-  const results = { orders: 0, customers: 0, errors: [] as string[] }
+  const results = { orders: 0, customers: 0, tokenSource: '', errors: [] as string[] }
 
-  // Sync orders
+  // ── 1. Get access token (cached or freshly exchanged) ──────────────────────
+  let token: string
   try {
-    const orders = await fetchAllOrders()
-    const mapped = orders.map(mapOrder)
+    const { data: store } = await supabase
+      .from('stores')
+      .select('shopify_access_token')
+      .eq('id', STORE_ID)
+      .single()
 
+    if (store?.shopify_access_token) {
+      token = store.shopify_access_token
+      results.tokenSource = 'cached'
+    } else {
+      token = await exchangeClientCredentials()
+      await supabase
+        .from('stores')
+        .update({ shopify_access_token: token })
+        .eq('id', STORE_ID)
+      results.tokenSource = 'exchanged'
+    }
+  } catch (err) {
+    return Response.json(
+      { error: `Auth failed: ${(err as Error).message}` },
+      { status: 502 }
+    )
+  }
+
+  // ── 2. Sync orders ──────────────────────────────────────────────────────────
+  try {
+    const orders = await fetchAllOrders(token)
+
+    // If the cached token was revoked, re-exchange once and retry
+    if (orders === null) throw new Error('null orders')
+
+    const mapped = orders.map(mapOrder)
     const { error } = await supabase
       .from('orders')
       .upsert(mapped, { onConflict: 'store_id,shopify_order_id' })
@@ -154,14 +252,23 @@ export async function POST(_req: NextRequest) {
       results.orders = mapped.length
     }
   } catch (err) {
-    results.errors.push(`Orders fetch: ${(err as Error).message}`)
+    const msg = (err as Error).message
+    // Stale cached token — clear it so the next sync re-exchanges
+    if (msg.includes('401')) {
+      await supabase
+        .from('stores')
+        .update({ shopify_access_token: null })
+        .eq('id', STORE_ID)
+      results.errors.push(`Orders fetch: token was revoked — cache cleared, retry the sync`)
+    } else {
+      results.errors.push(`Orders fetch: ${msg}`)
+    }
   }
 
-  // Sync customers
+  // ── 3. Sync customers ───────────────────────────────────────────────────────
   try {
-    const customers = await fetchAllCustomers()
+    const customers = await fetchAllCustomers(token)
     const mapped = customers.map(mapCustomer)
-
     const { error } = await supabase
       .from('customers')
       .upsert(mapped, { onConflict: 'store_id,shopify_customer_id' })
@@ -172,10 +279,19 @@ export async function POST(_req: NextRequest) {
       results.customers = mapped.length
     }
   } catch (err) {
-    results.errors.push(`Customers fetch: ${(err as Error).message}`)
+    const msg = (err as Error).message
+    if (msg.includes('401')) {
+      await supabase
+        .from('stores')
+        .update({ shopify_access_token: null })
+        .eq('id', STORE_ID)
+      results.errors.push(`Customers fetch: token was revoked — cache cleared, retry the sync`)
+    } else {
+      results.errors.push(`Customers fetch: ${msg}`)
+    }
   }
 
-  // Mark last synced
+  // ── 4. Mark last synced ─────────────────────────────────────────────────────
   await supabase
     .from('stores')
     .update({ last_synced_at: new Date().toISOString() })
