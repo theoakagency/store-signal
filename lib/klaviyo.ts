@@ -134,7 +134,7 @@ export interface CampaignStatRow {
     opens_unique?: number
     clicks_unique?: number
     unsubscribes?: number
-    conversions_value?: number
+    revenue_per_recipient?: number
     recipients?: number
   }
 }
@@ -148,7 +148,7 @@ export interface FlowStatRow {
     opens_unique?: number
     clicks_unique?: number
     conversions_unique?: number
-    conversions_value?: number
+    revenue_per_recipient?: number
     recipients?: number
   }
 }
@@ -318,7 +318,7 @@ export async function getCampaignStats(
             'opens_unique',
             'clicks_unique',
             'unsubscribes',
-            'conversions_value',
+            'revenue_per_recipient',
           ],
         },
       },
@@ -371,7 +371,7 @@ export async function getFlowStats(
             'opens_unique',
             'clicks_unique',
             'conversions_unique',
-            'conversions_value',
+            'revenue_per_recipient',
           ],
         },
       },
@@ -452,7 +452,7 @@ export async function getEnrichedCampaigns(apiKey: string): Promise<CampaignWith
       recipient_count: delivered,
       open_rate: delivered > 0 ? opensUnique / delivered : null,
       click_rate: delivered > 0 ? clicksUnique / delivered : null,
-      revenue_attributed: stats.conversions_value ?? 0,
+      revenue_attributed: (stats.revenue_per_recipient ?? 0) * delivered,
       unsubscribe_count: stats.unsubscribes ?? 0,
     }
   })
@@ -494,7 +494,7 @@ export async function getEnrichedFlows(apiKey: string): Promise<FlowWithStats[]>
       open_rate: delivered > 0 ? opensUnique / delivered : null,
       click_rate: delivered > 0 ? clicksUnique / delivered : null,
       conversion_rate: delivered > 0 ? conversions / delivered : null,
-      revenue_attributed: stats.conversions_value ?? 0,
+      revenue_attributed: (stats.revenue_per_recipient ?? 0) * delivered,
     }
   })
 }
