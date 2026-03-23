@@ -87,14 +87,8 @@ export async function GET(req: NextRequest) {
     )
   }
 
-  // 5. Redirect to dashboard immediately — set the nonce cookie as expired
-  //    Sync will run in the background; user can also trigger it manually.
+  // 5. Redirect to dashboard — clear the nonce cookie
   const response = NextResponse.redirect(new URL('/dashboard', req.url))
   response.cookies.set('shopify_oauth_nonce', '', { maxAge: 0, path: '/' })
-
-  // 6. Fire-and-forget initial sync (non-blocking — don't await)
-  const host = req.headers.get('host') ?? req.nextUrl.host
-  fetch(`https://${host}/api/shopify/sync`, { method: 'POST' }).catch(() => {})
-
   return response
 }

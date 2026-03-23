@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation'
 import { createSupabaseServerClient } from '@/lib/supabase'
+import SyncButton from './SyncButton'
 
 export const metadata = {
   title: 'Dashboard — Store Signal',
@@ -134,9 +135,12 @@ export default async function DashboardPage() {
 
       <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
         {/* Page heading */}
-        <div className="mb-8">
-          <h1 className="text-2xl font-semibold text-gray-900">LashBox LA — Retail</h1>
-          <p className="mt-1 text-sm text-gray-500">Shopify store overview</p>
+        <div className="mb-8 flex items-start justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold text-gray-900">LashBox LA — Retail</h1>
+            <p className="mt-1 text-sm text-gray-500">Shopify store overview</p>
+          </div>
+          <SyncButton />
         </div>
 
         {hasError && (
@@ -174,8 +178,7 @@ export default async function DashboardPage() {
 
           {orders.length === 0 ? (
             <div className="px-6 py-12 text-center text-sm text-gray-400">
-              No orders yet.{' '}
-              <span className="font-mono">POST /api/shopify/sync</span> to import data.
+              No orders yet — click <span className="font-medium text-gray-600">Sync now</span> to import data.
             </div>
           ) : (
             <div className="overflow-x-auto">

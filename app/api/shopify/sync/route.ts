@@ -63,11 +63,16 @@ async function fetchAllOrders(token: string): Promise<ShopifyOrder[]> {
   return data.orders as ShopifyOrder[]
 }
 
+// Cap at 1000 customers (4 pages) to stay within Vercel's function timeout.
+// Increase PAGE_LIMIT or implement a paginated background job for full imports.
+const CUSTOMER_PAGE_LIMIT = 4
+
 async function fetchAllCustomers(token: string): Promise<ShopifyCustomer[]> {
   const customers: ShopifyCustomer[] = []
   let url: string | null = `customers.json?limit=250`
+  let pages = 0
 
-  while (url) {
+  while (url && pages < CUSTOMER_PAGE_LIMIT) {
     const res = await shopifyFetch(url, token)
     if (!res.ok) {
       const text = await res.text()
@@ -75,6 +80,7 @@ async function fetchAllCustomers(token: string): Promise<ShopifyCustomer[]> {
     }
     const data = await res.json()
     customers.push(...(data.customers as ShopifyCustomer[]))
+    pages++
 
     // Follow Shopify cursor pagination via Link header
     const linkHeader = res.headers.get('Link')
