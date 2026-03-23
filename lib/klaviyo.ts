@@ -313,6 +313,13 @@ export async function getCampaignStats(
             end: endDate.toISOString(),
           },
           conversion_metric_id: conversionMetricId,
+          statistics: [
+            'delivered',
+            'opens_unique',
+            'clicks_unique',
+            'unsubscribes',
+            'revenue',
+          ],
         },
       },
     }
@@ -359,6 +366,13 @@ export async function getFlowStats(
             end: endDate.toISOString(),
           },
           conversion_metric_id: conversionMetricId,
+          statistics: [
+            'delivered',
+            'opens_unique',
+            'clicks_unique',
+            'conversions',
+            'revenue',
+          ],
         },
       },
     }
@@ -398,7 +412,7 @@ export async function getEnrichedCampaigns(apiKey: string): Promise<CampaignWith
   // Fetch stats for the last 2 years
   const endDate = new Date()
   const startDate = new Date()
-  startDate.setFullYear(startDate.getFullYear() - 2)
+  startDate.setFullYear(startDate.getFullYear() - 1)
 
   const statsMap = metricId
     ? await getCampaignStats(apiKey, metricId, startDate, endDate)
@@ -456,7 +470,7 @@ export async function getEnrichedFlows(apiKey: string): Promise<FlowWithStats[]>
 
   const endDate = new Date()
   const startDate = new Date()
-  startDate.setFullYear(startDate.getFullYear() - 2)
+  startDate.setFullYear(startDate.getFullYear() - 1)
 
   const statsMap = metricId
     ? await getFlowStats(apiKey, metricId, startDate, endDate)
