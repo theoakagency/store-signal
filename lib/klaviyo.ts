@@ -125,7 +125,10 @@ export interface KlaviyoAccount {
 // ── Campaign stats from values-report ─────────────────────────────────────────
 
 export interface CampaignStatRow {
-  campaign_id: string
+  groupings: {
+    campaign_id: string
+    send_channel?: string
+  }
   statistics: {
     delivered?: number
     opens_unique?: number
@@ -137,7 +140,9 @@ export interface CampaignStatRow {
 }
 
 export interface FlowStatRow {
-  flow_id: string
+  groupings: {
+    flow_id: string
+  }
   statistics: {
     delivered?: number
     opens_unique?: number
@@ -326,7 +331,7 @@ export async function getCampaignStats(
 
     const map: Record<string, CampaignStatRow['statistics']> = {}
     for (const row of res.data.attributes.results ?? []) {
-      map[row.campaign_id] = row.statistics
+      map[row.groupings.campaign_id] = row.statistics
     }
     return map
   } catch {
@@ -372,7 +377,7 @@ export async function getFlowStats(
 
     const map: Record<string, FlowStatRow['statistics']> = {}
     for (const row of res.data.attributes.results ?? []) {
-      map[row.flow_id] = row.statistics
+      map[row.groupings.flow_id] = row.statistics
     }
     return map
   } catch {
