@@ -11,52 +11,55 @@ interface HistoryRow {
   discount_value: number | null
   created_at: string
   ai_analysis: {
-    recommendation?: string
-    revenue_impact?: number
-    margin_safety?: number
-    customer_acquisition?: number
-    retention_power?: number
-    urgency_clarity?: number
+    verdict?: string
+    audience_fit?: number
+    buying_motivation?: number
+    margin_impact?: number
+    timing_urgency?: number
+    staff_effort_roi?: number
   } | null
 }
 
 interface Analysis {
   overall_score: number
-  revenue_impact: number
-  margin_safety: number
-  customer_acquisition: number
-  retention_power: number
-  urgency_clarity: number
-  recommendation: string
-  risks: string[]
+  audience_fit: number
+  buying_motivation: number
+  margin_impact: number
+  timing_urgency: number
+  staff_effort_roi: number
+  verdict: string
+  main_analysis: string
+  what_to_try_instead: string
   strengths: string[]
+  risks: string[]
 }
 
-const DIMENSIONS = [
-  { key: 'revenue_impact', label: 'Revenue Impact' },
-  { key: 'margin_safety', label: 'Margin Safety' },
-  { key: 'customer_acquisition', label: 'Customer Acquisition' },
-  { key: 'retention_power', label: 'Retention Power' },
-  { key: 'urgency_clarity', label: 'Urgency & Clarity' },
-] as const
+const DIMENSIONS: { key: keyof Analysis & string; label: string }[] = [
+  { key: 'audience_fit',      label: 'Audience Fit' },
+  { key: 'buying_motivation', label: 'Buying Motivation' },
+  { key: 'margin_impact',     label: 'Margin Impact' },
+  { key: 'timing_urgency',    label: 'Timing & Urgency' },
+  { key: 'staff_effort_roi',  label: 'Staff Effort ROI' },
+]
 
-// ── Score ring (pure SVG) ─────────────────────────────────────────────────────
+// ── Score ring ────────────────────────────────────────────────────────────────
 
 function ScoreRing({ score }: { score: number }) {
-  const r = 42
+  const r = 44
   const circumference = 2 * Math.PI * r
   const offset = circumference - (score / 100) * circumference
   const color = score >= 75 ? '#4BBFAD' : score >= 50 ? '#f59e0b' : '#ef4444'
+  const label = score >= 75 ? 'Strong' : score >= 50 ? 'Moderate' : 'Weak'
 
   return (
-    <div className="flex flex-col items-center">
-      <svg width="120" height="120" viewBox="0 0 120 120">
+    <div className="flex flex-col items-center gap-1">
+      <svg width="130" height="130" viewBox="0 0 130 130" role="img" aria-label={`Score: ${score} out of 100`}>
         {/* Track */}
-        <circle cx="60" cy="60" r={r} fill="none" stroke="#E8E2D9" strokeWidth="10" />
+        <circle cx="65" cy="65" r={r} fill="none" stroke="#E8E2D9" strokeWidth="10" />
         {/* Fill */}
         <circle
-          cx="60"
-          cy="60"
+          cx="65"
+          cy="65"
           r={r}
           fill="none"
           stroke={color}
@@ -64,14 +67,40 @@ function ScoreRing({ score }: { score: number }) {
           strokeDasharray={circumference}
           strokeDashoffset={offset}
           strokeLinecap="round"
-          transform="rotate(-90 60 60)"
+          transform="rotate(-90 65 65)"
           className="animate-ring"
         />
-        <text x="60" y="65" textAnchor="middle" fontSize="26" fontWeight="600" fill={color} fontFamily="Cormorant Garamond, serif">
+        {/* Score number — DM Mono */}
+        <text
+          x="65"
+          y="61"
+          textAnchor="middle"
+          fontSize="30"
+          fontWeight="500"
+          fill={color}
+          fontFamily="DM Mono, Fira Mono, monospace"
+        >
           {score}
         </text>
+        {/* /100 */}
+        <text
+          x="65"
+          y="78"
+          textAnchor="middle"
+          fontSize="11"
+          fill="#888888"
+          fontFamily="DM Mono, monospace"
+        >
+          / 100
+        </text>
       </svg>
-      <p className="mt-1 text-xs text-ink-3 font-data">/ 100</p>
+      {/* Verdict label — Cormorant Garamond */}
+      <p
+        className="text-base font-semibold"
+        style={{ color, fontFamily: 'Cormorant Garamond, Georgia, serif' }}
+      >
+        {label}
+      </p>
     </div>
   )
 }
@@ -82,8 +111,10 @@ function DimBar({ label, value }: { label: string; value: number }) {
   const color = value >= 75 ? 'bg-teal' : value >= 50 ? 'bg-amber-400' : 'bg-red-400'
   return (
     <div>
-      <div className="flex justify-between items-center mb-1">
-        <span className="text-xs text-ink-2">{label}</span>
+      <div className="flex justify-between items-baseline mb-1.5">
+        <span className="text-xs font-medium text-ink-2" style={{ fontFamily: 'Jost, system-ui, sans-serif' }}>
+          {label}
+        </span>
         <span className="font-data text-xs text-ink-3">{value}</span>
       </div>
       <div className="h-1.5 rounded-full bg-cream-2 overflow-hidden">
@@ -105,11 +136,12 @@ export default function PromotionScorer({ history }: { history: HistoryRow[] }) 
   const [form, setForm] = useState({
     name: '',
     description: '',
+    status: 'Just considering',
     promotion_type: 'discount',
     discount_type: 'percentage',
     discount_value: '',
-    target_audience: '',
-    channel: '',
+    target_audience: 'All customers',
+    channel: 'Email - full list',
     budget: '',
     duration_days: '',
   })
@@ -144,16 +176,22 @@ export default function PromotionScorer({ history }: { history: HistoryRow[] }) 
     }
   }
 
-  const inputCls = 'w-full rounded-lg border border-cream-3 bg-white px-3 py-2 text-sm text-ink focus:border-teal focus:outline-none focus:ring-1 focus:ring-teal transition'
-  const labelCls = 'block text-xs font-medium text-ink-2 mb-1'
+  const inputCls =
+    'w-full rounded-lg border border-cream-3 bg-white px-3 py-2 text-sm text-ink focus:border-teal focus:outline-none focus:ring-1 focus:ring-teal transition'
+  const labelCls =
+    'block text-xs font-medium text-ink-2 mb-1'
 
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+
         {/* ── Form ── */}
         <section className="rounded-2xl border border-cream-3 bg-white p-6 shadow-sm">
           <h2 className="font-display text-lg font-semibold text-ink mb-5">Score a Promotion</h2>
+
           <form onSubmit={handleScore} className="space-y-4">
+
+            {/* Name */}
             <div>
               <label className={labelCls}>Promotion name *</label>
               <input
@@ -165,21 +203,41 @@ export default function PromotionScorer({ history }: { history: HistoryRow[] }) 
               />
             </div>
 
+            {/* Status */}
+            <div>
+              <label className={labelCls}>Status</label>
+              <select
+                value={form.status}
+                onChange={(e) => set('status', e.target.value)}
+                className={inputCls}
+              >
+                <option>Already ran</option>
+                <option>Planning to run</option>
+                <option>Just considering</option>
+              </select>
+            </div>
+
+            {/* Description */}
             <div>
               <label className={labelCls}>Description</label>
               <textarea
                 value={form.description}
                 onChange={(e) => set('description', e.target.value)}
-                rows={2}
-                placeholder="What's the goal of this promotion?"
+                placeholder="Describe the promotion and share your gut feeling. The AI will validate or challenge your thinking using your actual store data."
                 className={inputCls + ' resize-none'}
+                style={{ minHeight: '120px' }}
               />
             </div>
 
+            {/* Promotion type + Discount type */}
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className={labelCls}>Promotion type *</label>
-                <select value={form.promotion_type} onChange={(e) => set('promotion_type', e.target.value)} className={inputCls}>
+                <select
+                  value={form.promotion_type}
+                  onChange={(e) => set('promotion_type', e.target.value)}
+                  className={inputCls}
+                >
                   <option value="discount">Discount</option>
                   <option value="bogo">BOGO</option>
                   <option value="free_shipping">Free Shipping</option>
@@ -191,7 +249,11 @@ export default function PromotionScorer({ history }: { history: HistoryRow[] }) 
               </div>
               <div>
                 <label className={labelCls}>Discount type *</label>
-                <select value={form.discount_type} onChange={(e) => set('discount_type', e.target.value)} className={inputCls}>
+                <select
+                  value={form.discount_type}
+                  onChange={(e) => set('discount_type', e.target.value)}
+                  className={inputCls}
+                >
                   <option value="percentage">Percentage (%)</option>
                   <option value="fixed_amount">Fixed Amount ($)</option>
                   <option value="free_shipping">Free Shipping</option>
@@ -199,6 +261,7 @@ export default function PromotionScorer({ history }: { history: HistoryRow[] }) 
               </div>
             </div>
 
+            {/* Discount value + Duration */}
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className={labelCls}>Discount value</label>
@@ -225,26 +288,37 @@ export default function PromotionScorer({ history }: { history: HistoryRow[] }) 
               </div>
             </div>
 
+            {/* Target audience */}
             <div>
               <label className={labelCls}>Target audience</label>
-              <input
+              <select
                 value={form.target_audience}
                 onChange={(e) => set('target_audience', e.target.value)}
-                placeholder="e.g. VIP customers, new subscribers"
                 className={inputCls}
-              />
+              >
+                <option>All customers</option>
+                <option>VIP/top spenders</option>
+                <option>Lapsed customers (90+ days)</option>
+                <option>First-time buyers</option>
+                <option>Email subscribers only</option>
+              </select>
             </div>
 
+            {/* Channel + Budget */}
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className={labelCls}>Channel</label>
-                <select value={form.channel} onChange={(e) => set('channel', e.target.value)} className={inputCls}>
-                  <option value="">All channels</option>
-                  <option value="email">Email</option>
-                  <option value="sms">SMS</option>
-                  <option value="social">Social Media</option>
-                  <option value="in_store">In-Store</option>
-                  <option value="paid_ads">Paid Ads</option>
+                <label className={labelCls}>Distribution channel</label>
+                <select
+                  value={form.channel}
+                  onChange={(e) => set('channel', e.target.value)}
+                  className={inputCls}
+                >
+                  <option>Email - full list</option>
+                  <option>Email - segment only</option>
+                  <option>Social media</option>
+                  <option>Paid ads</option>
+                  <option>Sitewide banner</option>
+                  <option>Multi-channel</option>
                 </select>
               </div>
               <div>
@@ -274,28 +348,39 @@ export default function PromotionScorer({ history }: { history: HistoryRow[] }) 
                   <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/40 border-t-white" />
                   Scoring with AI…
                 </span>
-              ) : 'Score this promotion'}
+              ) : (
+                'Score this promotion'
+              )}
             </button>
           </form>
         </section>
 
-        {/* ── Results ── */}
+        {/* ── Results panel ── */}
         <section className="rounded-2xl border border-cream-3 bg-white p-6 shadow-sm">
-          <h2 className="font-display text-lg font-semibold text-ink mb-5">Score Results</h2>
+          {/* Heading — Cormorant Garamond */}
+          <h2
+            className="text-xl font-semibold text-ink mb-5"
+            style={{ fontFamily: 'Cormorant Garamond, Georgia, serif' }}
+          >
+            Score Results
+          </h2>
 
           {state === 'idle' && (
-            <div className="flex flex-col items-center justify-center py-12 text-center">
+            <div className="flex flex-col items-center justify-center py-14 text-center">
               <div className="mb-3 h-12 w-12 rounded-full bg-cream-2 flex items-center justify-center">
                 <svg className="h-6 w-6 text-ink-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
                   <path d="M9 12l2 2 4-4M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
               </div>
-              <p className="text-sm text-ink-3">Fill in the form and click<br />"Score this promotion"</p>
+              <p className="text-sm text-ink-3 leading-relaxed">
+                Fill in the form and click<br />
+                <span className="font-medium text-ink-2">"Score this promotion"</span>
+              </p>
             </div>
           )}
 
           {state === 'scoring' && (
-            <div className="flex flex-col items-center justify-center py-12 gap-4">
+            <div className="flex flex-col items-center justify-center py-14 gap-4">
               <div className="h-16 w-16 animate-spin rounded-full border-4 border-cream-2 border-t-teal" />
               <p className="text-sm text-ink-3">Analyzing with Claude AI…</p>
             </div>
@@ -303,36 +388,86 @@ export default function PromotionScorer({ history }: { history: HistoryRow[] }) 
 
           {state === 'done' && analysis && (
             <div className="space-y-5">
+              {/* Ring + verdict */}
               <ScoreRing score={analysis.overall_score} />
 
-              <div className="space-y-3">
+              {/* Verdict text — Cormorant Garamond */}
+              {analysis.verdict && (
+                <p
+                  className="text-center text-base text-ink leading-snug px-2"
+                  style={{ fontFamily: 'Cormorant Garamond, Georgia, serif' }}
+                >
+                  {analysis.verdict}
+                </p>
+              )}
+
+              {/* 5 dimension bars */}
+              <div className="space-y-3 pt-1">
                 {DIMENSIONS.map((d) => (
-                  <DimBar key={d.key} label={d.label} value={analysis[d.key]} />
+                  <DimBar
+                    key={d.key}
+                    label={d.label}
+                    value={analysis[d.key] as number}
+                  />
                 ))}
               </div>
 
-              <div className="rounded-xl bg-cream px-4 py-3">
-                <p className="text-xs font-medium text-ink-2 mb-1">Recommendation</p>
-                <p className="text-sm text-ink">{analysis.recommendation}</p>
-              </div>
+              {/* Main analysis */}
+              {analysis.main_analysis && (
+                <div className="rounded-xl bg-cream px-4 py-3.5">
+                  <p
+                    className="text-xs font-semibold uppercase tracking-wider text-ink-3 mb-2"
+                    style={{ fontFamily: 'Jost, system-ui, sans-serif' }}
+                  >
+                    Analysis
+                  </p>
+                  <p className="text-sm text-ink leading-relaxed">{analysis.main_analysis}</p>
+                </div>
+              )}
 
+              {/* What to try instead */}
+              {analysis.what_to_try_instead && (
+                <div className="rounded-xl border border-teal/20 bg-teal-pale px-4 py-3.5">
+                  <p
+                    className="text-xs font-semibold uppercase tracking-wider text-teal-deep mb-2"
+                    style={{ fontFamily: 'Jost, system-ui, sans-serif' }}
+                  >
+                    What to try instead
+                  </p>
+                  <p className="text-sm text-ink leading-relaxed">{analysis.what_to_try_instead}</p>
+                </div>
+              )}
+
+              {/* Strengths + Risks */}
               <div className="grid grid-cols-2 gap-3">
-                <div className="rounded-xl bg-teal-pale px-3 py-3">
-                  <p className="text-xs font-medium text-teal-deep mb-1.5">Strengths</p>
-                  <ul className="space-y-1">
+                <div className="rounded-xl bg-cream-2 px-3 py-3">
+                  <p
+                    className="text-xs font-semibold text-ink-2 mb-2"
+                    style={{ fontFamily: 'Jost, system-ui, sans-serif' }}
+                  >
+                    Strengths
+                  </p>
+                  <ul className="space-y-1.5">
                     {analysis.strengths.map((s, i) => (
-                      <li key={i} className="text-xs text-ink-2 flex gap-1.5">
-                        <span className="text-teal mt-0.5">✓</span> {s}
+                      <li key={i} className="text-xs text-ink-2 flex gap-1.5 leading-snug">
+                        <span className="text-teal shrink-0 mt-0.5">✓</span>
+                        {s}
                       </li>
                     ))}
                   </ul>
                 </div>
                 <div className="rounded-xl bg-red-50 px-3 py-3">
-                  <p className="text-xs font-medium text-red-700 mb-1.5">Risks</p>
-                  <ul className="space-y-1">
+                  <p
+                    className="text-xs font-semibold text-red-700 mb-2"
+                    style={{ fontFamily: 'Jost, system-ui, sans-serif' }}
+                  >
+                    Risks
+                  </p>
+                  <ul className="space-y-1.5">
                     {analysis.risks.map((r, i) => (
-                      <li key={i} className="text-xs text-ink-2 flex gap-1.5">
-                        <span className="text-red-400 mt-0.5">!</span> {r}
+                      <li key={i} className="text-xs text-ink-2 flex gap-1.5 leading-snug">
+                        <span className="text-red-400 shrink-0 mt-0.5">!</span>
+                        {r}
                       </li>
                     ))}
                   </ul>
@@ -358,24 +493,29 @@ export default function PromotionScorer({ history }: { history: HistoryRow[] }) 
                   <th className="px-5 py-2.5 text-left">Type</th>
                   <th className="px-5 py-2.5 text-left">Discount</th>
                   <th className="px-5 py-2.5 text-center">Score</th>
+                  <th className="px-5 py-2.5 text-left">Verdict</th>
                   <th className="px-5 py-2.5 text-left">Date</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-cream-2">
                 {history.map((row) => {
                   const score = row.score ?? 0
-                  const color = score >= 75 ? 'text-teal-deep' : score >= 50 ? 'text-amber-600' : 'text-red-500'
+                  const scoreColor =
+                    score >= 75 ? 'text-teal-deep' : score >= 50 ? 'text-amber-600' : 'text-red-500'
                   return (
                     <tr key={row.id} className="hover:bg-cream transition-colors">
                       <td className="px-5 py-3 font-medium text-ink">{row.name}</td>
-                      <td className="px-5 py-3 text-ink-2">{row.promotion_type ?? '—'}</td>
+                      <td className="px-5 py-3 text-ink-2 capitalize">{row.promotion_type ?? '—'}</td>
                       <td className="px-5 py-3 font-data text-xs text-ink-2">
                         {row.discount_value
                           ? `${row.discount_value}${row.discount_type === 'percentage' ? '%' : '$'}`
                           : '—'}
                       </td>
-                      <td className={`px-5 py-3 text-center font-data font-semibold ${color}`}>
+                      <td className={`px-5 py-3 text-center font-data font-semibold ${scoreColor}`}>
                         {score}
+                      </td>
+                      <td className="px-5 py-3 text-xs text-ink-3 max-w-[200px] truncate">
+                        {row.ai_analysis?.verdict ?? '—'}
                       </td>
                       <td className="px-5 py-3 font-data text-xs text-ink-3">
                         {new Date(row.created_at).toLocaleDateString('en-US', {
