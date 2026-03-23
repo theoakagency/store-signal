@@ -134,7 +134,7 @@ export interface CampaignStatRow {
     opens_unique?: number
     clicks_unique?: number
     unsubscribes?: number
-    revenue?: number
+    conversions_value?: number
     recipients?: number
   }
 }
@@ -147,8 +147,8 @@ export interface FlowStatRow {
     delivered?: number
     opens_unique?: number
     clicks_unique?: number
-    conversions?: number
-    revenue?: number
+    conversions_unique?: number
+    conversions_value?: number
     recipients?: number
   }
 }
@@ -318,7 +318,7 @@ export async function getCampaignStats(
             'opens_unique',
             'clicks_unique',
             'unsubscribes',
-            'revenue',
+            'conversions_value',
           ],
         },
       },
@@ -370,8 +370,8 @@ export async function getFlowStats(
             'delivered',
             'opens_unique',
             'clicks_unique',
-            'conversions',
-            'revenue',
+            'conversions_unique',
+            'conversions_value',
           ],
         },
       },
@@ -452,7 +452,7 @@ export async function getEnrichedCampaigns(apiKey: string): Promise<CampaignWith
       recipient_count: delivered,
       open_rate: delivered > 0 ? opensUnique / delivered : null,
       click_rate: delivered > 0 ? clicksUnique / delivered : null,
-      revenue_attributed: stats.revenue ?? 0,
+      revenue_attributed: stats.conversions_value ?? 0,
       unsubscribe_count: stats.unsubscribes ?? 0,
     }
   })
@@ -481,7 +481,7 @@ export async function getEnrichedFlows(apiKey: string): Promise<FlowWithStats[]>
     const delivered = stats.delivered ?? stats.recipients ?? 0
     const opensUnique = stats.opens_unique ?? 0
     const clicksUnique = stats.clicks_unique ?? 0
-    const conversions = stats.conversions ?? 0
+    const conversions = stats.conversions_unique ?? 0
 
     return {
       id: f.id,
@@ -494,7 +494,7 @@ export async function getEnrichedFlows(apiKey: string): Promise<FlowWithStats[]>
       open_rate: delivered > 0 ? opensUnique / delivered : null,
       click_rate: delivered > 0 ? clicksUnique / delivered : null,
       conversion_rate: delivered > 0 ? conversions / delivered : null,
-      revenue_attributed: stats.revenue ?? 0,
+      revenue_attributed: stats.conversions_value ?? 0,
     }
   })
 }
