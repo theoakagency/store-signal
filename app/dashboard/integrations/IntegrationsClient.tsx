@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 
 interface Props {
   shopifyConnected: boolean
@@ -9,6 +9,8 @@ interface Props {
   lastSyncedAt: string | null
   klaviyoConnected: boolean
   klaviyoAccountId: string | null
+  gscConnected: boolean
+  gscPropertyUrl: string | null
 }
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
@@ -72,6 +74,85 @@ function IntegrationCard({ name, description, logo, status, meta, action }: Inte
         <p className="mt-1 text-xs text-ink-3 leading-relaxed">{description}</p>
         {meta && <p className="mt-1.5 font-data text-xs text-ink-3">{meta}</p>}
         {action && <div className="mt-3">{action}</div>}
+      </div>
+    </div>
+  )
+}
+
+// ── GSC Connect Modal ─────────────────────────────────────────────────────────
+
+function GscModal({ onClose }: { onClose: () => void }) {
+  const [property, setProperty] = useState('https://')
+  const [syncing, setSyncing] = useState(false)
+
+  function handleConnect() {
+    if (!property.trim() || property === 'https://') return
+    setSyncing(true)
+    window.location.href = `/api/gsc/auth?property=${encodeURIComponent(property.trim())}`
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-charcoal/50 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative z-10 w-full max-w-md rounded-2xl bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b border-cream-2 px-6 py-5">
+          <div className="flex items-center gap-3">
+            <div className="h-8 w-8 rounded-lg bg-white border border-cream-2 flex items-center justify-center">
+              <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none">
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z" fill="#4285F4"/>
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z" fill="url(#g1)"/>
+                <circle cx="12" cy="12" r="4" fill="white"/>
+                <defs>
+                  <linearGradient id="g1" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+                    <stop stopColor="#4285F4"/>
+                    <stop offset="0.33" stopColor="#34A853"/>
+                    <stop offset="0.66" stopColor="#FBBC05"/>
+                    <stop offset="1" stopColor="#EA4335"/>
+                  </linearGradient>
+                </defs>
+              </svg>
+            </div>
+            <h2 className="font-display text-lg font-semibold text-ink">Connect Search Console</h2>
+          </div>
+          <button onClick={onClose} className="rounded-lg p-1.5 hover:bg-cream-2 transition text-ink-3">
+            <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M4.293 4.293a1 1 0 0 1 1.414 0L10 8.586l4.293-4.293a1 1 0 1 1 1.414 1.414L11.414 10l4.293 4.293a1 1 0 0 1-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 0 1-1.414-1.414L8.586 10 4.293 5.707a1 1 0 0 1 0-1.414z" clipRule="evenodd" />
+            </svg>
+          </button>
+        </div>
+        <div className="px-6 py-5 space-y-4">
+          <div>
+            <label className="block text-xs font-medium text-ink-2 mb-1">GSC Property URL *</label>
+            <input
+              type="url"
+              value={property}
+              onChange={(e) => setProperty(e.target.value)}
+              placeholder="https://yourstore.com/ or sc-domain:yourstore.com"
+              className="w-full rounded-lg border border-cream-3 bg-cream px-3 py-2 text-sm text-ink focus:border-teal focus:outline-none focus:ring-1 focus:ring-teal transition"
+            />
+            <p className="mt-1 text-xs text-ink-3">
+              Must exactly match the property in Google Search Console. Include trailing slash for URL-prefix properties.
+            </p>
+          </div>
+          <div className="rounded-xl bg-cream border border-cream-2 px-4 py-3 text-xs text-ink-3 space-y-1">
+            <p className="font-medium text-ink-2">Before connecting:</p>
+            <p>1. Open <strong>Google Cloud Console</strong> → OAuth 2.0 credentials</p>
+            <p>2. Add <code className="bg-cream-2 px-1 rounded">https://store-signal.vercel.app/api/gsc/callback</code> as an Authorized Redirect URI</p>
+            <p>3. Ensure the Google account you authorize has access to the GSC property above</p>
+          </div>
+        </div>
+        <div className="flex gap-2 px-6 pb-5">
+          <button onClick={onClose} className="flex-1 rounded-lg border border-cream-3 px-4 py-2.5 text-sm font-medium text-ink-2 hover:bg-cream transition">
+            Cancel
+          </button>
+          <button
+            onClick={handleConnect}
+            disabled={syncing || !property.trim() || property === 'https://'}
+            className="flex-1 rounded-lg bg-[#4285F4] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#3367d6] transition disabled:opacity-50"
+          >
+            {syncing ? 'Redirecting…' : 'Connect with Google'}
+          </button>
+        </div>
       </div>
     </div>
   )
@@ -261,9 +342,35 @@ export default function IntegrationsClient({
   lastSyncedAt,
   klaviyoConnected,
   klaviyoAccountId,
+  gscConnected,
+  gscPropertyUrl,
 }: Props) {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [showKlaviyoModal, setShowKlaviyoModal] = useState(false)
+  const [showGscModal, setShowGscModal] = useState(false)
+  const [disconnectingGsc, setDisconnectingGsc] = useState(false)
+
+  // Handle OAuth callback toasts
+  useEffect(() => {
+    if (searchParams.get('gsc_connected')) {
+      showToast('Google Search Console connected! Running first sync…')
+      fetch('/api/gsc/sync', { method: 'POST' }).catch(() => null)
+      router.replace('/dashboard/integrations')
+    }
+    const gscError = searchParams.get('gsc_error')
+    if (gscError) {
+      showToast(`GSC error: ${decodeURIComponent(gscError)}`)
+      router.replace('/dashboard/integrations')
+    }
+  }, [searchParams, router])
+
+  async function handleGscDisconnect() {
+    setDisconnectingGsc(true)
+    await fetch('/api/gsc/disconnect', { method: 'DELETE' })
+    router.refresh()
+    setDisconnectingGsc(false)
+  }
 
   const lastSync = lastSyncedAt
     ? new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
@@ -281,6 +388,7 @@ export default function IntegrationsClient({
       {showKlaviyoModal && (
         <KlaviyoModal onClose={() => setShowKlaviyoModal(false)} onSuccess={handleKlaviyoSuccess} />
       )}
+      {showGscModal && <GscModal onClose={() => setShowGscModal(false)} />}
 
       <div className="space-y-8">
         {/* E-Commerce */}
@@ -376,14 +484,50 @@ export default function IntegrationsClient({
           </div>
         </section>
 
-        {/* Analytics */}
+        {/* Analytics & Search */}
         <section>
-          <h2 className="font-display text-base font-semibold text-ink mb-3">Analytics</h2>
+          <h2 className="font-display text-base font-semibold text-ink mb-3">Analytics & Search</h2>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {/* Google Search Console — live */}
+            <IntegrationCard
+              name="Google Search Console"
+              description="Sync keyword rankings, click trends, and page performance. Unlocks Search Intelligence in the sidebar."
+              logo={
+                <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none">
+                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z" fill="#4285F4"/>
+                  <circle cx="12" cy="12" r="4" fill="white"/>
+                  <path d="M21.17 10.5H12v3h5.25C16.69 16.19 14.58 17.5 12 17.5a5.5 5.5 0 0 1 0-11 5.44 5.44 0 0 1 3.54 1.31l2.12-2.12A8.5 8.5 0 1 0 20.5 12c0-.51-.05-1.01-.14-1.5h.81z" fill="#34A853"/>
+                </svg>
+              }
+              status={gscConnected ? 'connected' : 'not_connected'}
+              meta={gscConnected ? gscPropertyUrl ?? 'Property connected' : undefined}
+              action={
+                gscConnected ? (
+                  <div className="flex items-center gap-3">
+                    <a href="/dashboard/search" className="text-xs text-teal hover:text-teal-dark font-medium transition">
+                      View dashboard →
+                    </a>
+                    <button
+                      onClick={handleGscDisconnect}
+                      disabled={disconnectingGsc}
+                      className="text-xs text-ink-3 hover:text-red-500 transition"
+                    >
+                      {disconnectingGsc ? 'Disconnecting…' : 'Disconnect'}
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setShowGscModal(true)}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-[#4285F4] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#3367d6] transition"
+                  >
+                    Connect with Google
+                  </button>
+                )
+              }
+            />
             {[
               { name: 'Google Analytics 4', desc: 'Cross-reference session data with order revenue.' },
               { name: 'Triple Whale', desc: 'Import ROAS and attributed revenue from paid channels.' },
-              { name: 'Northbeam', desc: 'Multi-touch attribution data alongside CRM analytics.' },
             ].map((i) => (
               <IntegrationCard
                 key={i.name}

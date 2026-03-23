@@ -17,7 +17,7 @@ export default async function DashboardLayout({
 
   const { data: store } = await supabase
     .from('stores')
-    .select('last_synced_at, klaviyo_api_key')
+    .select('last_synced_at, klaviyo_api_key, gsc_refresh_token')
     .eq('id', '00000000-0000-0000-0000-000000000002')
     .single()
 
@@ -26,6 +26,7 @@ export default async function DashboardLayout({
       userEmail={user.email ?? ''}
       lastSyncedAt={store?.last_synced_at ?? null}
       klaviyoConnected={!!store?.klaviyo_api_key}
+      gscConnected={!!store?.gsc_refresh_token}
     >
       {children}
     </DashboardShell>

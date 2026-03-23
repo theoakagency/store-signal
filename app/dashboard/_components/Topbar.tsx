@@ -9,6 +9,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/dashboard/customers': 'Customer Intelligence',
   '/dashboard/promotions': 'Promotion Scorer',
   '/dashboard/klaviyo': 'Email Intelligence',
+  '/dashboard/search': 'Search Intelligence',
   '/dashboard/integrations': 'Integrations',
 }
 

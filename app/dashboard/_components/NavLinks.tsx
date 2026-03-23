@@ -58,9 +58,11 @@ const mainLinks = [
 export default function NavLinks({
   onNavigate,
   klaviyoConnected,
+  gscConnected,
 }: {
   onNavigate?: () => void
   klaviyoConnected?: boolean
+  gscConnected?: boolean
 }) {
   const pathname = usePathname()
 
@@ -98,6 +100,19 @@ export default function NavLinks({
         </svg>
         Email / Klaviyo
         <span className={`ml-auto h-1.5 w-1.5 rounded-full ${klaviyoConnected ? 'bg-teal' : 'bg-cream/20'}`} />
+      </Link>
+
+      <Link
+        href="/dashboard/search"
+        onClick={onNavigate}
+        className={`nav-link ${pathname.startsWith('/dashboard/search') ? 'active' : ''}`}
+      >
+        <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+          <circle cx="6.5" cy="6.5" r="4" />
+          <path d="M10 10l3.5 3.5" strokeLinecap="round" />
+        </svg>
+        Search / GSC
+        <span className={`ml-auto h-1.5 w-1.5 rounded-full ${gscConnected ? 'bg-teal' : 'bg-cream/20'}`} />
       </Link>
     </nav>
   )
