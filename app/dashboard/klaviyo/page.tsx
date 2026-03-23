@@ -26,7 +26,10 @@ export default async function KlaviyoPage() {
       .from('klaviyo_campaigns')
       .select('id, name, subject, status, send_time, recipient_count, open_rate, click_rate, revenue_attributed, unsubscribe_count, created_at')
       .eq('tenant_id', TENANT_ID)
-      .order('revenue_attributed', { ascending: false }),
+      .eq('status', 'Sent')
+      .gt('recipient_count', 0)
+      .order('revenue_attributed', { ascending: false })
+      .limit(100),
     supabase
       .from('klaviyo_flows')
       .select('id, name, status, trigger_type, recipient_count, open_rate, click_rate, conversion_rate, revenue_attributed, created_at')
