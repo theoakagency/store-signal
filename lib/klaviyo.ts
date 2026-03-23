@@ -239,11 +239,11 @@ export async function getAccount(apiKey: string): Promise<KlaviyoAccount> {
   return res.data[0]
 }
 
-/** Fetch all email campaigns (excludes SMS). */
+/** Fetch all campaigns (email + SMS). We filter to email-only after fetching. */
 export async function getCampaigns(apiKey: string): Promise<KlaviyoCampaign[]> {
   return fetchAllPages<KlaviyoCampaign>(
     apiKey,
-    `/campaigns/?filter=equals(messages.channel,'email')&sort=-created_at`
+    `/campaigns/?sort=-created_at`
   )
 }
 
@@ -308,7 +308,6 @@ export async function getCampaignStats(
             end: endDate.toISOString(),
           },
           conversion_metric_id: conversionMetricId,
-          filter: "equals(send_channel,'email')",
         },
       },
     }
