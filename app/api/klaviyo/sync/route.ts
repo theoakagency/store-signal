@@ -34,13 +34,11 @@ export async function POST(req: NextRequest) {
     campaigns: 0,
     flows: 0,
     errors: [] as string[],
-    debug: {} as Record<string, unknown>,
   }
 
   // ── Sync campaigns ────────────────────────────────────────────────────────────
   try {
     const campaigns = await getEnrichedCampaigns(apiKey)
-    results.debug = { campaignCount: campaigns.length, firstCampaign: campaigns[0] ?? null }
     const rows = campaigns.map((c) => ({
       id: c.id,
       tenant_id: TENANT_ID,
