@@ -34,11 +34,33 @@ export async function POST(req: NextRequest) {
     campaigns: 0,
     flows: 0,
     errors: [] as string[],
+    detail: {} as Record<string, unknown>,
+  }
+
+  // ── Write sync_log entry ──────────────────────────────────────────────────────
+  const { data: logRow } = await service
+    .from('sync_log')
+    .insert({
+      tenant_id: TENANT_ID,
+      store_id: STORE_ID,
+      sync_type: 'klaviyo',
+      status: 'running',
+      metadata: { started: new Date().toISOString() },
+    })
+    .select('id')
+    .single()
+  const logId = logRow?.id ?? null
+
+  async function updateLog(patch: Record<string, unknown>) {
+    if (!logId) return
+    await service.from('sync_log').update(patch).eq('id', logId)
   }
 
   // ── Sync campaigns ────────────────────────────────────────────────────────────
   try {
+    await updateLog({ metadata: { stage: 'fetching_campaigns' } })
     const campaigns = await getEnrichedCampaigns(apiKey)
+    results.detail = { campaignCount: campaigns.length }
     const rows = campaigns.map((c) => ({
       id: c.id,
       tenant_id: TENANT_ID,
@@ -128,11 +150,14 @@ export async function POST(req: NextRequest) {
         { onConflict: 'tenant_id,metric_name' }
       )
   } catch (err) {
-    results.errors.push(`Campaigns: ${(err as Error).message}`)
+    const msg = (err as Error).message
+    results.errors.push(`Campaigns: ${msg}`)
+    await updateLog({ metadata: { stage: 'campaigns_failed', error: msg } })
   }
 
   // ── Sync flows ────────────────────────────────────────────────────────────────
   try {
+    await updateLog({ metadata: { stage: 'fetching_flows', campaigns_synced: results.campaigns } })
     const flows = await getEnrichedFlows(apiKey)
     const rows = flows.map((f) => ({
       id: f.id,
@@ -200,8 +225,21 @@ export async function POST(req: NextRequest) {
         { onConflict: 'tenant_id,metric_name' }
       )
   } catch (err) {
-    results.errors.push(`Flows: ${(err as Error).message}`)
+    const msg = (err as Error).message
+    results.errors.push(`Flows: ${msg}`)
+    await updateLog({ metadata: { stage: 'flows_failed', error: msg } })
   }
+
+  // ── Finalize sync_log ─────────────────────────────────────────────────────────
+  await updateLog({
+    status: results.errors.length > 0 ? 'partial' : 'success',
+    completed_at: new Date().toISOString(),
+    metadata: {
+      campaigns_synced: results.campaigns,
+      flows_synced: results.flows,
+      errors: results.errors,
+    },
+  })
 
   const status = results.errors.length > 0 ? 207 : 200
   return Response.json(results, { status })

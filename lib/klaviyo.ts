@@ -191,28 +191,47 @@ export interface ListSummary {
 
 // ── HTTP helper ───────────────────────────────────────────────────────────────
 
+async function sleep(ms: number) {
+  return new Promise((r) => setTimeout(r, ms))
+}
+
 async function kv<T>(
   apiKey: string,
   path: string,
-  options?: RequestInit
+  options?: RequestInit,
+  _retries = 4
 ): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    ...options,
-    headers: {
-      Authorization: `Klaviyo-API-Key ${apiKey}`,
-      revision: REVISION,
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-      ...(options?.headers ?? {}),
-    },
-  })
+  for (let attempt = 0; attempt < _retries; attempt++) {
+    const res = await fetch(`${BASE}${path}`, {
+      ...options,
+      headers: {
+        Authorization: `Klaviyo-API-Key ${apiKey}`,
+        revision: REVISION,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        ...(options?.headers ?? {}),
+      },
+    })
 
-  if (!res.ok) {
-    const body = await res.text().catch(() => '')
-    throw new Error(`Klaviyo API ${res.status} on ${path}: ${body.slice(0, 300)}`)
+    if (res.status === 429) {
+      // Respect Retry-After header if present, otherwise back off exponentially
+      const retryAfter = res.headers.get('Retry-After')
+      const waitMs = retryAfter ? parseInt(retryAfter) * 1000 : 1000 * Math.pow(2, attempt)
+      if (attempt < _retries - 1) {
+        await sleep(waitMs)
+        continue
+      }
+      throw new Error(`Klaviyo API rate limited on ${path} after ${_retries} attempts`)
+    }
+
+    if (!res.ok) {
+      const body = await res.text().catch(() => '')
+      throw new Error(`Klaviyo API ${res.status} on ${path}: ${body.slice(0, 400)}`)
+    }
+
+    return res.json() as Promise<T>
   }
-
-  return res.json() as Promise<T>
+  throw new Error(`Klaviyo API failed after ${_retries} attempts on ${path}`)
 }
 
 /** Fetches all pages of a paginated GET endpoint. */
@@ -222,13 +241,17 @@ async function fetchAllPages<T>(
 ): Promise<T[]> {
   const items: T[] = []
   let path: string | null = firstPath
+  let pageNum = 0
 
   while (path) {
+    pageNum++
     // Klaviyo next links are full URLs — strip the base for our helper
     const relPath: string = path.startsWith('https://') ? path.replace('https://a.klaviyo.com/api', '') : path
     const page = await kv<KlaviyoPage<T>>(apiKey, relPath)
     items.push(...page.data)
     path = page.links?.next ?? null
+    // Small delay between pages to avoid rate limits
+    if (path) await sleep(200)
   }
 
   return items
@@ -416,22 +439,27 @@ export async function getEnrichedCampaigns(apiKey: string): Promise<CampaignWith
     ? await getCampaignStats(apiKey, metricId, startDate, endDate)
     : {}
 
-  // Fetch subject lines for sent campaigns (first message per campaign)
+  // Fetch subject lines for sent campaigns in batches to avoid rate limits
   const subjectMap: Record<string, string> = {}
   const sentCampaigns = campaigns.filter((c) => c.attributes.status === 'Sent' || c.attributes.status === 'sent')
+  const BATCH = 5
 
-  await Promise.allSettled(
-    sentCampaigns.slice(0, 50).map(async (c) => {
-      try {
-        const msgs = await getCampaignMessages(apiKey, c.id)
-        if (msgs[0]?.attributes.subject) {
-          subjectMap[c.id] = msgs[0].attributes.subject
+  for (let i = 0; i < Math.min(sentCampaigns.length, 100); i += BATCH) {
+    const batch = sentCampaigns.slice(i, i + BATCH)
+    await Promise.allSettled(
+      batch.map(async (c) => {
+        try {
+          const msgs = await getCampaignMessages(apiKey, c.id)
+          if (msgs[0]?.attributes.subject) {
+            subjectMap[c.id] = msgs[0].attributes.subject
+          }
+        } catch {
+          // best-effort
         }
-      } catch {
-        // best-effort
-      }
-    })
-  )
+      })
+    )
+    if (i + BATCH < sentCampaigns.length) await sleep(300)
+  }
 
   return campaigns.map((c) => {
     const stats = statsMap[c.id] ?? {}
