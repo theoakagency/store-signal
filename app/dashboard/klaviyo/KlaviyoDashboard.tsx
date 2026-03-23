@@ -51,6 +51,15 @@ interface Insight {
   action: string
 }
 
+interface FlowInsight {
+  priority: number
+  title: string
+  category: 'inactive_flows' | 'zero_revenue_flows' | 'winback_gap'
+  revenue_opportunity: string
+  action: string
+  rationale: string
+}
+
 // ── Formatters ────────────────────────────────────────────────────────────────
 
 function usd(n: number) {
@@ -209,6 +218,8 @@ export default function KlaviyoDashboard({ connected, campaigns, flows, metrics 
   const [syncing, setSyncing] = useState(false)
   const [activeTab, setActiveTab] = useState<'campaigns' | 'flows'>('campaigns')
   const [page, setPage] = useState(0)
+  const [flowInsights, setFlowInsights] = useState<FlowInsight[]>([])
+  const [flowInsightsState, setFlowInsightsState] = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
 
   const noData = campaigns.length === 0 && flows.length === 0
 
@@ -227,6 +238,18 @@ export default function KlaviyoDashboard({ connected, campaigns, flows, metrics 
       setInsightsState('done')
     } catch {
       setInsightsState('error')
+    }
+  }
+
+  async function loadFlowInsights() {
+    setFlowInsightsState('loading')
+    try {
+      const res = await fetch('/api/klaviyo/flow-analysis')
+      const data = await res.json()
+      setFlowInsights(data.insights ?? [])
+      setFlowInsightsState('done')
+    } catch {
+      setFlowInsightsState('error')
     }
   }
 
@@ -250,11 +273,16 @@ export default function KlaviyoDashboard({ connected, campaigns, flows, metrics 
   const avgClickRate = m('avg_campaign_click_rate')
   const estUnsubCost = m('estimated_unsubscribe_cost')
 
-  // Broadcast vs Flow comparison — use cached totals for accurate RPR
+  // Broadcast vs Flow comparison — use cached totals for accurate RPR, fall back to array sums
   const broadcastRevenue = m('total_campaign_revenue')
   const flowRevenue = m('total_flow_revenue')
-  const totalCampaignRecip = m('total_campaign_recipients')
-  const totalFlowRecip = m('total_flow_recipients')
+  const totalCampaignRecip = m('total_campaign_recipients') || campaigns.reduce((s, c) => s + c.recipient_count, 0)
+  const totalFlowRecip = m('total_flow_recipients') || flows.reduce((s, f) => s + f.recipient_count, 0)
+
+  // Flow health buckets
+  const activeEarningFlows = flows.filter(f => f.recipient_count > 0 && f.revenue_attributed > 0)
+  const activeNoRevenueFlows = flows.filter(f => f.recipient_count > 0 && f.revenue_attributed <= 0)
+  const inactiveFlows = flows.filter(f => f.recipient_count === 0)
   const broadcastRPR = totalCampaignRecip > 0 ? broadcastRevenue / totalCampaignRecip : 0
   const flowRPR = totalFlowRecip > 0 ? flowRevenue / totalFlowRecip : 0
   const rprMultiplier = broadcastRPR > 0 && flowRPR > 0
@@ -422,32 +450,147 @@ export default function KlaviyoDashboard({ connected, campaigns, flows, metrics 
 
             {/* Flows tab */}
             {activeTab === 'flows' && (
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-cream-2 text-xs font-medium text-ink-3">
-                      <th className="px-5 py-2.5 text-left">Flow Name</th>
-                      <th className="px-5 py-2.5 text-left">Trigger</th>
-                      <th className="px-5 py-2.5 text-right">Recipients</th>
-                      <th className="px-5 py-2.5 text-right">Open Rate</th>
-                      <th className="px-5 py-2.5 text-right">Click Rate</th>
-                      <th className="px-5 py-2.5 text-right">Revenue</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-cream-2">
-                    {flows.map((f) => (
-                      <tr key={f.id} className="hover:bg-cream transition-colors">
-                        <td className="px-5 py-3 font-medium text-ink">{f.name}</td>
-                        <td className="px-5 py-3 text-xs text-ink-3 capitalize">{f.trigger_type?.replace(/_/g, ' ') ?? '—'}</td>
-                        <td className="px-5 py-3 font-data text-xs text-right text-ink-2">{f.recipient_count.toLocaleString()}</td>
-                        <td className="px-5 py-3 font-data text-xs text-right text-ink-2">{pct(f.open_rate)}</td>
-                        <td className="px-5 py-3 font-data text-xs text-right text-ink-2">{pct(f.click_rate)}</td>
-                        <td className="px-5 py-3 font-data text-xs text-right font-medium text-ink">{usd(f.revenue_attributed)}</td>
+              <>
+                {/* Flow Health Analysis */}
+                <div className="border-b border-cream-2 px-5 py-4">
+                  <h3 className="font-display text-sm font-semibold text-ink mb-3">Flow Health Analysis</h3>
+                  <div className="grid grid-cols-3 gap-3">
+                    {/* Active & Earning */}
+                    <div className="rounded-xl bg-teal-pale border border-teal/20 px-4 py-3">
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <span className="h-2 w-2 rounded-full bg-teal shrink-0" />
+                        <p className="font-data text-xs text-teal-deep font-medium uppercase tracking-wide">Active & Earning</p>
+                      </div>
+                      <p className="font-display text-2xl font-semibold text-ink">{activeEarningFlows.length}</p>
+                      <p className="font-data text-xs text-ink-3 mt-0.5">
+                        {usd(activeEarningFlows.reduce((s, f) => s + f.revenue_attributed, 0))} total
+                      </p>
+                    </div>
+
+                    {/* Active, No Revenue */}
+                    <div className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3">
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <span className="h-2 w-2 rounded-full bg-amber-400 shrink-0" />
+                        <p className="font-data text-xs text-amber-700 font-medium uppercase tracking-wide">Active, No Revenue</p>
+                      </div>
+                      <p className="font-display text-2xl font-semibold text-ink">{activeNoRevenueFlows.length}</p>
+                      <p className="font-data text-xs text-ink-3 mt-0.5">receiving traffic</p>
+                    </div>
+
+                    {/* Inactive */}
+                    <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3">
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-1.5 py-0.5">
+                          <span className="h-1.5 w-1.5 rounded-full bg-red-500 shrink-0" />
+                          <span className="font-data text-xs text-red-600 font-medium uppercase tracking-wide">Inactive</span>
+                        </span>
+                      </div>
+                      <p className="font-display text-2xl font-semibold text-ink">{inactiveFlows.length}</p>
+                      <p className="font-data text-xs text-ink-3 mt-0.5">zero recipients</p>
+                    </div>
+                  </div>
+
+                  {/* AI Flow Insights */}
+                  <div className="mt-4">
+                    {flowInsightsState === 'idle' && (
+                      <button
+                        onClick={loadFlowInsights}
+                        className="w-full rounded-xl border border-dashed border-cream-3 bg-cream px-4 py-3 text-sm text-ink-3 hover:bg-cream-2 hover:text-ink-2 transition text-left"
+                      >
+                        <span className="font-medium text-teal-deep">Analyze flow opportunities →</span>
+                        <span className="ml-2 text-xs">AI identifies top 3 recovery actions</span>
+                      </button>
+                    )}
+                    {flowInsightsState === 'loading' && (
+                      <div className="rounded-xl border border-cream-3 bg-cream px-4 py-4 space-y-2">
+                        {[1, 2, 3].map(i => (
+                          <div key={i} className="flex gap-3 items-start">
+                            <div className="skeleton h-5 w-5 rounded-full shrink-0 mt-0.5" />
+                            <div className="flex-1 space-y-1.5">
+                              <div className="skeleton h-3 w-2/5" />
+                              <div className="skeleton h-3 w-full" />
+                              <div className="skeleton h-3 w-3/4" />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {flowInsightsState === 'done' && flowInsights.length > 0 && (
+                      <div className="rounded-xl border border-cream-3 bg-white divide-y divide-cream-2 overflow-hidden">
+                        {flowInsights.map((insight, i) => {
+                          const catColors = {
+                            inactive_flows: { dot: 'bg-red-400', badge: 'bg-red-50 text-red-700' },
+                            zero_revenue_flows: { dot: 'bg-amber-400', badge: 'bg-amber-50 text-amber-700' },
+                            winback_gap: { dot: 'bg-teal', badge: 'bg-teal-pale text-teal-deep' },
+                          }
+                          const c = catColors[insight.category] ?? catColors.inactive_flows
+                          return (
+                            <div key={i} className="px-4 py-3.5">
+                              <div className="flex items-start gap-3">
+                                <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${c.dot}`} />
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 flex-wrap mb-1">
+                                    <span className="font-semibold text-sm text-ink">{insight.title}</span>
+                                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${c.badge}`}>
+                                      {insight.revenue_opportunity}
+                                    </span>
+                                  </div>
+                                  <p className="text-xs text-ink-2 leading-relaxed mb-1.5">{insight.rationale}</p>
+                                  <p className="text-xs font-medium text-teal-deep">→ {insight.action}</p>
+                                </div>
+                              </div>
+                            </div>
+                          )
+                        })}
+                        <div className="px-4 py-2 bg-cream flex justify-end">
+                          <button onClick={loadFlowInsights} className="text-xs text-ink-3 hover:text-ink transition">Regenerate</button>
+                        </div>
+                      </div>
+                    )}
+                    {flowInsightsState === 'error' && (
+                      <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-700">
+                        Failed to generate analysis. Check your ANTHROPIC_API_KEY.
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Flows table */}
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-cream-2 text-xs font-medium text-ink-3">
+                        <th className="px-5 py-2.5 text-left">Flow Name</th>
+                        <th className="px-5 py-2.5 text-left">Trigger</th>
+                        <th className="px-5 py-2.5 text-right">Recipients</th>
+                        <th className="px-5 py-2.5 text-right">Open Rate</th>
+                        <th className="px-5 py-2.5 text-right">Click Rate</th>
+                        <th className="px-5 py-2.5 text-right">Revenue</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody className="divide-y divide-cream-2">
+                      {flows.map((f) => {
+                        const isInactive = f.recipient_count === 0
+                        return (
+                          <tr key={f.id} className={`transition-colors ${isInactive ? 'opacity-50 hover:opacity-75' : 'hover:bg-cream'}`}>
+                            <td className="px-5 py-3 font-medium text-ink">
+                              <div className="flex items-center gap-2">
+                                {isInactive && <span className="h-1.5 w-1.5 rounded-full bg-red-400 shrink-0" />}
+                                {f.name}
+                              </div>
+                            </td>
+                            <td className="px-5 py-3 text-xs text-ink-3 capitalize">{f.trigger_type?.replace(/_/g, ' ') ?? '—'}</td>
+                            <td className="px-5 py-3 font-data text-xs text-right text-ink-2">{f.recipient_count.toLocaleString()}</td>
+                            <td className="px-5 py-3 font-data text-xs text-right text-ink-2">{pct(f.open_rate)}</td>
+                            <td className="px-5 py-3 font-data text-xs text-right text-ink-2">{pct(f.click_rate)}</td>
+                            <td className="px-5 py-3 font-data text-xs text-right font-medium text-ink">{usd(f.revenue_attributed)}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             )}
           </section>
 
