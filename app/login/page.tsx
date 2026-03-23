@@ -7,7 +7,6 @@ export const metadata = {
 }
 
 export default async function LoginPage() {
-  // Already authenticated → go straight to dashboard
   const supabase = await createSupabaseServerClient()
   const {
     data: { user },
@@ -16,23 +15,23 @@ export default async function LoginPage() {
   if (user) redirect('/dashboard')
 
   return (
-    <main className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
+    <main className="min-h-screen bg-charcoal flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
-        {/* Logo / wordmark */}
+        {/* Logo */}
         <div className="mb-8 text-center">
-          <span className="inline-block text-2xl font-bold tracking-tight text-gray-900">
-            Store<span className="text-indigo-600">Signal</span>
+          <span className="font-display text-3xl font-semibold text-cream">
+            Store<span className="text-teal">Signal</span>
           </span>
-          <p className="mt-1 text-sm text-gray-500">Business intelligence for Shopify</p>
+          <p className="mt-2 text-sm text-cream/50">Business intelligence for Shopify brands</p>
         </div>
 
         {/* Card */}
-        <div className="rounded-2xl border border-gray-200 bg-white px-8 py-8 shadow-sm">
-          <h1 className="mb-6 text-lg font-semibold text-gray-900">Sign in to your account</h1>
+        <div className="rounded-2xl border border-white/[0.08] bg-charcoal-800 px-8 py-8 shadow-xl">
+          <h1 className="mb-6 font-display text-lg font-semibold text-cream">Sign in to your account</h1>
           <LoginForm />
         </div>
 
-        <p className="mt-6 text-center text-xs text-gray-400">
+        <p className="mt-6 text-center font-data text-xs text-cream/30">
           LashBox LA &mdash; Powered by Store Signal
         </p>
       </div>

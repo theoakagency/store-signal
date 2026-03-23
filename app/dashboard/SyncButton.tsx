@@ -29,33 +29,33 @@ export default function SyncButton() {
       router.refresh()
     } catch {
       setState('error')
-      setSummary('Network error — check console')
+      setSummary('Network error')
     }
   }
 
   return (
-    <div className="flex items-center gap-3">
+    <div className="flex items-center gap-2">
       {summary && (
-        <span className={`text-xs ${state === 'error' ? 'text-red-500' : 'text-gray-500'}`}>
-          {state === 'done' ? `Synced ${summary}` : summary}
+        <span className={`hidden sm:block text-xs font-data ${state === 'error' ? 'text-red-400' : 'text-teal'}`}>
+          {state === 'done' ? `✓ ${summary}` : summary}
         </span>
       )}
       <button
         onClick={handleSync}
         disabled={state === 'syncing'}
-        className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition"
+        className="flex items-center gap-1.5 rounded-lg border border-cream-3 bg-white px-2.5 py-1.5 text-xs font-medium text-ink-2 shadow-sm hover:bg-cream disabled:opacity-50 disabled:cursor-not-allowed transition"
       >
         {state === 'syncing' ? (
           <>
-            <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-gray-300 border-t-indigo-600" />
+            <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-cream-3 border-t-teal" />
             Syncing…
           </>
         ) : (
           <>
             <svg className="h-3 w-3" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-              <path d="M13.5 2.5A6.5 6.5 0 1 1 7 1M13.5 2.5V6M13.5 2.5H10" strokeLinecap="round" strokeLinejoin="round"/>
+              <path d="M13.5 2.5A6.5 6.5 0 1 1 7 1M13.5 2.5V6M13.5 2.5H10" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
-            Sync now
+            Sync
           </>
         )}
       </button>
