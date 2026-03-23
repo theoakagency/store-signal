@@ -221,7 +221,7 @@ async function fetchAllPages<T>(
 
   while (path) {
     // Klaviyo next links are full URLs — strip the base for our helper
-    const relPath: string = path.startsWith('https://') ? path.replace('https://a.klaviyo.com', '') : path
+    const relPath: string = path.startsWith('https://') ? path.replace('https://a.klaviyo.com/api', '') : path
     const page = await kv<KlaviyoPage<T>>(apiKey, relPath)
     items.push(...page.data)
     path = page.links?.next ?? null
@@ -239,11 +239,11 @@ export async function getAccount(apiKey: string): Promise<KlaviyoAccount> {
   return res.data[0]
 }
 
-/** Fetch all campaigns (email + SMS). We filter to email-only after fetching. */
+/** Fetch all email campaigns. */
 export async function getCampaigns(apiKey: string): Promise<KlaviyoCampaign[]> {
   return fetchAllPages<KlaviyoCampaign>(
     apiKey,
-    `/campaigns/?sort=-created_at`
+    `/campaigns/?filter=equals(messages.channel,'email')&sort=-created_at`
   )
 }
 
