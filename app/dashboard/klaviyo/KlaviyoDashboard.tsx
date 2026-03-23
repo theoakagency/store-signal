@@ -200,11 +200,15 @@ function NotConnected() {
 
 // ── Main dashboard component ──────────────────────────────────────────────────
 
+const PAGE_SIZE = 25
+
 export default function KlaviyoDashboard({ connected, campaigns, flows, metrics }: Props) {
   const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(null)
   const [insights, setInsights] = useState<Insight[]>([])
   const [insightsState, setInsightsState] = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
   const [syncing, setSyncing] = useState(false)
+  const [activeTab, setActiveTab] = useState<'campaigns' | 'flows'>('campaigns')
+  const [page, setPage] = useState(0)
 
   const noData = campaigns.length === 0 && flows.length === 0
 
@@ -313,101 +317,134 @@ export default function KlaviyoDashboard({ connected, campaigns, flows, metrics 
             />
           </div>
 
-          {/* Campaign ROI table */}
+          {/* Tabbed campaigns / flows table */}
           <section className="rounded-2xl border border-cream-3 bg-white shadow-sm overflow-hidden">
-            <div className="flex items-center justify-between border-b border-cream-2 px-5 py-3.5">
-              <h2 className="font-display text-sm font-semibold text-ink">Campaign ROI</h2>
-              <span className="font-data text-xs text-ink-3">{campaigns.length} campaigns · click for details</span>
+            {/* Tab bar */}
+            <div className="flex items-center gap-1 border-b border-cream-2 px-4 pt-3">
+              {(['campaigns', 'flows'] as const).map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => { setActiveTab(tab); setPage(0) }}
+                  className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-colors ${
+                    activeTab === tab
+                      ? 'bg-white border border-b-white border-cream-2 -mb-px text-ink'
+                      : 'text-ink-3 hover:text-ink-2'
+                  }`}
+                >
+                  {tab === 'campaigns' ? `Campaigns (${campaigns.length})` : `Flows (${flows.length})`}
+                </button>
+              ))}
             </div>
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-sm">
-                <thead>
-                  <tr className="border-b border-cream-2 text-xs font-medium text-ink-3">
-                    <th className="px-5 py-2.5 text-left">Campaign</th>
-                    <th className="px-5 py-2.5 text-left">Date</th>
-                    <th className="px-5 py-2.5 text-right">Recipients</th>
-                    <th className="px-5 py-2.5 text-right">Open</th>
-                    <th className="px-5 py-2.5 text-right">Click</th>
-                    <th className="px-5 py-2.5 text-right">Revenue</th>
-                    <th className="px-5 py-2.5 text-right">Est. Cost</th>
-                    <th className="px-5 py-2.5 text-right">Net ROI</th>
-                    <th className="px-5 py-2.5 text-center">Score</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-cream-2">
-                  {campaigns.map((c) => {
-                    const estCost = c.recipient_count * 0.002
-                    const netROI = c.revenue_attributed - estCost
-                    const roiRatio = estCost > 0 ? netROI / estCost : 0
-                    return (
-                      <tr
-                        key={c.id}
-                        className="hover:bg-cream transition-colors cursor-pointer"
-                        onClick={() => setSelectedCampaign(c)}
-                      >
-                        <td className="px-5 py-3 max-w-[180px]">
-                          <p className="font-medium text-ink truncate">{c.name}</p>
-                          {c.subject && <p className="text-xs text-ink-3 truncate italic">{c.subject}</p>}
-                        </td>
-                        <td className="px-5 py-3 font-data text-xs text-ink-2 whitespace-nowrap">{fmtDate(c.send_time)}</td>
-                        <td className="px-5 py-3 font-data text-xs text-right text-ink-2">{c.recipient_count.toLocaleString()}</td>
-                        <td className="px-5 py-3 font-data text-xs text-right text-ink-2">{pct(c.open_rate)}</td>
-                        <td className="px-5 py-3 font-data text-xs text-right text-ink-2">{pct(c.click_rate)}</td>
-                        <td className="px-5 py-3 font-data text-xs text-right font-medium text-ink">{usd(c.revenue_attributed)}</td>
-                        <td className="px-5 py-3 font-data text-xs text-right text-ink-3">{usd(estCost)}</td>
-                        <td className={`px-5 py-3 font-data text-xs text-right font-semibold ${netROI >= 0 ? 'text-teal-deep' : 'text-red-500'}`}>
-                          {netROI >= 0 ? '+' : ''}{usd(netROI)}
-                        </td>
-                        <td className="px-5 py-3 text-center">
-                          <ROIBadge roi={roiRatio} />
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </section>
 
-          {/* Flow performance table */}
-          <section className="rounded-2xl border border-cream-3 bg-white shadow-sm overflow-hidden">
-            <div className="flex items-center justify-between border-b border-cream-2 px-5 py-3.5">
-              <h2 className="font-display text-sm font-semibold text-ink">Automated Flows</h2>
-              <span className="font-data text-xs text-ink-3">{flows.length} flows</span>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-sm">
-                <thead>
-                  <tr className="border-b border-cream-2 text-xs font-medium text-ink-3">
-                    <th className="px-5 py-2.5 text-left">Flow Name</th>
-                    <th className="px-5 py-2.5 text-left">Trigger</th>
-                    <th className="px-5 py-2.5 text-right">Recipients</th>
-                    <th className="px-5 py-2.5 text-right">Open Rate</th>
-                    <th className="px-5 py-2.5 text-right">Click Rate</th>
-                    <th className="px-5 py-2.5 text-right">Conversion</th>
-                    <th className="px-5 py-2.5 text-right">Revenue</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-cream-2">
-                  {flows.map((f) => {
-                    const highConversion = (f.conversion_rate ?? 0) > 0.05
-                    return (
-                      <tr key={f.id} className={`transition-colors ${highConversion ? 'bg-teal-pale/30 hover:bg-teal-pale/50' : 'hover:bg-cream'}`}>
+            {/* Campaigns tab */}
+            {activeTab === 'campaigns' && (() => {
+              const totalPages = Math.ceil(campaigns.length / PAGE_SIZE)
+              const paginated = campaigns.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
+              return (
+                <>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-cream-2 text-xs font-medium text-ink-3">
+                          <th className="px-5 py-2.5 text-left">Campaign</th>
+                          <th className="px-5 py-2.5 text-left">Date</th>
+                          <th className="px-5 py-2.5 text-right">Recipients</th>
+                          <th className="px-5 py-2.5 text-right">Open</th>
+                          <th className="px-5 py-2.5 text-right">Click</th>
+                          <th className="px-5 py-2.5 text-right">Revenue</th>
+                          <th className="px-5 py-2.5 text-right">Est. Cost</th>
+                          <th className="px-5 py-2.5 text-right">Net ROI</th>
+                          <th className="px-5 py-2.5 text-center">Score</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-cream-2">
+                        {paginated.map((c) => {
+                          const estCost = c.recipient_count * 0.002
+                          const netROI = c.revenue_attributed - estCost
+                          const roiRatio = estCost > 0 ? netROI / estCost : 0
+                          return (
+                            <tr
+                              key={c.id}
+                              className="hover:bg-cream transition-colors cursor-pointer"
+                              onClick={() => setSelectedCampaign(c)}
+                            >
+                              <td className="px-5 py-3 max-w-[180px]">
+                                <p className="font-medium text-ink truncate">{c.name}</p>
+                                {c.subject && <p className="text-xs text-ink-3 truncate italic">{c.subject}</p>}
+                              </td>
+                              <td className="px-5 py-3 font-data text-xs text-ink-2 whitespace-nowrap">{fmtDate(c.send_time)}</td>
+                              <td className="px-5 py-3 font-data text-xs text-right text-ink-2">{c.recipient_count.toLocaleString()}</td>
+                              <td className="px-5 py-3 font-data text-xs text-right text-ink-2">{pct(c.open_rate)}</td>
+                              <td className="px-5 py-3 font-data text-xs text-right text-ink-2">{pct(c.click_rate)}</td>
+                              <td className="px-5 py-3 font-data text-xs text-right font-medium text-ink">{usd(c.revenue_attributed)}</td>
+                              <td className="px-5 py-3 font-data text-xs text-right text-ink-3">{usd(estCost)}</td>
+                              <td className={`px-5 py-3 font-data text-xs text-right font-semibold ${netROI >= 0 ? 'text-teal-deep' : 'text-red-500'}`}>
+                                {netROI >= 0 ? '+' : ''}{usd(netROI)}
+                              </td>
+                              <td className="px-5 py-3 text-center"><ROIBadge roi={roiRatio} /></td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  {totalPages > 1 && (
+                    <div className="flex items-center justify-between border-t border-cream-2 px-5 py-3">
+                      <span className="font-data text-xs text-ink-3">
+                        {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, campaigns.length)} of {campaigns.length}
+                      </span>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => setPage(p => Math.max(0, p - 1))}
+                          disabled={page === 0}
+                          className="rounded-lg border border-cream-3 px-3 py-1.5 text-xs font-medium text-ink-2 hover:bg-cream disabled:opacity-40 transition"
+                        >
+                          ← Prev
+                        </button>
+                        <span className="px-2 font-data text-xs text-ink-3">{page + 1} / {totalPages}</span>
+                        <button
+                          onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
+                          disabled={page === totalPages - 1}
+                          className="rounded-lg border border-cream-3 px-3 py-1.5 text-xs font-medium text-ink-2 hover:bg-cream disabled:opacity-40 transition"
+                        >
+                          Next →
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )
+            })()}
+
+            {/* Flows tab */}
+            {activeTab === 'flows' && (
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-cream-2 text-xs font-medium text-ink-3">
+                      <th className="px-5 py-2.5 text-left">Flow Name</th>
+                      <th className="px-5 py-2.5 text-left">Trigger</th>
+                      <th className="px-5 py-2.5 text-right">Recipients</th>
+                      <th className="px-5 py-2.5 text-right">Open Rate</th>
+                      <th className="px-5 py-2.5 text-right">Click Rate</th>
+                      <th className="px-5 py-2.5 text-right">Revenue</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-cream-2">
+                    {flows.map((f) => (
+                      <tr key={f.id} className="hover:bg-cream transition-colors">
                         <td className="px-5 py-3 font-medium text-ink">{f.name}</td>
                         <td className="px-5 py-3 text-xs text-ink-3 capitalize">{f.trigger_type?.replace(/_/g, ' ') ?? '—'}</td>
                         <td className="px-5 py-3 font-data text-xs text-right text-ink-2">{f.recipient_count.toLocaleString()}</td>
                         <td className="px-5 py-3 font-data text-xs text-right text-ink-2">{pct(f.open_rate)}</td>
                         <td className="px-5 py-3 font-data text-xs text-right text-ink-2">{pct(f.click_rate)}</td>
-                        <td className={`px-5 py-3 font-data text-xs text-right font-semibold ${highConversion ? 'text-teal-deep' : 'text-ink-2'}`}>
-                          {pct(f.conversion_rate)}
-                        </td>
                         <td className="px-5 py-3 font-data text-xs text-right font-medium text-ink">{usd(f.revenue_attributed)}</td>
                       </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </section>
 
           {/* Broadcast vs Automated comparison */}
