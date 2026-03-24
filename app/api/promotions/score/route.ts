@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
 
   // Fetch store context for the AI prompt
   const service = createSupabaseServiceClient()
-  const [{ data: statsRows }, { data: topCustomers }, { data: allCustomers }, { data: klaviyoMetrics }, { data: recentCampaigns }, { data: gscKeywords }, { data: gscMonthly }, { data: semrushMetrics }] = await Promise.all([
+  const [{ data: statsRows }, { data: topCustomers }, { data: allCustomers }, { data: klaviyoMetrics }, { data: recentCampaigns }, { data: gscKeywords }, { data: gscMonthly }, { data: semrushMetrics }, { data: topProducts }] = await Promise.all([
     service
       .from('orders')
       .select('total_price, financial_status')
@@ -77,6 +77,12 @@ export async function POST(req: NextRequest) {
       .select('organic_keywords_total, organic_traffic_estimate, keyword_opportunities, top_competitors')
       .eq('tenant_id', TENANT_ID)
       .maybeSingle(),
+    service
+      .from('product_stats')
+      .select('product_title, total_revenue, repeat_purchase_rate, avg_days_to_repurchase, subscription_conversion_rate')
+      .eq('tenant_id', TENANT_ID)
+      .order('total_revenue', { ascending: false })
+      .limit(5),
   ])
 
   const totalRevenue = (statsRows ?? []).reduce((s, r) => s + Number(r.total_price), 0)
@@ -155,6 +161,19 @@ ORGANIC SEO (SEMrush):
 - Quick-win keywords (positions 4-10): ${quickWinKeywords.map((k) => `"${k.keyword}" (pos ${k.position}, ${k.search_volume.toLocaleString()} monthly searches)`).join(', ') || 'none identified'}`.trim()
     : ''
 
+  // Build product intelligence context
+  const hasProductStats = (topProducts ?? []).length > 0
+  const productContext = hasProductStats
+    ? `
+TOP PRODUCTS (by revenue):
+${(topProducts ?? []).map((p) => {
+  const repeatPct = (Number(p.repeat_purchase_rate) * 100).toFixed(0)
+  const subPct = (Number(p.subscription_conversion_rate) * 100).toFixed(0)
+  const cycle = p.avg_days_to_repurchase ? ` reorder every ~${Math.round(Number(p.avg_days_to_repurchase))}d` : ''
+  return `- "${p.product_title}": $${Number(p.total_revenue).toLocaleString('en-US', { maximumFractionDigits: 0 })} revenue, ${repeatPct}% repeat rate${cycle}, ${subPct}% subscribe`
+}).join('\n')}`.trim()
+    : ''
+
   const storeContext = `
 Store: LashBox LA (beauty/lash retail, 10+ years in business)
 Total paid orders (all time): ${orderCount}
@@ -165,7 +184,8 @@ Total customers in CRM: ${totalCustomers}
 Lapsed customers (90+ days inactive): ${lapsedCount} (${totalCustomers > 0 ? Math.round((lapsedCount / totalCustomers) * 100) : 0}%)
 ${emailContext}
 ${gscContext}
-${semrushContext}`.trim()
+${semrushContext}
+${productContext}`.trim()
 
   const emailInstruction = hasKlaviyo && avgOpenRate
     ? `This store's email campaigns average ${(avgOpenRate * 100).toFixed(1)}% open rate and ${avgCampaignRevenue != null ? '$' + avgCampaignRevenue.toFixed(0) : 'an unknown amount'} revenue per send. Their automated flows generate ${flowRevenueRatio != null ? flowRevenueRatio.toFixed(1) + '×' : 'more'} revenue per recipient than broadcast campaigns. Factor this into the audience fit and buying motivation scores when the channel involves email.`
@@ -179,7 +199,11 @@ ${semrushContext}`.trim()
     ? ` According to SEMrush, this store ranks for ${semrushData!.organic_keywords_total?.toLocaleString()} organic keywords with ~${semrushData!.organic_traffic_estimate?.toLocaleString()} monthly visits. ${quickWinKeywords.length > 0 ? `Their highest-opportunity keywords in positions 4-10 include: ${quickWinKeywords.map((k) => `"${k.keyword}"`).join(', ')}. A promotion targeting these product categories would amplify SEO intent rather than rely entirely on paid/email reach.` : ''} ${topCompetitor ? `Their top competitor by keyword overlap is ${topCompetitor}.` : ''} Consider whether this promotion targets a category with strong organic presence (less incremental value from promotion) or a category with weak organic reach (higher value from promotion).`
     : ''
 
-  const prompt = `You are a retail promotion strategist. A beauty brand (LashBox LA) wants to evaluate a promotion idea. Use the real store data below to give a grounded, honest assessment — validate or challenge the team's thinking.${emailInstruction ? ' ' + emailInstruction : ''}${gscInstruction}${semrushInstruction}
+  const productInstruction = hasProductStats
+    ? ` Product data is available: consider whether the promoted product has a high or low repeat purchase rate, whether it has subscription expansion potential (gap between repeat rate and subscription conversion), and whether the promotion targets a high-value product (by total revenue) or a gateway product that drives future purchases.`
+    : ''
+
+  const prompt = `You are a retail promotion strategist. A beauty brand (LashBox LA) wants to evaluate a promotion idea. Use the real store data below to give a grounded, honest assessment — validate or challenge the team's thinking.${emailInstruction ? ' ' + emailInstruction : ''}${gscInstruction}${semrushInstruction}${productInstruction}
 
 STORE DATA:
 ${storeContext}

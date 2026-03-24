@@ -212,6 +212,25 @@ export default function NavLinks({
         <span className={`ml-auto h-1.5 w-1.5 rounded-full ${googleAdsConnected ? 'bg-teal' : 'bg-cream/20'}`} />
       </Link>
 
+      {/* Merchandising section */}
+      <div className="mt-4 mb-1 px-3">
+        <p className="text-[10px] font-data uppercase tracking-widest text-cream/25">Merchandising</p>
+      </div>
+
+      <Link
+        href="/dashboard/products"
+        onClick={onNavigate}
+        className={`nav-link ${pathname.startsWith('/dashboard/products') ? 'active' : ''}`}
+      >
+        <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+          <rect x="1" y="1" width="6" height="6" rx="1" />
+          <rect x="9" y="1" width="6" height="6" rx="1" />
+          <rect x="1" y="9" width="6" height="6" rx="1" />
+          <path d="M9 12h6M12 9v6" strokeLinecap="round" />
+        </svg>
+        Products
+      </Link>
+
       {/* Revenue Streams section */}
       <div className="mt-4 mb-1 px-3">
         <p className="text-[10px] font-data uppercase tracking-widest text-cream/25">Revenue Streams</p>

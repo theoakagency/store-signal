@@ -330,19 +330,15 @@ const getOrderTrends: AgentTool = {
 const getProductPerformance: AgentTool = {
   schema: {
     name: 'get_product_performance',
-    description: 'Get best performing products by revenue, quantity sold, or order appearances. Data sourced from order line items.',
+    description: 'Get best performing products with revenue, repeat purchase rates, subscription conversion, and repurchase cycles. Uses pre-computed product_stats table when available.',
     input_schema: {
       type: 'object',
       properties: {
         limit: { type: 'number', description: 'Number of products to return (default 10)' },
         sort_by: {
           type: 'string',
-          enum: ['revenue', 'quantity', 'orders'],
+          enum: ['revenue', 'repeat_rate', 'unique_customers', 'subscription_conversion'],
           description: 'How to rank products',
-        },
-        period: {
-          type: 'string',
-          enum: ['last_30_days', 'last_90_days', 'last_12_months', 'all_time'],
         },
       },
     },
@@ -350,34 +346,41 @@ const getProductPerformance: AgentTool = {
   async execute(input, supabase, tenantId) {
     const limit = (input.limit as number) ?? 10
     const sortBy = (input.sort_by as string) ?? 'revenue'
-    const period = (input.period as string) ?? 'last_90_days'
-    const since = periodToDate(period)
 
-    const { data } = await supabase
-      .from('orders')
-      .select('line_items, created_at')
+    const colMap: Record<string, string> = {
+      revenue: 'total_revenue',
+      repeat_rate: 'repeat_purchase_rate',
+      unique_customers: 'unique_customers',
+      subscription_conversion: 'subscription_conversion_rate',
+    }
+    const orderCol = colMap[sortBy] ?? 'total_revenue'
+
+    const { data, error } = await supabase
+      .from('product_stats')
+      .select('product_title, variant_title, total_revenue, unique_customers, repeat_purchase_rate, avg_days_to_repurchase, subscription_conversion_rate, revenue_12m, revenue_30d, total_orders')
       .eq('tenant_id', tenantId)
-      .eq('financial_status', 'paid')
-      .gte('created_at', period === 'all_time' ? '2000-01-01' : since)
+      .order(orderCol, { ascending: false })
+      .limit(limit)
 
-    const products: Record<string, { title: string; revenue: number; quantity: number; orders: number }> = {}
-    for (const order of data ?? []) {
-      const items = (order.line_items as { title: string; price: string; quantity: number; product_id?: number | null }[]) ?? []
-      for (const item of items) {
-        const key = item.title
-        if (!products[key]) products[key] = { title: key, revenue: 0, quantity: 0, orders: 0 }
-        products[key].revenue += parseFloat(item.price) * item.quantity
-        products[key].quantity += item.quantity
-        products[key].orders++
-      }
+    if (error || !data || data.length === 0) {
+      return { error: 'Product stats not available — run /api/products/analyze first', connected: false }
     }
 
-    const sorted = Object.values(products)
-      .sort((a, b) => b[sortBy as keyof typeof a] as number - (a[sortBy as keyof typeof a] as number))
-      .slice(0, limit)
-      .map((p) => ({ ...p, revenue: Math.round(p.revenue * 100) / 100 }))
-
-    return { period, sort_by: sortBy, products: sorted }
+    return {
+      sort_by: sortBy,
+      products: data.map((p) => ({
+        title: p.product_title,
+        variant: p.variant_title || null,
+        total_revenue: Math.round(Number(p.total_revenue) * 100) / 100,
+        revenue_12m: Math.round(Number(p.revenue_12m) * 100) / 100,
+        revenue_30d: Math.round(Number(p.revenue_30d) * 100) / 100,
+        unique_customers: p.unique_customers,
+        total_orders: p.total_orders,
+        repeat_purchase_rate: (Number(p.repeat_purchase_rate) * 100).toFixed(1) + '%',
+        avg_days_to_repurchase: p.avg_days_to_repurchase ? Math.round(Number(p.avg_days_to_repurchase)) : null,
+        subscription_conversion_rate: (Number(p.subscription_conversion_rate) * 100).toFixed(1) + '%',
+      })),
+    }
   },
 }
 
@@ -981,6 +984,170 @@ const getSeoIntelligence: AgentTool = {
   },
 }
 
+// ── Tool 16: get_product_affinities ───────────────────────────────────────────
+
+const getProductAffinities: AgentTool = {
+  schema: {
+    name: 'get_product_affinities',
+    description: 'Get product affinity pairs — products frequently bought together. Includes lift score (how much more likely they are to be co-purchased vs random). Use for bundle recommendations.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        product_title: { type: 'string', description: 'Filter affinities for a specific product (optional)' },
+        min_lift: { type: 'number', description: 'Minimum lift score filter (default 1.5)' },
+        limit: { type: 'number', description: 'Number of pairs to return (default 10)' },
+      },
+    },
+  },
+  async execute(input, supabase, tenantId) {
+    const productTitle = input.product_title as string | undefined
+    const minLift = (input.min_lift as number) ?? 1.5
+    const limit = (input.limit as number) ?? 10
+
+    let query = supabase
+      .from('product_affinities')
+      .select('product_a, product_b, co_purchase_count, co_purchase_rate, confidence, lift')
+      .eq('tenant_id', tenantId)
+      .gte('lift', minLift)
+      .order('lift', { ascending: false })
+      .limit(limit * 2) // fetch extra to deduplicate
+
+    if (productTitle) {
+      query = query.or(`product_a.ilike.%${productTitle}%,product_b.ilike.%${productTitle}%`)
+    }
+
+    const { data, error } = await query
+
+    if (error || !data || data.length === 0) {
+      return { error: 'No affinity data — run /api/products/analyze first', pairs: [] }
+    }
+
+    // Deduplicate canonical pairs
+    const seen = new Set<string>()
+    const pairs = (data).filter((a) => {
+      const key = [a.product_a, a.product_b].sort().join('|||')
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    }).slice(0, limit)
+
+    return {
+      pairs: pairs.map((a) => ({
+        product_a: a.product_a,
+        product_b: a.product_b,
+        co_purchase_count: a.co_purchase_count,
+        co_purchase_rate: (Number(a.co_purchase_rate) * 100).toFixed(1) + '%',
+        confidence: (Number(a.confidence) * 100).toFixed(1) + '%',
+        lift: Number(a.lift).toFixed(2) + '×',
+        interpretation: `When a customer buys "${a.product_a}", they are ${Number(a.lift).toFixed(1)}× more likely to also buy "${a.product_b}"`,
+      })),
+      count: pairs.length,
+    }
+  },
+}
+
+// ── Tool 17: get_customer_profile ─────────────────────────────────────────────
+
+const getCustomerProfile: AgentTool = {
+  schema: {
+    name: 'get_customer_profile',
+    description: 'Get the full enriched profile for a specific customer by email: LTV segment, engagement score, subscription status, loyalty tier, predicted next order, and top products.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        email: { type: 'string', description: 'Customer email address' },
+      },
+      required: ['email'],
+    },
+  },
+  async execute(input, supabase, tenantId) {
+    const email = ((input.email as string) ?? '').toLowerCase().trim()
+    if (!email) return { error: 'Email is required' }
+
+    const { data, error } = await supabase
+      .from('customer_profiles')
+      .select('*')
+      .eq('tenant_id', tenantId)
+      .ilike('email', email)
+      .maybeSingle()
+
+    if (error || !data) {
+      return { error: `No profile found for ${email} — run /api/customers/build-profiles first` }
+    }
+
+    return {
+      email: data.email,
+      ltv_segment: data.ltv_segment,
+      engagement_score: data.engagement_score,
+      total_revenue: data.total_revenue,
+      total_orders: data.total_orders,
+      avg_order_value: data.avg_order_value,
+      first_order_at: data.first_order_at,
+      last_order_at: data.last_order_at,
+      days_since_last_order: data.days_since_last_order,
+      avg_days_between_orders: data.avg_days_between_orders,
+      predicted_next_order_date: data.predicted_next_order_date,
+      is_subscriber: data.is_subscriber,
+      subscription_interval: data.subscription_interval,
+      subscription_mrr: data.subscription_mrr,
+      is_loyalty_member: data.is_loyalty_member,
+      loyalty_tier: data.loyalty_tier,
+      loyalty_points_balance: data.loyalty_points_balance,
+      top_products: data.top_products,
+      first_product_bought: data.first_product_bought,
+      most_recent_product: data.most_recent_product,
+    }
+  },
+}
+
+// ── Tool 18: get_customer_overlap ─────────────────────────────────────────────
+
+const getCustomerOverlap: AgentTool = {
+  schema: {
+    name: 'get_customer_overlap',
+    description: 'Get the cross-platform customer overlap: how many customers are subscribers, loyalty members, VIPs, and the intersections. Use for audience strategy questions.',
+    input_schema: {
+      type: 'object',
+      properties: {},
+    },
+  },
+  async execute(_input, supabase, tenantId) {
+    const { data, error } = await supabase
+      .from('customer_overlap_cache')
+      .select('*')
+      .eq('tenant_id', tenantId)
+      .maybeSingle()
+
+    if (error || !data) {
+      return { error: 'No overlap data — run /api/customers/build-profiles first' }
+    }
+
+    const total = data.total_customers ?? 1
+
+    return {
+      total_customers: data.total_customers,
+      subscribers_only: data.subscribers_only,
+      loyalty_only: data.loyalty_only,
+      vip_only: data.vip_only,
+      subscriber_and_loyalty: data.subscriber_and_loyalty,
+      subscriber_and_vip: data.subscriber_and_vip,
+      loyalty_and_vip: data.loyalty_and_vip,
+      all_three: data.all_three,
+      summary: {
+        total_subscribers: (data.subscribers_only ?? 0) + (data.subscriber_and_loyalty ?? 0) + (data.subscriber_and_vip ?? 0) + (data.all_three ?? 0),
+        total_loyalty_members: (data.loyalty_only ?? 0) + (data.subscriber_and_loyalty ?? 0) + (data.loyalty_and_vip ?? 0) + (data.all_three ?? 0),
+        total_vip: (data.vip_only ?? 0) + (data.subscriber_and_vip ?? 0) + (data.loyalty_and_vip ?? 0) + (data.all_three ?? 0),
+        subscribers_pct: ((((data.subscribers_only ?? 0) + (data.subscriber_and_loyalty ?? 0) + (data.subscriber_and_vip ?? 0) + (data.all_three ?? 0)) / total) * 100).toFixed(1) + '%',
+        loyalty_pct: ((((data.loyalty_only ?? 0) + (data.subscriber_and_loyalty ?? 0) + (data.loyalty_and_vip ?? 0) + (data.all_three ?? 0)) / total) * 100).toFixed(1) + '%',
+        vip_pct: ((((data.vip_only ?? 0) + (data.subscriber_and_vip ?? 0) + (data.loyalty_and_vip ?? 0) + (data.all_three ?? 0)) / total) * 100).toFixed(1) + '%',
+        fully_engaged: data.all_three,
+        fully_engaged_pct: (((data.all_three ?? 0) / total) * 100).toFixed(1) + '%',
+      },
+      calculated_at: data.calculated_at,
+    }
+  },
+}
+
 // ── Exported tools list ───────────────────────────────────────────────────────
 
 export const agentTools: AgentTool[] = [
@@ -999,6 +1166,9 @@ export const agentTools: AgentTool[] = [
   getSubscriptionData,
   getLoyaltyData,
   getSeoIntelligence,
+  getProductAffinities,
+  getCustomerProfile,
+  getCustomerOverlap,
 ]
 
 export const toolSchemas = agentTools.map((t) => t.schema)
@@ -1033,6 +1203,10 @@ export function toolStatusMessage(toolName: string): string {
     get_business_health_score: 'Running business health check…',
     get_subscription_data:     'Checking subscription metrics…',
     get_loyalty_data:          'Analyzing loyalty program data…',
+    get_seo_intelligence:      'Pulling SEO intelligence…',
+    get_product_affinities:    'Finding product affinity pairs…',
+    get_customer_profile:      'Loading customer profile…',
+    get_customer_overlap:      'Analyzing cross-platform overlap…',
   }
   return messages[toolName] ?? 'Fetching data…'
 }
