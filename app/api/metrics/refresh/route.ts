@@ -35,13 +35,25 @@ export async function POST(_req: NextRequest) {
   const d60 = new Date(now); d60.setDate(d60.getDate() - 60)
   const d12m = new Date(now); d12m.setMonth(d12m.getMonth() - 12)
 
-  const [{ data: curr }, { data: prior }, { data: allCustomers }, { data: channelOrders30d }, { data: channelOrders12m }] = await Promise.all([
+  // Run all queries in parallel — RPC functions aggregate in SQL to avoid the
+  // 1000-row PostgREST default limit on the full orders table.
+  const [
+    { data: curr },
+    { data: prior },
+    { data: channelOrders30d },
+    { data: channelOrders12m },
+    { data: monthlyRows },
+    { data: distinctEmailCount },
+    { data: allCustomers },
+  ] = await Promise.all([
+    // Last-30d orders (≤1000 rows fine for recent window)
     supabase
       .from('orders')
       .select('total_price, currency')
       .eq('store_id', STORE_ID)
       .eq('financial_status', 'paid')
       .gte('processed_at', d30.toISOString()),
+    // Prior-30d orders
     supabase
       .from('orders')
       .select('total_price')
@@ -49,22 +61,29 @@ export async function POST(_req: NextRequest) {
       .eq('financial_status', 'paid')
       .gte('processed_at', d60.toISOString())
       .lt('processed_at', d30.toISOString()),
-    supabase
-      .from('customers')
-      .select('total_spent, orders_count')
-      .eq('store_id', STORE_ID),
+    // Channel breakdown — last 30d
     supabase
       .from('orders')
       .select('source_name, total_price')
       .eq('store_id', STORE_ID)
       .eq('financial_status', 'paid')
       .gte('processed_at', d30.toISOString()),
+    // Channel breakdown — last 12m (still bounded)
     supabase
       .from('orders')
       .select('source_name, total_price')
       .eq('store_id', STORE_ID)
       .eq('financial_status', 'paid')
       .gte('processed_at', d12m.toISOString()),
+    // Monthly revenue via SQL aggregation — works on 115k+ rows
+    supabase.rpc('get_monthly_revenue', { p_store_id: STORE_ID, p_months: 13 }),
+    // Distinct customer emails from orders (includes guests, unlike customers table)
+    supabase.rpc('count_distinct_customer_emails', { p_store_id: STORE_ID }),
+    // Customers table for avg LTV calculation
+    supabase
+      .from('customers')
+      .select('total_spent')
+      .eq('store_id', STORE_ID),
   ])
 
   const currRevenue = (curr ?? []).reduce((s, r) => s + Number(r.total_price), 0)
@@ -73,21 +92,32 @@ export async function POST(_req: NextRequest) {
   const priorCount = (prior ?? []).length
   const currAOV = currCount > 0 ? currRevenue / currCount : 0
   const priorAOV = priorCount > 0 ? priorRevenue / priorCount : 0
-  const customerCount = (allCustomers ?? []).length
-  const avgLTV = customerCount > 0
-    ? (allCustomers ?? []).reduce((s, c) => s + Number(c.total_spent), 0) / customerCount
+
+  // Use distinct email count from orders as the true customer count
+  const customerCount = typeof distinctEmailCount === 'number' ? distinctEmailCount : Number(distinctEmailCount ?? 0)
+
+  const avgLTV = (allCustomers ?? []).length > 0
+    ? (allCustomers ?? []).reduce((s, c) => s + Number(c.total_spent), 0) / (allCustomers ?? []).length
     : 0
   const currency = curr?.[0]?.currency ?? 'USD'
 
+  // Build the revenue_by_month array in YYYY-MM format
+  const revenueByMonth = (monthlyRows ?? []).map((r) => ({
+    month: r.month as string,
+    revenue: Number(r.revenue),
+    order_count: Number(r.order_count),
+  }))
+
   const metrics = [
-    { metric_name: 'revenue_30d', metric_value: currRevenue, metric_metadata: { currency } },
-    { metric_name: 'revenue_30d_prior', metric_value: priorRevenue, metric_metadata: { currency } },
-    { metric_name: 'order_count_30d', metric_value: currCount, metric_metadata: {} },
-    { metric_name: 'order_count_30d_prior', metric_value: priorCount, metric_metadata: {} },
-    { metric_name: 'aov_30d', metric_value: currAOV, metric_metadata: { currency } },
-    { metric_name: 'aov_30d_prior', metric_value: priorAOV, metric_metadata: { currency } },
-    { metric_name: 'customer_count', metric_value: customerCount, metric_metadata: {} },
-    { metric_name: 'avg_ltv', metric_value: avgLTV, metric_metadata: { currency } },
+    { metric_name: 'revenue_30d',          metric_value: currRevenue,    metric_metadata: { currency } },
+    { metric_name: 'revenue_30d_prior',    metric_value: priorRevenue,   metric_metadata: { currency } },
+    { metric_name: 'order_count_30d',      metric_value: currCount,      metric_metadata: {} },
+    { metric_name: 'order_count_30d_prior',metric_value: priorCount,     metric_metadata: {} },
+    { metric_name: 'aov_30d',             metric_value: currAOV,        metric_metadata: { currency } },
+    { metric_name: 'aov_30d_prior',       metric_value: priorAOV,       metric_metadata: { currency } },
+    { metric_name: 'customer_count',      metric_value: customerCount,  metric_metadata: {} },
+    { metric_name: 'avg_ltv',             metric_value: avgLTV,         metric_metadata: { currency } },
+    { metric_name: 'revenue_by_month',    metric_value: 0,              metric_metadata: { data: revenueByMonth } },
   ]
 
   const rows = metrics.map((m) => ({
@@ -136,7 +166,13 @@ export async function POST(_req: NextRequest) {
       .upsert(channelRows, { onConflict: 'tenant_id,channel_name,period' })
   }
 
-  return Response.json({ refreshed: metrics.length, channels: channelRows.length, at: now.toISOString() })
+  return Response.json({
+    refreshed: metrics.length,
+    channels: channelRows.length,
+    revenue_months: revenueByMonth.length,
+    customer_count: customerCount,
+    at: now.toISOString(),
+  })
 }
 
 // Allow GET for convenience

@@ -83,8 +83,6 @@ export default async function DashboardPage() {
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
   const sixtyDaysAgo = new Date(now)
   sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60)
-  const twelveMonthsAgo = new Date(now)
-  twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12)
 
   // ── Fetch all data in parallel ──────────────────────────────────────────────
   const service = createSupabaseServiceClient()
@@ -100,7 +98,7 @@ export default async function DashboardPage() {
     { data: topFlowRows },
     { data: channelRows },
     { data: execInsightsCache },
-    { count: totalCustomers },
+    { data: metricsCache },
   ] = await Promise.all([
     supabase
       .from('orders')
@@ -154,10 +152,12 @@ export default async function DashboardPage() {
       .select('insights, calculated_at')
       .eq('tenant_id', TENANT_ID)
       .maybeSingle(),
+    // Read cached metrics — revenue_by_month and customer_count computed by /api/metrics/refresh
     service
-      .from('customers')
-      .select('*', { count: 'exact', head: true })
-      .eq('store_id', STORE_ID),
+      .from('metrics_cache')
+      .select('metric_name, metric_value, metric_metadata')
+      .eq('store_id', STORE_ID)
+      .in('metric_name', ['revenue_by_month', 'customer_count']),
   ])
 
   const curr = currentRows ?? []
@@ -186,29 +186,27 @@ export default async function DashboardPage() {
   const countDelta = delta(currCount, priorCount)
   const aovDelta = delta(currAOV, priorAOV)
 
-  // ── Build 12-month bar chart data ───────────────────────────────────────────
-  const monthMap: Record<string, number> = {}
+  // ── Build 12-month chart data from cache (avoids 1000-row PostgREST limit) ──
+  // Populated by /api/metrics/refresh via get_monthly_revenue() SQL function.
+  // Build a full 12-month scaffold so missing months show as zero bars.
+  const cachedMonthlyRow = (metricsCache ?? []).find((r) => r.metric_name === 'revenue_by_month')
+  const cachedCustomerRow = (metricsCache ?? []).find((r) => r.metric_name === 'customer_count')
+  const totalCustomers = cachedCustomerRow ? Number(cachedCustomerRow.metric_value) : null
+
+  type CachedMonth = { month: string; revenue: number; order_count?: number }
+  const cachedMonths: CachedMonth[] = (cachedMonthlyRow?.metric_metadata as { data?: CachedMonth[] } | null)?.data ?? []
+  const cachedByKey = new Map(cachedMonths.map((m) => [m.month, m.revenue]))
+
+  // Always show 12 complete month buckets ending with the current month
+  const monthScaffold: Array<{ month: string; revenue: number }> = []
   for (let i = 11; i >= 0; i--) {
     const d = new Date(now)
     d.setMonth(d.getMonth() - i)
-    const key = d.toLocaleString('en-US', { month: 'short' })
-    monthMap[key] = 0
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    monthScaffold.push({ month: key, revenue: cachedByKey.get(key) ?? 0 })
   }
 
-  // Fetch all paid orders for 12 months for chart
-  const { data: chartRows } = await supabase
-    .from('orders')
-    .select('total_price, processed_at')
-    .eq('financial_status', 'paid')
-    .gte('processed_at', twelveMonthsAgo.toISOString())
-
-  for (const row of chartRows ?? []) {
-    if (!row.processed_at) continue
-    const key = new Date(row.processed_at).toLocaleString('en-US', { month: 'short' })
-    if (key in monthMap) monthMap[key] += Number(row.total_price)
-  }
-
-  const chartData = Object.entries(monthMap).map(([month, revenue]) => ({ month, revenue }))
+  const chartData = monthScaffold
 
   // ── Revenue alert ───────────────────────────────────────────────────────────
   const showAlert = revDelta !== null && revDelta < -10
@@ -252,7 +250,7 @@ export default async function DashboardPage() {
           label="Total Customers"
           value={totalCustomers !== null ? totalCustomers.toLocaleString() : '—'}
           delta={null}
-          sub="all time"
+          sub="distinct emails, all time"
           noAnimation
         />
       </div>

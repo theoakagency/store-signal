@@ -38,12 +38,39 @@ function fmt(n: number) {
   }).format(n)
 }
 
+function monthLabel(month: string): string {
+  // Handles both "YYYY-MM" (from cache) and short names like "Mar" (legacy)
+  if (/^\d{4}-\d{2}$/.test(month)) {
+    return new Date(month + '-15').toLocaleString('en-US', { month: 'short' })
+  }
+  return month
+}
+
 function MonthlyBarChart({ data }: { data: MonthlyData[] }) {
+  const hasData = data.some((d) => d.revenue > 0)
   const max = Math.max(...data.map((d) => d.revenue), 1)
   const chartH = 120
   const barW = 24
   const gap = 8
   const totalW = data.length * (barW + gap) - gap
+
+  if (!hasData) {
+    return (
+      <div className="mt-6 flex flex-col items-center justify-center gap-2 py-8 text-center">
+        <p className="text-sm text-ink-3">No cached revenue data yet.</p>
+        <p className="text-xs text-ink-3">
+          Run{' '}
+          <button
+            onClick={() => fetch('/api/metrics/refresh', { method: 'POST' }).then(() => window.location.reload())}
+            className="underline hover:text-teal transition"
+          >
+            Metrics Refresh
+          </button>
+          {' '}to populate the chart.
+        </p>
+      </div>
+    )
+  }
 
   return (
     <div className="mt-4 overflow-x-auto pb-2">
@@ -55,14 +82,19 @@ function MonthlyBarChart({ data }: { data: MonthlyData[] }) {
         aria-label="Monthly revenue bar chart"
       >
         {data.map((d, i) => {
-          const barH = Math.max(4, (d.revenue / max) * chartH)
+          const barH = d.revenue > 0 ? Math.max(4, (d.revenue / max) * chartH) : 2
           const x = i * (barW + gap)
           const y = chartH - barH
+          const isCurrentMonth = i === data.length - 1
           return (
             <g key={d.month}>
-              <rect x={x} y={y} width={barW} height={barH} rx={4} fill="#4BBFAD" opacity={i === data.length - 1 ? 0.5 : 1} />
+              <rect
+                x={x} y={y} width={barW} height={barH} rx={4}
+                fill={d.revenue > 0 ? '#4BBFAD' : '#E8E6E1'}
+                opacity={isCurrentMonth ? 0.55 : 1}
+              />
               <text x={x + barW / 2} y={chartH + 16} textAnchor="middle" fontSize={9} fill="#888888" fontFamily="DM Mono, monospace">
-                {d.month}
+                {monthLabel(d.month)}
               </text>
             </g>
           )
