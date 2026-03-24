@@ -8,6 +8,7 @@ export const metadata = {
 }
 
 const TENANT_ID = '00000000-0000-0000-0000-000000000001'
+const STORE_ID = '00000000-0000-0000-0000-000000000002'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -98,6 +99,7 @@ export default async function DashboardPage() {
     { data: topFlowRows },
     { data: channelRows },
     { data: execInsightsCache },
+    { count: totalCustomers },
   ] = await Promise.all([
     supabase
       .from('orders')
@@ -151,6 +153,10 @@ export default async function DashboardPage() {
       .select('insights, calculated_at')
       .eq('tenant_id', TENANT_ID)
       .maybeSingle(),
+    service
+      .from('customers')
+      .select('*', { count: 'exact', head: true })
+      .eq('store_id', STORE_ID),
   ])
 
   const curr = currentRows ?? []
@@ -243,7 +249,7 @@ export default async function DashboardPage() {
         />
         <MetricCard
           label="Total Customers"
-          value={customers.length > 0 ? '—' : '0'}
+          value={totalCustomers !== null ? totalCustomers.toLocaleString() : '—'}
           delta={null}
           sub="all time"
           noAnimation

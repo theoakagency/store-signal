@@ -7,6 +7,7 @@ interface SessionRow { channel: string; sessions: number; conversions: number; r
 interface PageRow { page_path: string; sessions: number; conversions: number; avg_time_seconds: number | null }
 interface MonthlyRow { month: string; sessions: number }
 interface CampaignRow { campaign_name: string; source: string | null; sessions: number; conversions: number; revenue: number }
+interface AnalyticsInsight { title: string; description: string; metric: string; action: string; priority: 'Low' | 'Medium' | 'High' }
 
 interface Props {
   connected: boolean
@@ -94,31 +95,212 @@ function ChannelBars({ sessions }: { sessions: SessionRow[] }) {
   )
 }
 
+const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
 function MonthlyChart({ monthly }: { monthly: MonthlyRow[] }) {
   if (monthly.length === 0) return <p className="text-sm text-ink-3 mt-4">No monthly data yet.</p>
 
   const max = Math.max(...monthly.map((m) => m.sessions), 1)
-  const labels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
   return (
     <div className="mt-4">
-      <div className="flex items-end gap-1 h-32">
+      {/* Bar area — each column is h-full so bar % is relative to the 96px container */}
+      <div className="flex items-end gap-1 h-24">
         {monthly.map((m) => {
-          const pct = (m.sessions / max) * 100
-          const [year, mon] = m.month.split('-')
-          const label = `${labels[parseInt(mon, 10) - 1]} ${year.slice(2)}`
+          const pct = Math.max((m.sessions / max) * 100, 2)
           return (
-            <div key={m.month} className="flex-1 flex flex-col items-center gap-1 group relative">
-              <div className="absolute -top-6 left-1/2 -translate-x-1/2 hidden group-hover:block text-[10px] font-data bg-charcoal text-cream px-1.5 py-0.5 rounded whitespace-nowrap z-10">
+            <div key={m.month} className="flex-1 h-full flex items-end group relative">
+              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover:block text-[10px] font-data bg-charcoal text-cream px-1.5 py-0.5 rounded whitespace-nowrap z-10">
                 {m.sessions.toLocaleString()}
               </div>
-              <div className="w-full rounded-t-sm bg-teal/70 hover:bg-teal transition-colors" style={{ height: `${pct}%` }} />
-              <span className="text-[9px] text-ink-3 rotate-45 origin-left whitespace-nowrap">{label}</span>
+              <div
+                className="w-full rounded-t-sm bg-teal/70 hover:bg-teal transition-colors"
+                style={{ height: `${pct}%` }}
+              />
+            </div>
+          )
+        })}
+      </div>
+      {/* Label row — separate from bars so bar heights work correctly */}
+      <div className="flex gap-1 mt-1.5">
+        {monthly.map((m) => {
+          const [year, mon] = m.month.split('-')
+          const label = `${MONTH_LABELS[parseInt(mon, 10) - 1]} '${year.slice(2)}`
+          return (
+            <div key={m.month} className="flex-1 text-center overflow-hidden">
+              <span className="text-[8px] text-ink-3 leading-none">{label}</span>
             </div>
           )
         })}
       </div>
     </div>
+  )
+}
+
+function ChannelEfficiency({ sessions }: { sessions: SessionRow[] }) {
+  const sorted = sessions
+    .filter((r) => r.sessions >= 10)
+    .map((r) => ({ ...r, cvr: r.sessions > 0 ? (r.conversions / r.sessions) * 100 : 0 }))
+    .sort((a, b) => b.cvr - a.cvr)
+
+  if (sorted.length === 0) return null
+
+  function cvrBg(cvr: number) {
+    if (cvr >= 3) return 'bg-teal-pale/40'
+    if (cvr >= 1) return 'bg-amber-50'
+    return 'bg-red-50'
+  }
+  function cvrBadge(cvr: number) {
+    if (cvr >= 3) return 'bg-teal-pale text-teal-deep'
+    if (cvr >= 1) return 'bg-amber-50 text-amber-700 border border-amber-200'
+    return 'bg-red-50 text-red-600 border border-red-200'
+  }
+
+  const paidSocial = sorted.find((r) => r.channel === 'Paid Social')
+  const paidSearch = sorted.find((r) => r.channel === 'Paid Search')
+  const showGap = paidSocial && paidSocial.cvr < 1
+
+  return (
+    <section className="rounded-2xl border border-cream-3 bg-white p-6 shadow-sm">
+      <h2 className="font-display text-base font-semibold text-ink">Channel Efficiency</h2>
+      <p className="text-xs text-ink-3 mt-0.5">Conversion rate ranked — green ≥3%, amber 1–3%, red &lt;1%</p>
+
+      <div className="mt-4 space-y-2">
+        {sorted.map((row) => {
+          const isPaidSocial = row.channel === 'Paid Social'
+          return (
+            <div
+              key={row.channel}
+              className={`flex items-center gap-4 rounded-xl px-4 py-3 ${cvrBg(row.cvr)} ${isPaidSocial && row.cvr < 1 ? 'ring-1 ring-red-300' : ''}`}
+            >
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-ink">{row.channel}</span>
+                  {isPaidSocial && row.cvr < 1 && (
+                    <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-medium text-red-700">
+                      Low CVR ⚠
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-ink-3 mt-0.5">
+                  {row.sessions.toLocaleString()} sessions · {row.conversions} conversions
+                </p>
+              </div>
+              <div className="text-right shrink-0">
+                <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-sm font-semibold ${cvrBadge(row.cvr)}`}>
+                  {row.cvr.toFixed(1)}%
+                </span>
+                <p className="text-[10px] text-ink-3 mt-0.5">CVR</p>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      {showGap && (
+        <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
+          <svg className="mt-0.5 h-4 w-4 shrink-0 text-red-500" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm0 4a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 8 5zm0 7a1 1 0 1 1 0-2 1 1 0 0 1 0 2z"/>
+          </svg>
+          <div>
+            <p className="text-sm font-medium text-red-800">Paid Social CVR is significantly below other paid channels</p>
+            <p className="text-xs text-red-600 mt-0.5">
+              {paidSearch
+                ? `Paid Search converts at ${paidSearch.cvr.toFixed(1)}% vs Paid Social at ${paidSocial.cvr.toFixed(1)}% — a ${(paidSearch.cvr / Math.max(paidSocial.cvr, 0.01)).toFixed(0)}× gap. Consider shifting budget toward Paid Search or auditing Paid Social landing pages and audience targeting.`
+                : 'Consider auditing Paid Social landing pages and audience targeting to improve conversion quality.'}
+            </p>
+          </div>
+        </div>
+      )}
+    </section>
+  )
+}
+
+function AnalyticsInsights() {
+  const [insights, setInsights] = useState<AnalyticsInsight[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [generated, setGenerated] = useState(false)
+
+  async function generate() {
+    setLoading(true)
+    setError('')
+    try {
+      const res = await fetch('/api/analytics/insights', { method: 'POST' })
+      const data = await res.json() as { insights?: AnalyticsInsight[]; error?: string }
+      if (data.error) {
+        setError(data.error)
+      } else {
+        setInsights(data.insights ?? [])
+        setGenerated(true)
+      }
+    } catch {
+      setError('Network error — try again')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  function priorityStyle(p: string) {
+    if (p === 'High') return 'bg-red-50 text-red-700 border border-red-200'
+    if (p === 'Medium') return 'bg-amber-50 text-amber-700 border border-amber-200'
+    return 'bg-cream-2 text-ink-3 border border-cream-3'
+  }
+
+  return (
+    <section className="rounded-2xl border border-cream-3 bg-white p-6 shadow-sm">
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        <div>
+          <h2 className="font-display text-base font-semibold text-ink">AI Analytics Insights</h2>
+          <p className="text-xs text-ink-3 mt-0.5">Cross-channel analysis powered by Claude</p>
+        </div>
+        <button
+          onClick={generate}
+          disabled={loading}
+          className="inline-flex items-center gap-2 rounded-lg bg-charcoal px-4 py-2 text-sm font-semibold text-cream hover:bg-charcoal/80 disabled:opacity-50 transition"
+        >
+          {loading ? (
+            <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-cream/30 border-t-cream" />
+          ) : (
+            <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M8 1a1 1 0 0 1 .894.553l1.618 3.279 3.617.526a1 1 0 0 1 .554 1.706L12.06 9.54l.618 3.604a1 1 0 0 1-1.451 1.054L8 12.422l-3.227 1.776A1 1 0 0 1 3.322 13.144l.618-3.604L1.317 7.064A1 1 0 0 1 1.871 5.358l3.617-.526L7.106 1.553A1 1 0 0 1 8 1z"/>
+            </svg>
+          )}
+          {loading ? 'Analyzing…' : generated ? 'Regenerate' : 'Generate Insights'}
+        </button>
+      </div>
+
+      {!generated && !loading && (
+        <p className="mt-4 text-sm text-ink-3">
+          Analyzes channel CVR gaps, session trends, landing page conversion patterns, and cross-platform budget allocation opportunities.
+        </p>
+      )}
+
+      {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
+
+      {insights.length > 0 && (
+        <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
+          {insights.map((ins, i) => (
+            <div key={i} className="rounded-xl border border-cream-3 bg-cream p-4">
+              <div className="flex items-start justify-between gap-3 mb-2">
+                <h3 className="font-display text-sm font-semibold text-ink leading-snug">{ins.title}</h3>
+                <span className={`shrink-0 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${priorityStyle(ins.priority)}`}>
+                  {ins.priority}
+                </span>
+              </div>
+              <p className="font-data text-[10px] uppercase tracking-wider text-ink-3 mb-1.5">{ins.metric}</p>
+              <p className="text-xs text-ink-2 leading-relaxed mb-3">{ins.description}</p>
+              <div className="flex items-start gap-1.5 border-t border-cream-2 pt-3">
+                <svg className="mt-0.5 h-3 w-3 shrink-0 text-teal" viewBox="0 0 12 12" fill="currentColor">
+                  <path d="M10.28 2.28L4 8.56 1.72 6.28a1 1 0 0 0-1.44 1.44l3 3a1 1 0 0 0 1.44 0l7-7a1 1 0 0 0-1.44-1.44z"/>
+                </svg>
+                <p className="text-xs text-ink font-medium">{ins.action}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
   )
 }
 
@@ -141,7 +323,6 @@ export default function AnalyticsDashboard({
   const totalSessions = sessions.reduce((s, r) => s + r.sessions, 0)
   const topChannel = sessions[0]?.channel ?? '—'
 
-  // Month-over-month trend
   const last2 = monthly.slice(-2)
   const momPct = last2.length === 2 && last2[0].sessions > 0
     ? ((last2[1].sessions - last2[0].sessions) / last2[0].sessions) * 100
@@ -213,7 +394,7 @@ export default function AnalyticsDashboard({
         />
       </div>
 
-      {/* Channel breakdown + Monthly trend side by side */}
+      {/* Channel breakdown + Monthly trend */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <section className="rounded-2xl border border-cream-3 bg-white p-6 shadow-sm">
           <div className="flex items-center justify-between">
@@ -232,6 +413,12 @@ export default function AnalyticsDashboard({
           <MonthlyChart monthly={monthly} />
         </section>
       </div>
+
+      {/* Channel Efficiency */}
+      <ChannelEfficiency sessions={sessions} />
+
+      {/* AI Insights */}
+      <AnalyticsInsights />
 
       {/* Top landing pages */}
       <section className="rounded-2xl border border-cream-3 bg-white shadow-sm overflow-hidden">
