@@ -50,6 +50,14 @@ export async function POST(_req: NextRequest) {
   const r5 = await fetch(`${BASE_URL}/?${q5}`)
   const raw5 = await r5.text()
 
+  // Test domain_ranks with display_date for historical monthly data (2 months ago)
+  const twoMonthsAgo = new Date()
+  twoMonthsAgo.setMonth(twoMonthsAgo.getMonth() - 2)
+  const displayDate = `${twoMonthsAgo.getFullYear()}${String(twoMonthsAgo.getMonth() + 1).padStart(2, '0')}15`
+  const q6 = new URLSearchParams({ key: apiKey, type: 'domain_ranks', export_columns: 'Dn,Or,Ot', domain, database: 'us', display_date: displayDate })
+  const r6 = await fetch(`${BASE_URL}/?${q6}`)
+  const raw6 = await r6.text()
+
   return Response.json({
     domain_stored: domain,
     domain_ranks_raw: raw1,
@@ -62,5 +70,8 @@ export async function POST(_req: NextRequest) {
     domain_ranks_history_status: r4.status,
     domain_organic_organic_raw: raw5,
     domain_organic_organic_status: r5.status,
+    domain_ranks_with_display_date_raw: raw6,
+    domain_ranks_with_display_date_status: r6.status,
+    display_date_tested: displayDate,
   })
 }
