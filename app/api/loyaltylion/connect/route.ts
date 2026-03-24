@@ -10,15 +10,14 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { token, secret } = await req.json() as { token: string; secret: string }
-  if (!token?.trim() || !secret?.trim()) {
-    return Response.json({ error: 'Token and secret are required' }, { status: 400 })
+  const { token } = await req.json() as { token: string }
+  if (!token?.trim()) {
+    return Response.json({ error: 'Token is required' }, { status: 400 })
   }
 
   const service = createSupabaseServiceClient()
   await service.from('stores').update({
     loyaltylion_token: token.trim(),
-    loyaltylion_secret: secret.trim(),
   }).eq('id', STORE_ID)
 
   return Response.json({ ok: true })

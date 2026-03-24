@@ -1,18 +1,14 @@
 /**
  * LoyaltyLion API v2 client
  * Docs: https://developers.loyaltylion.com/api/v2
- * Auth: HTTP Basic — token as username, secret as password
+ * Auth: Bearer PAT (Personal Access Token) — no secret required
  */
 
 const BASE_URL = 'https://api.loyaltylion.com/v2'
 
-function authHeader(token: string, secret: string): string {
-  return 'Basic ' + Buffer.from(`${token}:${secret}`).toString('base64')
-}
-
-function headers(token: string, secret: string): Record<string, string> {
+function headers(token: string): Record<string, string> {
   return {
-    Authorization: authHeader(token, secret),
+    Authorization: `Bearer ${token}`,
     'Content-Type': 'application/json',
   }
 }
@@ -62,7 +58,6 @@ export interface LoyaltyCampaign {
 
 async function fetchAllPages<T>(
   token: string,
-  secret: string,
   path: string,
   params: Record<string, string> = {}
 ): Promise<T[]> {
@@ -71,7 +66,7 @@ async function fetchAllPages<T>(
 
   do {
     const query = new URLSearchParams({ per_page: '500', page: String(page), ...params })
-    const res = await fetch(`${BASE_URL}${path}?${query}`, { headers: headers(token, secret) })
+    const res = await fetch(`${BASE_URL}${path}?${query}`, { headers: headers(token) })
 
     if (!res.ok) {
       const body = await res.text()
@@ -96,39 +91,35 @@ async function fetchAllPages<T>(
 
 // ── Public API functions ──────────────────────────────────────────────────────
 
-export async function getCustomers(token: string, secret: string): Promise<LoyaltyCustomer[]> {
-  return fetchAllPages<LoyaltyCustomer>(token, secret, '/customers')
+export async function getCustomers(token: string): Promise<LoyaltyCustomer[]> {
+  return fetchAllPages<LoyaltyCustomer>(token, '/customers')
 }
 
 export async function getActivities(
   token: string,
-  secret: string,
   dateRange: { from: string; to: string }
 ): Promise<LoyaltyActivity[]> {
-  return fetchAllPages<LoyaltyActivity>(token, secret, '/activities', {
+  return fetchAllPages<LoyaltyActivity>(token, '/activities', {
     created_at_gte: dateRange.from,
     created_at_lte: dateRange.to,
   })
 }
 
-export async function getRewards(token: string, secret: string): Promise<LoyaltyReward[]> {
-  return fetchAllPages<LoyaltyReward>(token, secret, '/rewards')
+export async function getRewards(token: string): Promise<LoyaltyReward[]> {
+  return fetchAllPages<LoyaltyReward>(token, '/rewards')
 }
 
-export async function getCampaigns(token: string, secret: string): Promise<LoyaltyCampaign[]> {
-  return fetchAllPages<LoyaltyCampaign>(token, secret, '/campaigns')
+export async function getCampaigns(token: string): Promise<LoyaltyCampaign[]> {
+  return fetchAllPages<LoyaltyCampaign>(token, '/campaigns')
 }
 
-export async function testConnection(
-  token: string,
-  secret: string
-): Promise<{ ok: boolean; message: string }> {
+export async function testConnection(token: string): Promise<{ ok: boolean; message: string }> {
   try {
     const res = await fetch(`${BASE_URL}/customers?per_page=1`, {
-      headers: headers(token, secret),
+      headers: headers(token),
     })
     if (res.ok) {
-      return { ok: true, message: 'Connection successful — credentials verified' }
+      return { ok: true, message: 'Connection successful — token verified' }
     }
     const body = await res.json() as { error?: string }
     return { ok: false, message: body.error ?? `HTTP ${res.status}` }

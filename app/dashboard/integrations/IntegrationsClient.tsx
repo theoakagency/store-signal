@@ -645,11 +645,15 @@ function RechargeModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
     if (!apiToken.trim()) return
     setSaveState('saving')
     try {
-      const res = await fetch('/api/recharge/connect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ apiToken }) })
-      const data = await res.json() as { ok?: boolean; error?: string }
-      if (data.error) { setSaveState('idle'); showToast(`Error: ${data.error}`); return }
+      const connectRes = await fetch('/api/recharge/connect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ apiToken }) })
+      const connectData = await connectRes.json() as { ok?: boolean; error?: string }
+      if (connectData.error) { setSaveState('idle'); showToast(`Error: ${connectData.error}`); return }
+
+      const syncRes = await fetch('/api/recharge/sync', { method: 'POST' })
+      const syncData = await syncRes.json() as { error?: string; active_subscribers?: number }
+      if (syncData.error) { setSaveState('idle'); showToast(`Sync error: ${syncData.error}`); return }
+
       setSaveState('done')
-      fetch('/api/recharge/sync', { method: 'POST' }).catch(() => null)
       onSuccess()
     } catch { setSaveState('idle'); showToast('Network error') }
   }
@@ -696,7 +700,7 @@ function RechargeModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
               {testState === 'testing' ? <span className="flex items-center justify-center gap-2"><span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-cream-3 border-t-teal" />Testing…</span> : 'Test Connection'}
             </button>
             <button onClick={handleSave} disabled={!apiToken.trim() || saveState === 'saving' || saveState === 'done'} className="flex-1 rounded-lg bg-[#FF6C00] px-4 py-2.5 text-sm font-semibold text-white hover:bg-orange-700 disabled:opacity-50 transition">
-              {saveState === 'saving' ? <span className="flex items-center justify-center gap-2"><span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white/40 border-t-white" />Saving…</span> : saveState === 'done' ? '✓ Connected' : 'Save & Sync'}
+              {saveState === 'saving' ? <span className="flex items-center justify-center gap-2"><span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white/40 border-t-white" />Connecting & syncing…</span> : saveState === 'done' ? '✓ Connected' : 'Save & Sync'}
             </button>
           </div>
         </div>
@@ -709,8 +713,6 @@ function RechargeModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
 
 function LoyaltyLionModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
   const [token, setToken] = useState('')
-  const [secret, setSecret] = useState('')
-  const [showSecret, setShowSecret] = useState(false)
   const [testState, setTestState] = useState<'idle' | 'testing' | 'ok' | 'fail'>('idle')
   const [testMsg, setTestMsg] = useState('')
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'done'>('idle')
@@ -718,10 +720,10 @@ function LoyaltyLionModal({ onClose, onSuccess }: { onClose: () => void; onSucce
   const inputCls = 'w-full rounded-lg border border-cream-3 bg-cream px-3 py-2 text-sm text-ink focus:border-teal focus:outline-none focus:ring-1 focus:ring-teal transition'
 
   async function handleTest() {
-    if (!token.trim() || !secret.trim()) return
+    if (!token.trim()) return
     setTestState('testing'); setTestMsg('')
     try {
-      const res = await fetch('/api/loyaltylion/test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, secret }) })
+      const res = await fetch('/api/loyaltylion/test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) })
       const data = await res.json() as { ok?: boolean; message?: string }
       if (data.ok) { setTestState('ok'); setTestMsg(data.message ?? 'Connection successful') }
       else { setTestState('fail'); setTestMsg(data.message ?? 'Connection failed') }
@@ -729,10 +731,10 @@ function LoyaltyLionModal({ onClose, onSuccess }: { onClose: () => void; onSucce
   }
 
   async function handleSave() {
-    if (!token.trim() || !secret.trim()) return
+    if (!token.trim()) return
     setSaveState('saving')
     try {
-      const res = await fetch('/api/loyaltylion/connect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, secret }) })
+      const res = await fetch('/api/loyaltylion/connect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) })
       const data = await res.json() as { ok?: boolean; error?: string }
       if (data.error) { setSaveState('idle'); showToast(`Error: ${data.error}`); return }
       setSaveState('done')
@@ -760,22 +762,13 @@ function LoyaltyLionModal({ onClose, onSuccess }: { onClose: () => void; onSucce
         </div>
         <div className="px-6 py-5 space-y-4">
           <div className="rounded-xl bg-pink-50 border border-pink-100 px-4 py-3 text-xs text-pink-900 space-y-1">
-            <p className="font-semibold">How to get your credentials:</p>
+            <p className="font-semibold">How to get your API token:</p>
             <p>1. Go to <strong>LoyaltyLion Admin → Settings → API</strong></p>
-            <p>2. Copy your <strong>Token</strong> and <strong>Secret</strong></p>
+            <p>2. Click <strong>Create API key</strong> and copy the token</p>
           </div>
           <div>
             <label className="block text-xs font-medium text-ink-2 mb-1">API Token *</label>
-            <input type="text" value={token} onChange={(e) => setToken(e.target.value)} placeholder="Your LoyaltyLion token" className={inputCls} />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-ink-2 mb-1">API Secret *</label>
-            <div className="relative">
-              <input type={showSecret ? 'text' : 'password'} value={secret} onChange={(e) => setSecret(e.target.value)} placeholder="Your LoyaltyLion secret" className={inputCls + ' pr-10'} />
-              <button type="button" onClick={() => setShowSecret((v) => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-3 hover:text-ink">
-                <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path d="M10 12a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"/><path fillRule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 1 1-8 0 4 4 0 0 1 8 0z" clipRule="evenodd"/></svg>
-              </button>
-            </div>
+            <input type="text" value={token} onChange={(e) => setToken(e.target.value)} placeholder="pat_xxxxxxxxxxxxxxxx" className={inputCls} />
           </div>
           {testMsg && (
             <div className={`rounded-lg px-3 py-2.5 text-xs ${testState === 'ok' ? 'bg-teal-pale text-teal-deep' : 'bg-red-50 text-red-700'}`}>
@@ -783,10 +776,10 @@ function LoyaltyLionModal({ onClose, onSuccess }: { onClose: () => void; onSucce
             </div>
           )}
           <div className="flex gap-2 pt-1">
-            <button onClick={handleTest} disabled={!token.trim() || !secret.trim() || testState === 'testing'} className="flex-1 rounded-lg border border-cream-3 px-4 py-2.5 text-sm font-medium text-ink-2 hover:bg-cream disabled:opacity-50 transition">
+            <button onClick={handleTest} disabled={!token.trim() || testState === 'testing'} className="flex-1 rounded-lg border border-cream-3 px-4 py-2.5 text-sm font-medium text-ink-2 hover:bg-cream disabled:opacity-50 transition">
               {testState === 'testing' ? <span className="flex items-center justify-center gap-2"><span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-cream-3 border-t-teal" />Testing…</span> : 'Test Connection'}
             </button>
-            <button onClick={handleSave} disabled={!token.trim() || !secret.trim() || saveState === 'saving' || saveState === 'done'} className="flex-1 rounded-lg bg-[#E31C79] px-4 py-2.5 text-sm font-semibold text-white hover:bg-pink-700 disabled:opacity-50 transition">
+            <button onClick={handleSave} disabled={!token.trim() || saveState === 'saving' || saveState === 'done'} className="flex-1 rounded-lg bg-[#E31C79] px-4 py-2.5 text-sm font-semibold text-white hover:bg-pink-700 disabled:opacity-50 transition">
               {saveState === 'saving' ? <span className="flex items-center justify-center gap-2"><span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white/40 border-t-white" />Saving…</span> : saveState === 'done' ? '✓ Connected' : 'Save & Sync'}
             </button>
           </div>

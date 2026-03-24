@@ -30,25 +30,25 @@ export async function POST(_req: NextRequest) {
 
   const { data: store } = await service
     .from('stores')
-    .select('loyaltylion_token, loyaltylion_secret')
+    .select('loyaltylion_token')
     .eq('id', STORE_ID)
     .single()
 
-  const s = store as { loyaltylion_token: string | null; loyaltylion_secret: string | null } | null
-  if (!s?.loyaltylion_token || !s?.loyaltylion_secret) {
+  const s = store as { loyaltylion_token: string | null } | null
+  if (!s?.loyaltylion_token) {
     return Response.json({ error: 'LoyaltyLion not connected' }, { status: 400 })
   }
 
-  const { loyaltylion_token: token, loyaltylion_secret: secret } = s
+  const token = s.loyaltylion_token
 
   // ── Fetch data ───────────────────────────────────────────────────────────────
   const twelveMonthsAgo = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString()
   const now = new Date().toISOString()
 
   const [customers, activities, campaigns] = await Promise.all([
-    getCustomers(token, secret),
-    getActivities(token, secret, { from: twelveMonthsAgo, to: now }),
-    getCampaigns(token, secret),
+    getCustomers(token),
+    getActivities(token, { from: twelveMonthsAgo, to: now }),
+    getCampaigns(token),
   ])
 
   // ── Upsert customers ─────────────────────────────────────────────────────────
