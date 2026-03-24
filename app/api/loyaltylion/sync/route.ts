@@ -7,10 +7,7 @@ import { createSupabaseServerClient, createSupabaseServiceClient } from '@/lib/s
 import {
   getCustomers,
   getActivities,
-  getRewards,
-  getCampaigns,
   type LoyaltyActivity,
-  type LoyaltyCampaign,
 } from '@/lib/loyaltylion'
 
 export const maxDuration = 300
@@ -45,12 +42,11 @@ export async function POST(_req: NextRequest) {
   const twelveMonthsAgo = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString()
   const now = new Date().toISOString()
 
-  let customers, activities, campaigns
+  let customers, activities
   try {
-    ;[customers, activities, campaigns] = await Promise.all([
+    ;[customers, activities] = await Promise.all([
       getCustomers(token),
       getActivities(token, { from: twelveMonthsAgo, to: now }),
-      getCampaigns(token),
     ])
   } catch (e) {
     const msg = (e as Error).message
@@ -153,8 +149,8 @@ export async function POST(_req: NextRequest) {
       tier: c.tier?.name ?? null,
     }))
 
-  // Promotion response analysis — campaign lift
-  const promotion_response_rate = await computePromotionLift(campaigns, activities, service)
+  // Promotion response analysis — campaigns endpoint not available in LoyaltyLion v2 API
+  const promotion_response_rate: unknown[] = []
 
   // ── Cache metrics ────────────────────────────────────────────────────────────
   await service.from('loyalty_metrics_cache').upsert({
@@ -185,87 +181,4 @@ export async function POST(_req: NextRequest) {
       points_liability_value: Math.round(points_liability_value * 100) / 100,
     },
   })
-}
-
-async function computePromotionLift(
-  campaigns: LoyaltyCampaign[],
-  activities: LoyaltyActivity[],
-  service: ReturnType<typeof createSupabaseServiceClient>
-): Promise<unknown[]> {
-  const results = []
-
-  const pointsMultiplierCampaigns = campaigns.filter(
-    (c) => c.points_multiplier && c.points_multiplier > 1 && c.started_at
-  )
-
-  for (const campaign of pointsMultiplierCampaigns.slice(0, 10)) {
-    if (!campaign.started_at) continue
-
-    const startDate = new Date(campaign.started_at)
-    const endDate = campaign.ended_at ? new Date(campaign.ended_at) : new Date(startDate.getTime() + 7 * 24 * 60 * 60 * 1000)
-
-    // Customers who earned points during campaign
-    const campaignParticipants = new Set(
-      activities
-        .filter((a) => {
-          const d = new Date(a.created_at)
-          return d >= startDate && d <= endDate && a.points_change > 0
-        })
-        .map((a) => a.customer?.email)
-        .filter(Boolean)
-    )
-
-    if (campaignParticipants.size === 0) continue
-
-    const windowDays = Math.round((endDate.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000))
-
-    // Orders during campaign window for participants
-    const { data: duringOrders } = await service
-      .from('orders')
-      .select('email')
-      .eq('tenant_id', TENANT_ID)
-      .eq('financial_status', 'paid')
-      .gte('created_at', startDate.toISOString())
-      .lte('created_at', endDate.toISOString())
-      .in('email', [...campaignParticipants])
-
-    // Orders for same customers in 2 weeks before campaign
-    const preWindowStart = new Date(startDate.getTime() - 14 * 24 * 60 * 60 * 1000)
-    const { data: beforeOrders } = await service
-      .from('orders')
-      .select('email')
-      .eq('tenant_id', TENANT_ID)
-      .eq('financial_status', 'paid')
-      .gte('created_at', preWindowStart.toISOString())
-      .lt('created_at', startDate.toISOString())
-      .in('email', [...campaignParticipants])
-
-    // Normalize to per-day order rates
-    const duringRate = (duringOrders?.length ?? 0) / Math.max(windowDays, 1)
-    const beforeRate = (beforeOrders?.length ?? 0) / 14
-    const lift = beforeRate > 0 ? (duringRate - beforeRate) / beforeRate : null
-    const incrementalOrders = Math.round((duringOrders?.length ?? 0) - (beforeRate * windowDays))
-
-    results.push({
-      campaign_id: campaign.id,
-      campaign_name: campaign.name,
-      started_at: campaign.started_at,
-      ended_at: campaign.ended_at,
-      multiplier: campaign.points_multiplier,
-      participants: campaignParticipants.size,
-      orders_during: duringOrders?.length ?? 0,
-      orders_before_14d: beforeOrders?.length ?? 0,
-      lift_pct: lift !== null ? Math.round(lift * 1000) / 10 : null,
-      incremental_orders: incrementalOrders,
-      verdict: lift === null
-        ? 'Insufficient data'
-        : lift > 0.1
-          ? 'Drove incremental purchases'
-          : lift < -0.1
-            ? 'No measurable lift (may be coincidental)'
-            : 'Minimal lift observed',
-    })
-  }
-
-  return results
 }
