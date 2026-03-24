@@ -31,8 +31,14 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: 'GSC not connected' }, { status: 400 })
   }
 
-  const { gsc_refresh_token: refreshToken, gsc_property_url: siteUrl } = store
-  const results = { keywords: 0, pages: 0, months: 0, errors: [] as string[] }
+  const { gsc_refresh_token: refreshToken, gsc_property_url: storedUrl } = store
+  const results = {
+    keywords: 0, pages: 0, months: 0,
+    errors: [] as string[],
+    availableProperties: [] as string[],
+    resolvedSiteUrl: null as string | null,
+    dateRange: {} as Record<string, string>,
+  }
 
   let accessToken: string
   try {
@@ -41,13 +47,62 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: `Auth failed: ${(err as Error).message}` }, { status: 400 })
   }
 
-  // Date ranges
+  // ── List all verified properties ─────────────────────────────────────────────
+  try {
+    const sitesRes = await fetch('https://www.googleapis.com/webmasters/v3/sites', {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
+    const sitesJson = await sitesRes.json()
+    results.availableProperties = (sitesJson.siteEntry ?? []).map(
+      (s: { siteUrl: string }) => s.siteUrl
+    )
+  } catch (err) {
+    results.errors.push(`sites.list: ${(err as Error).message}`)
+  }
+
+  // ── Resolve the correct siteUrl to query ─────────────────────────────────────
+  // Try candidates in priority order: stored value → with trailing slash → domain property
+  const base = (storedUrl ?? '').replace(/\/$/, '') // strip trailing slash for domain variant
+  const candidates = [
+    storedUrl,                       // exactly as stored
+    `${base}/`,                      // with trailing slash
+    `sc-domain:${base.replace(/^https?:\/\//, '')}`, // domain property
+  ].filter(Boolean) as string[]
+
+  let siteUrl: string | null = null
+  for (const candidate of candidates) {
+    if (results.availableProperties.includes(candidate)) {
+      siteUrl = candidate
+      break
+    }
+  }
+
+  // If not matched, try case-insensitive match
+  if (!siteUrl && results.availableProperties.length > 0) {
+    const lowerCandidates = candidates.map(c => c.toLowerCase())
+    siteUrl = results.availableProperties.find(p =>
+      lowerCandidates.includes(p.toLowerCase())
+    ) ?? null
+  }
+
+  results.resolvedSiteUrl = siteUrl
+
+  if (!siteUrl) {
+    return Response.json({
+      ...results,
+      error: `Property not found. Stored URL: "${storedUrl}". Available properties: ${results.availableProperties.join(', ')}. Go to Integrations and reconnect using one of the listed property URLs exactly.`,
+    }, { status: 400 })
+  }
+
+  // Date ranges — endDate is yesterday (GSC data is typically 1–2 days delayed)
   const now = new Date()
-  const end = toGscDate(new Date(now.getTime() - 2 * 86400000)) // GSC has ~2 day lag
-  const start90 = toGscDate(new Date(now.getTime() - 92 * 86400000))
-  const startPrior = toGscDate(new Date(now.getTime() - 182 * 86400000))
-  const endPrior = toGscDate(new Date(now.getTime() - 93 * 86400000))
+  const yesterday = new Date(now); yesterday.setDate(yesterday.getDate() - 1)
+  const end = toGscDate(yesterday)
+  const start90 = toGscDate(new Date(now.getTime() - 90 * 86400000))
+  const startPrior = toGscDate(new Date(now.getTime() - 180 * 86400000))
+  const endPrior = toGscDate(new Date(now.getTime() - 91 * 86400000))
   const start12m = toGscDate(new Date(now.getTime() - 365 * 86400000))
+  results.dateRange = { start90, end, startPrior, endPrior, start12m }
 
   // ── Top 50 keywords (last 90 days) ───────────────────────────────────────────
   try {
