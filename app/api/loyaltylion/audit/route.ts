@@ -12,6 +12,21 @@ export const maxDuration = 300
 const STORE_ID = '00000000-0000-0000-0000-000000000002'
 const BASE = 'https://api.loyaltylion.com/v2'
 
+async function fetchPage<T>(token: string, path: string, params: Record<string, string> = {}): Promise<T[]> {
+  const query = new URLSearchParams({ per_page: '500', ...params })
+  const res = await fetch(`${BASE}${path}?${query}`, {
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+  })
+  if (!res.ok) {
+    const body = await res.text()
+    throw new Error(`LoyaltyLion ${path} error ${res.status}: ${body}`)
+  }
+  const data = await res.json() as Record<string, unknown>
+  const key = path.replace('/', '')
+  return (data[key] as T[] | undefined) ?? []
+}
+
+// Fetch all pages — only use for small datasets (customers)
 async function fetchAll<T>(token: string, path: string, params: Record<string, string> = {}): Promise<T[]> {
   const results: T[] = []
   let cursor: string | null = null
@@ -65,7 +80,8 @@ export async function POST(_req: NextRequest) {
   try {
     ;[customers, activities] = await Promise.all([
       fetchAll<Record<string, unknown>>(token, '/customers'),
-      fetchAll<Record<string, unknown>>(token, '/activities', {
+      // Only fetch one page (500) — enough to determine cross-merchant scope
+      fetchPage<Record<string, unknown>>(token, '/activities', {
         created_at_gte: twelveMonthsAgo,
         created_at_lte: now,
       }),
