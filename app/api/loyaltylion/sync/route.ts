@@ -45,11 +45,18 @@ export async function POST(_req: NextRequest) {
   const twelveMonthsAgo = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString()
   const now = new Date().toISOString()
 
-  const [customers, activities, campaigns] = await Promise.all([
-    getCustomers(token),
-    getActivities(token, { from: twelveMonthsAgo, to: now }),
-    getCampaigns(token),
-  ])
+  let customers, activities, campaigns
+  try {
+    ;[customers, activities, campaigns] = await Promise.all([
+      getCustomers(token),
+      getActivities(token, { from: twelveMonthsAgo, to: now }),
+      getCampaigns(token),
+    ])
+  } catch (e) {
+    const msg = (e as Error).message
+    console.error('LoyaltyLion sync fetch error:', msg)
+    return Response.json({ error: msg }, { status: 502 })
+  }
 
   // ── Upsert customers ─────────────────────────────────────────────────────────
   if (customers.length > 0) {
