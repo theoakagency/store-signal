@@ -12,11 +12,12 @@ export default async function GoogleAdsPage() {
 
   const [{ data: store }, { data: campaigns }, { data: metricsRows }] = await Promise.all([
     supabase.from('stores').select('google_ads_refresh_token, google_ads_customer_id').eq('id', STORE_ID).single(),
-    service.from('google_campaigns').select('*').eq('tenant_id', TENANT_ID).order('spend', { ascending: false }),
+    service.from('google_campaigns').select('*').eq('tenant_id', TENANT_ID).order('conversion_value', { ascending: false }),
     service.from('google_metrics_cache').select('metric_name, metric_value').eq('tenant_id', TENANT_ID),
   ])
 
   const connected = !!store?.google_ads_refresh_token
+  const dataSource = (campaigns ?? []).some((c) => (c as { data_source?: string }).data_source === 'ga4') ? 'ga4' : 'google_ads'
 
   const metrics: Record<string, number> = {}
   for (const r of metricsRows ?? []) metrics[r.metric_name] = Number(r.metric_value)
@@ -26,6 +27,7 @@ export default async function GoogleAdsPage() {
       connected={connected}
       campaigns={campaigns ?? []}
       metrics={metrics}
+      dataSource={dataSource}
     />
   )
 }

@@ -23,6 +23,7 @@ interface Props {
   connected: boolean
   campaigns: Campaign[]
   metrics: Record<string, number>
+  dataSource?: 'google_ads' | 'ga4'
 }
 
 const CAMPAIGN_TYPE_LABEL: Record<string, string> = {
@@ -136,7 +137,7 @@ function TypeBreakdown({ campaigns }: { campaigns: Campaign[] }) {
   )
 }
 
-export default function GoogleAdsDashboard({ connected, campaigns, metrics }: Props) {
+export default function GoogleAdsDashboard({ connected, campaigns, metrics, dataSource = 'google_ads' }: Props) {
   const [syncing, setSyncing] = useState(false)
   const [syncMsg, setSyncMsg] = useState('')
 
@@ -181,12 +182,39 @@ export default function GoogleAdsDashboard({ connected, campaigns, metrics }: Pr
       </div>
       {syncMsg && <p className="text-sm text-ink-2">{syncMsg}</p>}
 
+      {/* GA4 fallback notice */}
+      {dataSource === 'ga4' && (
+        <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+          <svg className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm0 4a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 8 5zm0 7a1 1 0 1 1 0-2 1 1 0 0 1 0 2z"/>
+          </svg>
+          <div>
+            <p className="text-sm font-semibold text-amber-800">Campaign data sourced from Google Analytics</p>
+            <p className="text-xs text-amber-700 mt-0.5">
+              Conversions and revenue shown. Spend and ROAS are unavailable until the Google Ads API Developer Token is approved.
+              Connect GA4 in Integrations to keep this data current.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* KPI cards */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <MetricCard label="Ad Spend (30d)" value={fmt(m('total_ad_spend_30d'))} sub="total spend" />
-        <MetricCard label="ROAS (30d)" value={`${fmt(m('total_roas_30d'), false)}×`} sub="return on ad spend" />
-        <MetricCard label="Cost Per Conversion" value={m('cost_per_conversion_30d') > 0 ? fmt(m('cost_per_conversion_30d')) : '—'} sub="30-day avg" />
-        <MetricCard label="Conversions (30d)" value={m('total_conversions_30d').toFixed(0)} sub="attributed" />
+        {dataSource === 'ga4' ? (
+          <>
+            <MetricCard label="Ad Spend (90d)" value="—" sub="pending API approval" />
+            <MetricCard label="ROAS (90d)" value="—" sub="pending API approval" />
+            <MetricCard label="Conversions (90d)" value={campaigns.reduce((s, c) => s + c.conversions, 0).toFixed(0)} sub="from Google Analytics" />
+            <MetricCard label="Revenue (90d)" value={fmt(campaigns.reduce((s, c) => s + c.conversion_value, 0))} sub="from Google Analytics" />
+          </>
+        ) : (
+          <>
+            <MetricCard label="Ad Spend (30d)" value={fmt(m('total_ad_spend_30d'))} sub="total spend" />
+            <MetricCard label="ROAS (30d)" value={`${fmt(m('total_roas_30d'), false)}×`} sub="return on ad spend" />
+            <MetricCard label="Cost Per Conversion" value={m('cost_per_conversion_30d') > 0 ? fmt(m('cost_per_conversion_30d')) : '—'} sub="30-day avg" />
+            <MetricCard label="Conversions (30d)" value={m('total_conversions_30d').toFixed(0)} sub="attributed" />
+          </>
+        )}
       </div>
 
       {/* Underperformer alert */}

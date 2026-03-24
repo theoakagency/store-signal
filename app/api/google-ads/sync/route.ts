@@ -1,12 +1,56 @@
 import { NextRequest } from 'next/server'
 import { createSupabaseServerClient, createSupabaseServiceClient } from '@/lib/supabase'
 import { getCampaigns, getAccountSummary } from '@/lib/googleAds'
+import { getGoogleAdsCampaigns } from '@/lib/analytics'
 
 export const maxDuration = 60
 
 const TENANT_ID = '00000000-0000-0000-0000-000000000001'
 const STORE_ID = '00000000-0000-0000-0000-000000000002'
 const GOOGLE_ADS_CUSTOMER_ID = '9145748200'
+
+// ── GA4 fallback when Google Ads API returns 501 ──────────────────────────────
+
+async function syncFromGa4(
+  refreshToken: string,
+  propertyId: string,
+  service: ReturnType<typeof import('@/lib/supabase').createSupabaseServiceClient>,
+  tenantId: string
+) {
+  const campaigns = await getGoogleAdsCampaigns(propertyId, refreshToken, 90)
+
+  if (campaigns.length > 0) {
+    const now = new Date().toISOString()
+    const rows = campaigns.map((c) => ({
+      id: `ga4_${c.campaignName.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`,
+      tenant_id: tenantId,
+      name: c.campaignName,
+      status: 'UNKNOWN',
+      campaign_type: 'UNKNOWN',
+      spend: 0,
+      impressions: 0,
+      clicks: c.sessions,   // sessions used as proxy
+      ctr: 0,
+      avg_cpc: 0,
+      conversions: c.conversions,
+      conversion_value: c.revenue,
+      roas: 0,
+      impression_share: null,
+      date_start: null,
+      date_stop: null,
+      data_source: 'ga4',
+      updated_at: now,
+    }))
+
+    await service.from('google_campaigns').upsert(rows, { onConflict: 'id' })
+  }
+
+  return Response.json({
+    synced: campaigns.length,
+    data_source: 'ga4',
+    note: 'Campaign data sourced from Google Analytics — spend/ROAS pending Google Ads API approval',
+  })
+}
 
 export async function POST(_req: NextRequest) {
   const supabase = await createSupabaseServerClient()
@@ -17,7 +61,7 @@ export async function POST(_req: NextRequest) {
 
   const { data: store } = await service
     .from('stores')
-    .select('google_ads_customer_id, google_ads_refresh_token, google_ads_developer_token')
+    .select('google_ads_customer_id, google_ads_refresh_token, google_ads_developer_token, ga4_refresh_token, ga4_property_id')
     .eq('id', STORE_ID)
     .single()
 
@@ -33,10 +77,20 @@ export async function POST(_req: NextRequest) {
   const { google_ads_refresh_token: refreshToken, google_ads_developer_token: devToken } = store
 
   try {
-    const [campaigns, summary30d] = await Promise.all([
-      getCampaigns(customerId, refreshToken, devToken, 90),
-      getAccountSummary(customerId, refreshToken, devToken, 30),
-    ])
+    let campaigns, summary30d
+    try {
+      ;[campaigns, summary30d] = await Promise.all([
+        getCampaigns(customerId, refreshToken, devToken, 90),
+        getAccountSummary(customerId, refreshToken, devToken, 30),
+      ])
+    } catch (apiErr) {
+      const msg = (apiErr as Error).message
+      // 501 = developer token pending/test-only; try GA4 fallback if connected
+      if (msg.includes('501') && store?.ga4_refresh_token && store?.ga4_property_id) {
+        return await syncFromGa4(store.ga4_refresh_token, store.ga4_property_id, service, TENANT_ID)
+      }
+      throw apiErr
+    }
 
     // Upsert campaigns
     if (campaigns.length > 0) {
