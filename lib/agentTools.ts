@@ -814,6 +814,85 @@ const getBusinessHealthScore: AgentTool = {
   },
 }
 
+// ── Tool 13: get_subscription_data ────────────────────────────────────────────
+
+const getSubscriptionData: AgentTool = {
+  schema: {
+    name: 'get_subscription_data',
+    description: 'Get Recharge subscription metrics: active subscribers, MRR, ARR, churn rate, interval breakdown, and subscriber vs non-subscriber LTV comparison.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {},
+      required: [],
+    },
+  },
+  async execute(_input, supabase, tenantId) {
+    const { data: cache } = await supabase
+      .from('recharge_metrics_cache')
+      .select('*')
+      .eq('tenant_id', tenantId)
+      .maybeSingle()
+
+    if (!cache) {
+      return { error: 'Recharge not connected or not yet synced', connected: false }
+    }
+
+    return {
+      connected: true,
+      active_subscribers: cache.active_subscribers,
+      mrr: cache.mrr,
+      arr: cache.arr,
+      avg_subscription_value: cache.avg_subscription_value,
+      churn_rate_30d: cache.churn_rate_30d,
+      top_subscribed_product: cache.top_subscribed_product,
+      interval_breakdown: cache.interval_breakdown,
+      subscriber_vs_nonsubscriber_ltv: cache.subscriber_vs_nonsubscriber_ltv,
+      adhesive_penetration: cache.adhesive_penetration,
+      adhesive_nonsubscribers: cache.adhesive_nonsubscribers,
+      calculated_at: cache.calculated_at,
+    }
+  },
+}
+
+// ── Tool 14: get_loyalty_data ──────────────────────────────────────────────────
+
+const getLoyaltyData: AgentTool = {
+  schema: {
+    name: 'get_loyalty_data',
+    description: 'Get LoyaltyLion program metrics: enrolled customers, redemption rate, points liability, promotion lift analysis, and tier breakdown.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {},
+      required: [],
+    },
+  },
+  async execute(_input, supabase, tenantId) {
+    const { data: cache } = await supabase
+      .from('loyalty_metrics_cache')
+      .select('*')
+      .eq('tenant_id', tenantId)
+      .maybeSingle()
+
+    if (!cache) {
+      return { error: 'LoyaltyLion not connected or not yet synced', connected: false }
+    }
+
+    return {
+      connected: true,
+      enrolled_customers: cache.enrolled_customers,
+      active_redeemers_30d: cache.active_redeemers_30d,
+      points_issued_30d: cache.points_issued_30d,
+      points_redeemed_30d: cache.points_redeemed_30d,
+      redemption_rate: cache.redemption_rate,
+      avg_points_balance: cache.avg_points_balance,
+      points_liability_value: cache.points_liability_value,
+      promotion_response_rate: cache.promotion_response_rate,
+      tier_breakdown: cache.tier_breakdown,
+      calculated_at: cache.calculated_at,
+    }
+  },
+}
+
 // ── Exported tools list ───────────────────────────────────────────────────────
 
 export const agentTools: AgentTool[] = [
@@ -829,6 +908,8 @@ export const agentTools: AgentTool[] = [
   getPromotionHistory,
   getSalesChannels,
   getBusinessHealthScore,
+  getSubscriptionData,
+  getLoyaltyData,
 ]
 
 export const toolSchemas = agentTools.map((t) => t.schema)
@@ -861,6 +942,8 @@ export function toolStatusMessage(toolName: string): string {
     get_promotion_history:     'Looking up promotion history…',
     get_sales_channels:        'Breaking down sales channels…',
     get_business_health_score: 'Running business health check…',
+    get_subscription_data:     'Checking subscription metrics…',
+    get_loyalty_data:          'Analyzing loyalty program data…',
   }
   return messages[toolName] ?? 'Fetching data…'
 }

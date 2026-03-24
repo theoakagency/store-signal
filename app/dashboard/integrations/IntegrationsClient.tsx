@@ -17,6 +17,8 @@ interface Props {
   metaAdAccountId: string | null
   googleAdsConnected: boolean
   googleAdsCustomerId: string | null
+  rechargeConnected: boolean
+  loyaltylionConnected: boolean
 }
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
@@ -617,6 +619,183 @@ function KlaviyoModal({ onClose, onSuccess }: KlaviyoModalProps) {
   )
 }
 
+// ── Recharge Connect Modal ────────────────────────────────────────────────────
+
+function RechargeModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
+  const [apiToken, setApiToken] = useState('')
+  const [showToken, setShowToken] = useState(false)
+  const [testState, setTestState] = useState<'idle' | 'testing' | 'ok' | 'fail'>('idle')
+  const [testMsg, setTestMsg] = useState('')
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'done'>('idle')
+
+  const inputCls = 'w-full rounded-lg border border-cream-3 bg-cream px-3 py-2 text-sm text-ink focus:border-teal focus:outline-none focus:ring-1 focus:ring-teal transition'
+
+  async function handleTest() {
+    if (!apiToken.trim()) return
+    setTestState('testing'); setTestMsg('')
+    try {
+      const res = await fetch('/api/recharge/test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ apiToken }) })
+      const data = await res.json() as { ok?: boolean; message?: string }
+      if (data.ok) { setTestState('ok'); setTestMsg(data.message ?? 'Connection successful') }
+      else { setTestState('fail'); setTestMsg(data.message ?? 'Connection failed') }
+    } catch { setTestState('fail'); setTestMsg('Network error') }
+  }
+
+  async function handleSave() {
+    if (!apiToken.trim()) return
+    setSaveState('saving')
+    try {
+      const res = await fetch('/api/recharge/connect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ apiToken }) })
+      const data = await res.json() as { ok?: boolean; error?: string }
+      if (data.error) { setSaveState('idle'); showToast(`Error: ${data.error}`); return }
+      setSaveState('done')
+      fetch('/api/recharge/sync', { method: 'POST' }).catch(() => null)
+      onSuccess()
+    } catch { setSaveState('idle'); showToast('Network error') }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-charcoal/50 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative z-10 w-full max-w-md rounded-2xl bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b border-cream-2 px-6 py-5">
+          <div className="flex items-center gap-3">
+            <div className="h-8 w-8 rounded-lg bg-[#FF6C00] flex items-center justify-center">
+              <span className="text-sm font-bold text-white">R</span>
+            </div>
+            <h2 className="font-display text-lg font-semibold text-ink">Connect Recharge</h2>
+          </div>
+          <button onClick={onClose} className="rounded-lg p-1.5 hover:bg-cream-2 transition text-ink-3">
+            <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 0 1 1.414 0L10 8.586l4.293-4.293a1 1 0 1 1 1.414 1.414L11.414 10l4.293 4.293a1 1 0 0 1-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 0 1-1.414-1.414L8.586 10 4.293 5.707a1 1 0 0 1 0-1.414z" clipRule="evenodd"/></svg>
+          </button>
+        </div>
+        <div className="px-6 py-5 space-y-4">
+          <div className="rounded-xl bg-orange-50 border border-orange-100 px-4 py-3 text-xs text-orange-800 space-y-1">
+            <p className="font-semibold">How to get your API Token:</p>
+            <p>1. Go to <strong>Recharge Admin → Apps → API Tokens</strong></p>
+            <p>2. Click <strong>Create API Token</strong></p>
+            <p>3. Select <strong>Read access</strong> for Subscriptions, Customers, Charges</p>
+            <p>4. Copy and paste the token below</p>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-ink-2 mb-1">API Token *</label>
+            <div className="relative">
+              <input type={showToken ? 'text' : 'password'} value={apiToken} onChange={(e) => setApiToken(e.target.value)} placeholder="sk_1x_•••••••••••••••••" className={inputCls + ' pr-10'} />
+              <button type="button" onClick={() => setShowToken((v) => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-3 hover:text-ink">
+                <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path d="M10 12a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"/><path fillRule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 1 1-8 0 4 4 0 0 1 8 0z" clipRule="evenodd"/></svg>
+              </button>
+            </div>
+          </div>
+          {testMsg && (
+            <div className={`rounded-lg px-3 py-2.5 text-xs ${testState === 'ok' ? 'bg-teal-pale text-teal-deep' : 'bg-red-50 text-red-700'}`}>
+              {testState === 'ok' ? '✓ ' : '✗ '}{testMsg}
+            </div>
+          )}
+          <div className="flex gap-2 pt-1">
+            <button onClick={handleTest} disabled={!apiToken.trim() || testState === 'testing'} className="flex-1 rounded-lg border border-cream-3 px-4 py-2.5 text-sm font-medium text-ink-2 hover:bg-cream disabled:opacity-50 transition">
+              {testState === 'testing' ? <span className="flex items-center justify-center gap-2"><span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-cream-3 border-t-teal" />Testing…</span> : 'Test Connection'}
+            </button>
+            <button onClick={handleSave} disabled={!apiToken.trim() || saveState === 'saving' || saveState === 'done'} className="flex-1 rounded-lg bg-[#FF6C00] px-4 py-2.5 text-sm font-semibold text-white hover:bg-orange-700 disabled:opacity-50 transition">
+              {saveState === 'saving' ? <span className="flex items-center justify-center gap-2"><span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white/40 border-t-white" />Saving…</span> : saveState === 'done' ? '✓ Connected' : 'Save & Sync'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── LoyaltyLion Connect Modal ──────────────────────────────────────────────────
+
+function LoyaltyLionModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
+  const [token, setToken] = useState('')
+  const [secret, setSecret] = useState('')
+  const [showSecret, setShowSecret] = useState(false)
+  const [testState, setTestState] = useState<'idle' | 'testing' | 'ok' | 'fail'>('idle')
+  const [testMsg, setTestMsg] = useState('')
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'done'>('idle')
+
+  const inputCls = 'w-full rounded-lg border border-cream-3 bg-cream px-3 py-2 text-sm text-ink focus:border-teal focus:outline-none focus:ring-1 focus:ring-teal transition'
+
+  async function handleTest() {
+    if (!token.trim() || !secret.trim()) return
+    setTestState('testing'); setTestMsg('')
+    try {
+      const res = await fetch('/api/loyaltylion/test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, secret }) })
+      const data = await res.json() as { ok?: boolean; message?: string }
+      if (data.ok) { setTestState('ok'); setTestMsg(data.message ?? 'Connection successful') }
+      else { setTestState('fail'); setTestMsg(data.message ?? 'Connection failed') }
+    } catch { setTestState('fail'); setTestMsg('Network error') }
+  }
+
+  async function handleSave() {
+    if (!token.trim() || !secret.trim()) return
+    setSaveState('saving')
+    try {
+      const res = await fetch('/api/loyaltylion/connect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, secret }) })
+      const data = await res.json() as { ok?: boolean; error?: string }
+      if (data.error) { setSaveState('idle'); showToast(`Error: ${data.error}`); return }
+      setSaveState('done')
+      fetch('/api/loyaltylion/sync', { method: 'POST' }).catch(() => null)
+      onSuccess()
+    } catch { setSaveState('idle'); showToast('Network error') }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-charcoal/50 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative z-10 w-full max-w-md rounded-2xl bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b border-cream-2 px-6 py-5">
+          <div className="flex items-center gap-3">
+            <div className="h-8 w-8 rounded-lg bg-[#E31C79] flex items-center justify-center">
+              <svg className="h-5 w-5 text-white" viewBox="0 0 20 20" fill="currentColor">
+                <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+              </svg>
+            </div>
+            <h2 className="font-display text-lg font-semibold text-ink">Connect LoyaltyLion</h2>
+          </div>
+          <button onClick={onClose} className="rounded-lg p-1.5 hover:bg-cream-2 transition text-ink-3">
+            <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 0 1 1.414 0L10 8.586l4.293-4.293a1 1 0 1 1 1.414 1.414L11.414 10l4.293 4.293a1 1 0 0 1-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 0 1-1.414-1.414L8.586 10 4.293 5.707a1 1 0 0 1 0-1.414z" clipRule="evenodd"/></svg>
+          </button>
+        </div>
+        <div className="px-6 py-5 space-y-4">
+          <div className="rounded-xl bg-pink-50 border border-pink-100 px-4 py-3 text-xs text-pink-900 space-y-1">
+            <p className="font-semibold">How to get your credentials:</p>
+            <p>1. Go to <strong>LoyaltyLion Admin → Settings → API</strong></p>
+            <p>2. Copy your <strong>Token</strong> and <strong>Secret</strong></p>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-ink-2 mb-1">API Token *</label>
+            <input type="text" value={token} onChange={(e) => setToken(e.target.value)} placeholder="Your LoyaltyLion token" className={inputCls} />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-ink-2 mb-1">API Secret *</label>
+            <div className="relative">
+              <input type={showSecret ? 'text' : 'password'} value={secret} onChange={(e) => setSecret(e.target.value)} placeholder="Your LoyaltyLion secret" className={inputCls + ' pr-10'} />
+              <button type="button" onClick={() => setShowSecret((v) => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-3 hover:text-ink">
+                <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path d="M10 12a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"/><path fillRule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 1 1-8 0 4 4 0 0 1 8 0z" clipRule="evenodd"/></svg>
+              </button>
+            </div>
+          </div>
+          {testMsg && (
+            <div className={`rounded-lg px-3 py-2.5 text-xs ${testState === 'ok' ? 'bg-teal-pale text-teal-deep' : 'bg-red-50 text-red-700'}`}>
+              {testState === 'ok' ? '✓ ' : '✗ '}{testMsg}
+            </div>
+          )}
+          <div className="flex gap-2 pt-1">
+            <button onClick={handleTest} disabled={!token.trim() || !secret.trim() || testState === 'testing'} className="flex-1 rounded-lg border border-cream-3 px-4 py-2.5 text-sm font-medium text-ink-2 hover:bg-cream disabled:opacity-50 transition">
+              {testState === 'testing' ? <span className="flex items-center justify-center gap-2"><span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-cream-3 border-t-teal" />Testing…</span> : 'Test Connection'}
+            </button>
+            <button onClick={handleSave} disabled={!token.trim() || !secret.trim() || saveState === 'saving' || saveState === 'done'} className="flex-1 rounded-lg bg-[#E31C79] px-4 py-2.5 text-sm font-semibold text-white hover:bg-pink-700 disabled:opacity-50 transition">
+              {saveState === 'saving' ? <span className="flex items-center justify-center gap-2"><span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white/40 border-t-white" />Saving…</span> : saveState === 'done' ? '✓ Connected' : 'Save & Sync'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function IntegrationsClient({
@@ -633,6 +812,8 @@ export default function IntegrationsClient({
   metaAdAccountId,
   googleAdsConnected,
   googleAdsCustomerId,
+  rechargeConnected,
+  loyaltylionConnected,
 }: Props) {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -641,6 +822,8 @@ export default function IntegrationsClient({
   const [showGa4Modal, setShowGa4Modal] = useState(false)
   const [showMetaModal, setShowMetaModal] = useState(false)
   const [showGoogleAdsModal, setShowGoogleAdsModal] = useState(false)
+  const [showRechargeModal, setShowRechargeModal] = useState(false)
+  const [showLoyaltyLionModal, setShowLoyaltyLionModal] = useState(false)
   const [disconnectingGsc, setDisconnectingGsc] = useState(false)
 
   // Handle OAuth callback toasts
@@ -710,6 +893,8 @@ export default function IntegrationsClient({
       {showGa4Modal && <Ga4Modal onClose={() => setShowGa4Modal(false)} />}
       {showMetaModal && <MetaModal onClose={() => setShowMetaModal(false)} onSuccess={handleMetaSuccess} />}
       {showGoogleAdsModal && <GoogleAdsModal onClose={() => setShowGoogleAdsModal(false)} onSuccess={() => { setShowGoogleAdsModal(false); router.refresh() }} />}
+      {showRechargeModal && <RechargeModal onClose={() => setShowRechargeModal(false)} onSuccess={() => { setShowRechargeModal(false); showToast('Recharge connected — syncing now…'); router.refresh() }} />}
+      {showLoyaltyLionModal && <LoyaltyLionModal onClose={() => setShowLoyaltyLionModal(false)} onSuccess={() => { setShowLoyaltyLionModal(false); showToast('LoyaltyLion connected — syncing now…'); router.refresh() }} />}
 
       <div className="space-y-8">
         {/* E-Commerce */}
@@ -932,6 +1117,59 @@ export default function IntegrationsClient({
                 ) : (
                   <button onClick={() => setShowGoogleAdsModal(true)} className="inline-flex items-center gap-1.5 rounded-lg bg-[#4285F4] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#3367d6] transition">
                     Connect Google Ads
+                  </button>
+                )
+              }
+            />
+          </div>
+        </section>
+
+        {/* Revenue Streams */}
+        <section>
+          <h2 className="font-display text-base font-semibold text-ink mb-3">Revenue Streams</h2>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <IntegrationCard
+              name="Recharge Subscriptions"
+              description="Track subscription MRR, ARR, churn rate, interval breakdown, and subscriber LTV vs one-time buyer comparison."
+              logo={
+                <div className="h-6 w-6 rounded-lg bg-[#FF6C00] flex items-center justify-center">
+                  <span className="text-xs font-bold text-white">R</span>
+                </div>
+              }
+              status={rechargeConnected ? 'connected' : 'not_connected'}
+              action={
+                rechargeConnected ? (
+                  <div className="flex items-center gap-3">
+                    <a href="/dashboard/subscriptions" className="text-xs text-teal hover:text-teal-dark font-medium transition">View dashboard →</a>
+                    <button onClick={() => setShowRechargeModal(true)} className="text-xs text-ink-3 hover:text-ink transition">Update token</button>
+                  </div>
+                ) : (
+                  <button onClick={() => setShowRechargeModal(true)} className="inline-flex items-center rounded-lg bg-[#FF6C00] px-3 py-1.5 text-xs font-semibold text-white hover:bg-orange-700 transition">
+                    Connect Recharge
+                  </button>
+                )
+              }
+            />
+            <IntegrationCard
+              name="LoyaltyLion"
+              description="Analyze loyalty program health, points flow, promotion lift, and whether points multiplier campaigns actually drive incremental purchases."
+              logo={
+                <div className="h-6 w-6 rounded-lg bg-[#E31C79] flex items-center justify-center">
+                  <svg className="h-4 w-4 text-white" viewBox="0 0 20 20" fill="currentColor">
+                    <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                  </svg>
+                </div>
+              }
+              status={loyaltylionConnected ? 'connected' : 'not_connected'}
+              action={
+                loyaltylionConnected ? (
+                  <div className="flex items-center gap-3">
+                    <a href="/dashboard/loyalty" className="text-xs text-teal hover:text-teal-dark font-medium transition">View dashboard →</a>
+                    <button onClick={() => setShowLoyaltyLionModal(true)} className="text-xs text-ink-3 hover:text-ink transition">Update credentials</button>
+                  </div>
+                ) : (
+                  <button onClick={() => setShowLoyaltyLionModal(true)} className="inline-flex items-center rounded-lg bg-[#E31C79] px-3 py-1.5 text-xs font-semibold text-white hover:bg-pink-700 transition">
+                    Connect LoyaltyLion
                   </button>
                 )
               }

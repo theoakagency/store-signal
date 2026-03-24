@@ -73,6 +73,8 @@ export default function NavLinks({
   ga4Connected,
   metaConnected,
   googleAdsConnected,
+  rechargeConnected,
+  loyaltylionConnected,
 }: {
   onNavigate?: () => void
   klaviyoConnected?: boolean
@@ -80,6 +82,8 @@ export default function NavLinks({
   ga4Connected?: boolean
   metaConnected?: boolean
   googleAdsConnected?: boolean
+  rechargeConnected?: boolean
+  loyaltylionConnected?: boolean
 }) {
   const pathname = usePathname()
 
@@ -190,6 +194,36 @@ export default function NavLinks({
         </svg>
         Google Ads
         <span className={`ml-auto h-1.5 w-1.5 rounded-full ${googleAdsConnected ? 'bg-teal' : 'bg-cream/20'}`} />
+      </Link>
+
+      {/* Revenue Streams section */}
+      <div className="mt-4 mb-1 px-3">
+        <p className="text-[10px] font-data uppercase tracking-widest text-cream/25">Revenue Streams</p>
+      </div>
+
+      <Link
+        href="/dashboard/subscriptions"
+        onClick={onNavigate}
+        className={`nav-link ${pathname.startsWith('/dashboard/subscriptions') ? 'active' : ''}`}
+      >
+        <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+          <path d="M4 8a4 4 0 1 1 8 0 4 4 0 0 1-8 0zM8 5v3l2 1" strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M2 13.5C3.3 12 5.5 11 8 11s4.7 1 6 2.5" strokeLinecap="round"/>
+        </svg>
+        Subscriptions
+        <span className={`ml-auto h-1.5 w-1.5 rounded-full ${rechargeConnected ? 'bg-teal' : 'bg-cream/20'}`} />
+      </Link>
+
+      <Link
+        href="/dashboard/loyalty"
+        onClick={onNavigate}
+        className={`nav-link ${pathname.startsWith('/dashboard/loyalty') ? 'active' : ''}`}
+      >
+        <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+          <path d="M8 2l1.6 3.3 3.6.5-2.6 2.5.6 3.6L8 10.3l-3.2 1.6.6-3.6L2.8 5.8l3.6-.5L8 2z" strokeLinejoin="round"/>
+        </svg>
+        Loyalty Program
+        <span className={`ml-auto h-1.5 w-1.5 rounded-full ${loyaltylionConnected ? 'bg-teal' : 'bg-cream/20'}`} />
       </Link>
     </nav>
   )
