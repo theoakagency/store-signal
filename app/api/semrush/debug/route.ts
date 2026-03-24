@@ -35,10 +35,20 @@ export async function POST(_req: NextRequest) {
   const r2 = await fetch(`${BASE_URL}/?${q2}`)
   const raw2 = await r2.text()
 
-  // Also try domain_organic to see organic keywords
-  const q3 = new URLSearchParams({ key: apiKey, type: 'domain_organic', export_columns: 'Ph,Po,Nq', domain, database: 'us', display_limit: '3' })
+  // domain_organic with all columns to see position change header names
+  const q3 = new URLSearchParams({ key: apiKey, type: 'domain_organic', export_columns: 'Ph,Po,Pp,Pd,Nq,Cp,Ur,Tr,Co', domain, database: 'us', display_limit: '2' })
   const r3 = await fetch(`${BASE_URL}/?${q3}`)
   const raw3 = await r3.text()
+
+  // domain_ranks_history to see date column name
+  const q4 = new URLSearchParams({ key: apiKey, type: 'domain_ranks_history', export_columns: 'Dt,Or,Ot', domain, database: 'us', display_limit: '3' })
+  const r4 = await fetch(`${BASE_URL}/?${q4}`)
+  const raw4 = await r4.text()
+
+  // domain_organic_organic to see competitor column names
+  const q5 = new URLSearchParams({ key: apiKey, type: 'domain_organic_organic', export_columns: 'Dn,Cr,Np,Or,Ot,Oc,Ad', domain, database: 'us', display_limit: '2' })
+  const r5 = await fetch(`${BASE_URL}/?${q5}`)
+  const raw5 = await r5.text()
 
   return Response.json({
     domain_stored: domain,
@@ -46,7 +56,11 @@ export async function POST(_req: NextRequest) {
     domain_ranks_status: r1.status,
     www_domain_ranks_raw: raw2,
     www_domain_ranks_status: r2.status,
-    domain_organic_raw: raw3,
-    domain_organic_status: r3.status,
+    domain_organic_full_raw: raw3,
+    domain_organic_full_status: r3.status,
+    domain_ranks_history_raw: raw4,
+    domain_ranks_history_status: r4.status,
+    domain_organic_organic_raw: raw5,
+    domain_organic_organic_status: r5.status,
   })
 }
