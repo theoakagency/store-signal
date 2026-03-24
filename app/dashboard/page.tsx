@@ -1,6 +1,7 @@
-import { createSupabaseServerClient } from '@/lib/supabase'
+import { createSupabaseServerClient, createSupabaseServiceClient } from '@/lib/supabase'
 import Link from 'next/link'
 import RevenueSection from './RevenueSection'
+import AiInsightsBrief, { type ExecutiveInsight } from './AiInsightsBrief'
 
 export const metadata = {
   title: 'Executive Summary — Store Signal',
@@ -84,6 +85,8 @@ export default async function DashboardPage() {
   twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12)
 
   // ── Fetch all data in parallel ──────────────────────────────────────────────
+  const service = createSupabaseServiceClient()
+
   const [
     { data: currentRows },
     { data: priorRows },
@@ -94,6 +97,7 @@ export default async function DashboardPage() {
     { data: topCampaignRows },
     { data: topFlowRows },
     { data: channelRows },
+    { data: execInsightsCache },
   ] = await Promise.all([
     supabase
       .from('orders')
@@ -142,6 +146,11 @@ export default async function DashboardPage() {
       .select('channel_name, revenue, order_count, avg_order_value')
       .eq('tenant_id', TENANT_ID)
       .eq('period', 'last_30d'),
+    service
+      .from('executive_insights_cache')
+      .select('insights, calculated_at')
+      .eq('tenant_id', TENANT_ID)
+      .maybeSingle(),
   ])
 
   const curr = currentRows ?? []
@@ -245,6 +254,12 @@ export default async function DashboardPage() {
       <RevenueSection
         monthlyData={chartData}
         channelData30d={channelRows ?? []}
+      />
+
+      {/* AI Intelligence Brief */}
+      <AiInsightsBrief
+        cachedInsights={(execInsightsCache?.insights as ExecutiveInsight[] | null) ?? null}
+        calculatedAt={execInsightsCache?.calculated_at ?? null}
       />
 
       {/* Email Intelligence card */}
