@@ -26,10 +26,14 @@ interface Props {
   metrics: Record<string, number>
 }
 
+interface AiInsights {
+  paused_analysis: string
+  budget_reallocation: string
+  funnel_analysis: string
+}
+
 function fmt(n: number, currency = true) {
-  if (currency) {
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n)
-  }
+  if (currency) return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n)
   return new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(n)
 }
 
@@ -39,12 +43,23 @@ function RoasBadge({ roas }: { roas: number }) {
   return <span className="inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-600">Negative</span>
 }
 
-function MetricCard({ label, value, sub, alert }: { label: string; value: string; sub?: string; alert?: boolean }) {
+function MetricCard({ label, value, sub, note, alert }: { label: string; value: string; sub?: string; note?: string; alert?: boolean }) {
   return (
     <div className={`rounded-2xl border px-5 py-5 shadow-sm ${alert ? 'border-red-200 bg-red-50' : 'border-cream-3 bg-white'}`}>
       <p className="font-data text-xs uppercase tracking-wider text-ink-3">{label}</p>
       <p className={`mt-2 font-display text-3xl font-semibold ${alert ? 'text-red-600' : 'text-ink'}`}>{value}</p>
       {sub && <p className="mt-1 text-xs text-ink-3">{sub}</p>}
+      {note && <p className="mt-1.5 text-[10px] text-amber-600 font-medium">{note}</p>}
+    </div>
+  )
+}
+
+function SmallStatCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
+  return (
+    <div className="rounded-xl border border-cream-2 bg-cream px-4 py-3">
+      <p className="font-data text-[10px] uppercase tracking-wider text-ink-3">{label}</p>
+      <p className="mt-1 font-data text-sm font-semibold text-ink">{value}</p>
+      {sub && <p className="text-[10px] text-ink-3 mt-0.5 truncate" title={sub}>{sub}</p>}
     </div>
   )
 }
@@ -74,13 +89,16 @@ function RoasBarChart({ campaigns }: { campaigns: Campaign[] }) {
   const max = Math.max(...top.map((c) => c.roas), 1)
 
   return (
-    <div className="mt-4 space-y-2">
+    <div className="mt-4 space-y-3">
       {top.map((c) => {
         const pct = (c.roas / max) * 100
         const color = c.roas >= 2 ? '#4BBFAD' : c.roas >= 1 ? '#F59E0B' : '#EF4444'
         return (
           <div key={c.id} className="flex items-center gap-3">
-            <div className="w-36 shrink-0 text-xs text-ink-2 truncate" title={c.name}>{c.name}</div>
+            <div className="w-40 shrink-0">
+              <p className="text-xs text-ink-2 truncate leading-tight" title={c.name}>{c.name}</p>
+              <p className="text-[10px] text-ink-3 mt-0.5 font-data">{fmt(c.spend)} · {c.status === 'PAUSED' ? <span className="text-amber-500">paused</span> : <span className="text-teal-deep">active</span>}</p>
+            </div>
             <div className="flex-1 h-4 bg-cream-2 rounded-full overflow-hidden">
               <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: color }} />
             </div>
@@ -92,13 +110,114 @@ function RoasBarChart({ campaigns }: { campaigns: Campaign[] }) {
   )
 }
 
+function AiInsightsPanel() {
+  const [state, setState] = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
+  const [insights, setInsights] = useState<AiInsights | null>(null)
+  const [errMsg, setErrMsg] = useState('')
+
+  async function generate() {
+    setState('loading')
+    setErrMsg('')
+    try {
+      const res = await fetch('/api/meta/insights', { method: 'POST' })
+      const data = await res.json() as AiInsights & { error?: string }
+      if (data.error) { setState('error'); setErrMsg(data.error); return }
+      setInsights(data)
+      setState('done')
+    } catch {
+      setState('error')
+      setErrMsg('Network error — try again')
+    }
+  }
+
+  const sections: { key: keyof AiInsights; label: string; icon: string }[] = [
+    { key: 'paused_analysis',    label: 'Why Are High-ROAS Campaigns Paused?', icon: '⏸' },
+    { key: 'budget_reallocation', label: 'Budget Reallocation Impact',          icon: '↗' },
+    { key: 'funnel_analysis',    label: 'Funnel Structure Assessment',           icon: '◎' },
+  ]
+
+  return (
+    <section className="rounded-2xl border border-cream-3 bg-white p-6 shadow-sm">
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        <div>
+          <h2 className="font-display text-base font-semibold text-ink">AI Campaign Analysis</h2>
+          <p className="text-xs text-ink-3 mt-0.5">Claude analyzes your paused campaigns, budget allocation, and funnel structure</p>
+        </div>
+        <button
+          onClick={generate}
+          disabled={state === 'loading'}
+          className="inline-flex items-center gap-1.5 rounded-lg bg-charcoal px-3 py-2 text-xs font-semibold text-cream hover:bg-charcoal/90 disabled:opacity-50 transition"
+        >
+          {state === 'loading' ? (
+            <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-cream/30 border-t-cream" />
+          ) : (
+            <svg className="h-3 w-3" viewBox="0 0 12 12" fill="currentColor">
+              <path d="M6 1l1.2 3.8H11l-3 2.2 1.2 3.8L6 8.5l-3.2 2.3L4 7 1 4.8h3.8L6 1z"/>
+            </svg>
+          )}
+          {state === 'loading' ? 'Analyzing…' : state === 'done' ? 'Regenerate' : 'Analyze Campaigns'}
+        </button>
+      </div>
+
+      {state === 'error' && (
+        <div className="mt-4 rounded-lg bg-red-50 border border-red-100 px-4 py-3 text-xs text-red-700">{errMsg}</div>
+      )}
+
+      {state === 'loading' && (
+        <div className="mt-5 space-y-3">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="rounded-xl border border-cream-2 bg-cream p-4 animate-pulse">
+              <div className="h-3 w-40 bg-cream-3 rounded mb-2" />
+              <div className="h-3 w-full bg-cream-3 rounded mb-1" />
+              <div className="h-3 w-4/5 bg-cream-3 rounded" />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {state === 'done' && insights && (
+        <div className="mt-5 space-y-3">
+          {sections.map(({ key, label, icon }) => (
+            <div key={key} className="rounded-xl border border-cream-2 bg-cream px-5 py-4">
+              <p className="text-xs font-semibold text-ink flex items-center gap-1.5">
+                <span className="text-sm">{icon}</span>
+                {label}
+              </p>
+              <p className="mt-2 text-xs text-ink-2 leading-relaxed">{insights[key]}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {state === 'idle' && (
+        <div className="mt-4 rounded-xl border border-dashed border-cream-3 bg-cream px-5 py-6 text-center">
+          <p className="text-sm text-ink-3">Click &quot;Analyze Campaigns&quot; to get insights on paused campaigns, budget reallocation, and funnel gaps.</p>
+        </div>
+      )}
+    </section>
+  )
+}
+
 export default function MetaDashboard({ connected, campaigns, metrics }: Props) {
   const [syncing, setSyncing] = useState(false)
   const [syncMsg, setSyncMsg] = useState('')
 
   if (!connected) return <ConnectPrompt />
 
-  const m = (k: string) => metrics[k] ?? 0
+  // ── Compute 90d metrics directly from campaign data ──────────────────────
+  const totalSpend90   = campaigns.reduce((s, c) => s + c.spend, 0)
+  const totalPurchases90 = campaigns.reduce((s, c) => s + c.purchases, 0)
+  const totalPurchaseValue90 = campaigns.reduce((s, c) => s + c.purchase_value, 0)
+  const roas90  = totalSpend90 > 0 ? totalPurchaseValue90 / totalSpend90 : 0
+  const cpp90   = totalPurchases90 > 0 ? totalSpend90 / totalPurchases90 : 0
+
+  const noRecentSpend = (metrics['total_ad_spend_30d'] ?? 0) === 0 && totalSpend90 > 0
+
+  const activeCampaigns = campaigns.filter((c) => c.status === 'ACTIVE')
+  const pausedCampaigns = campaigns.filter((c) => c.status === 'PAUSED' && c.spend > 0)
+  const bestRoas = [...campaigns].filter((c) => c.spend > 0).sort((a, b) => b.roas - a.roas)[0]
+
+  const belowOne = campaigns.filter((c) => c.spend > 0 && c.roas < 1)
 
   async function handleSync() {
     setSyncing(true)
@@ -115,16 +234,13 @@ export default function MetaDashboard({ connected, campaigns, metrics }: Props) 
     }
   }
 
-  const belowOne = campaigns.filter((c) => c.spend > 0 && c.roas < 1)
-  const totalSpendAll = campaigns.reduce((s, c) => s + c.spend, 0)
-
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <h1 className="font-display text-2xl font-bold text-ink">Meta Ads</h1>
-          <p className="text-sm text-ink-3 mt-0.5">Facebook &amp; Instagram advertising performance</p>
+          <p className="text-sm text-ink-3 mt-0.5">Facebook &amp; Instagram advertising — last 90 days</p>
         </div>
         <button
           onClick={handleSync}
@@ -144,15 +260,72 @@ export default function MetaDashboard({ connected, campaigns, metrics }: Props) 
       </div>
       {syncMsg && <p className="text-sm text-ink-2">{syncMsg}</p>}
 
-      {/* KPI cards */}
+      {/* No-recent-spend notice */}
+      {noRecentSpend && (
+        <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+          <svg className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm0 4a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 8 5zm0 7a1 1 0 1 1 0-2 1 1 0 0 1 0 2z"/>
+          </svg>
+          <p className="text-xs text-amber-800">
+            No spend in the last 30 days — all metrics below reflect the full 90-day window to match the campaign table.
+            Campaigns may have been paused or budgets exhausted.
+          </p>
+        </div>
+      )}
+
+      {/* Primary KPI cards — 90d */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <MetricCard label="Ad Spend (30d)" value={fmt(m('total_ad_spend_30d'))} sub="total spend" />
-        <MetricCard label="ROAS (30d)" value={`${fmt(m('total_roas_30d'), false)}×`} sub="return on ad spend" />
-        <MetricCard label="Cost Per Purchase" value={m('cost_per_purchase_30d') > 0 ? fmt(m('cost_per_purchase_30d')) : '—'} sub="30-day avg" />
-        <MetricCard label="Purchases (30d)" value={m('total_purchases_30d').toFixed(0)} sub="attributed" />
+        <MetricCard
+          label="Ad Spend (90d)"
+          value={fmt(totalSpend90)}
+          sub="total across all campaigns"
+          note={noRecentSpend ? '$0 in last 30 days' : undefined}
+        />
+        <MetricCard
+          label="ROAS (90d)"
+          value={totalSpend90 > 0 ? `${fmt(roas90, false)}×` : '—'}
+          sub="purchase value / spend"
+          note={noRecentSpend ? 'No recent data' : undefined}
+        />
+        <MetricCard
+          label="Cost Per Purchase"
+          value={cpp90 > 0 ? fmt(cpp90) : '—'}
+          sub="90-day avg"
+          note={noRecentSpend ? 'No recent data' : undefined}
+        />
+        <MetricCard
+          label="Purchases (90d)"
+          value={totalPurchases90.toLocaleString()}
+          sub="attributed purchases"
+          note={noRecentSpend ? 'No recent data' : undefined}
+        />
       </div>
 
-      {/* Alert for underperformers */}
+      {/* Secondary stats row */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <SmallStatCard
+          label="Active Campaigns"
+          value={activeCampaigns.length.toString()}
+          sub={activeCampaigns.length > 0 ? `${activeCampaigns.map((c) => c.name).slice(0, 2).join(', ')}${activeCampaigns.length > 2 ? '…' : ''}` : 'None active'}
+        />
+        <SmallStatCard
+          label="Paused (with spend)"
+          value={pausedCampaigns.length.toString()}
+          sub={pausedCampaigns.length > 0 ? `${fmt(pausedCampaigns.reduce((s, c) => s + c.spend, 0))} total` : 'None'}
+        />
+        <SmallStatCard
+          label="Best ROAS Campaign"
+          value={bestRoas ? `${fmt(bestRoas.roas, false)}×` : '—'}
+          sub={bestRoas?.name ?? 'No data'}
+        />
+        <SmallStatCard
+          label="Flagged Campaigns"
+          value={belowOne.length.toString()}
+          sub={belowOne.length > 0 ? 'ROAS below 1× — losing money' : 'None — all profitable'}
+        />
+      </div>
+
+      {/* Underperformer alert */}
       {belowOne.length > 0 && (
         <div className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
           <svg className="mt-0.5 h-4 w-4 shrink-0 text-red-500" viewBox="0 0 16 16" fill="currentColor">
@@ -161,7 +334,7 @@ export default function MetaDashboard({ connected, campaigns, metrics }: Props) 
           <div>
             <p className="text-sm font-semibold text-red-800">{belowOne.length} campaign{belowOne.length > 1 ? 's' : ''} with ROAS below 1× — losing money</p>
             <p className="text-xs text-red-600 mt-0.5">
-              Estimated wasted spend: {fmt(belowOne.reduce((s, c) => s + c.spend, 0))} in the last 90 days. Consider pausing these.
+              Estimated wasted spend: {fmt(belowOne.reduce((s, c) => s + c.spend, 0))} in the last 90 days. Consider pausing or restructuring these.
             </p>
           </div>
         </div>
@@ -170,15 +343,18 @@ export default function MetaDashboard({ connected, campaigns, metrics }: Props) 
       {/* ROAS chart */}
       <section className="rounded-2xl border border-cream-3 bg-white p-6 shadow-sm">
         <h2 className="font-display text-base font-semibold text-ink">Campaign ROAS Ranking</h2>
-        <p className="text-xs text-ink-3 mt-0.5">Last 90 days — sorted best to worst</p>
+        <p className="text-xs text-ink-3 mt-0.5">Last 90 days — sorted best to worst · spend and status shown below each name</p>
         <RoasBarChart campaigns={campaigns} />
       </section>
+
+      {/* AI Insights */}
+      <AiInsightsPanel />
 
       {/* Campaign table */}
       <section className="rounded-2xl border border-cream-3 bg-white shadow-sm overflow-hidden">
         <div className="flex items-center justify-between border-b border-cream-2 px-5 py-3.5">
           <h2 className="font-display text-sm font-semibold text-ink">All Campaigns</h2>
-          <span className="font-data text-xs text-ink-3">Total spend: {fmt(totalSpendAll)} · 90 days</span>
+          <span className="font-data text-xs text-ink-3">Total spend: {fmt(totalSpend90)} · 90 days</span>
         </div>
         {campaigns.length === 0 ? (
           <div className="px-5 py-10 text-center text-sm text-ink-3">No campaigns found — run a sync to import data.</div>
