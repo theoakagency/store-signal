@@ -18,6 +18,8 @@ interface MetaCampaign extends BaseCampaign {
 
 interface GoogleCampaign extends BaseCampaign {
   conversions: number
+  conversion_value: number
+  data_source?: string | null
 }
 
 interface Props {
@@ -55,6 +57,7 @@ function PlatformCard({
   actions,
   actionLabel,
   belowOneCount,
+  isGa4,
 }: {
   name: string
   logo: React.ReactNode
@@ -66,6 +69,7 @@ function PlatformCard({
   actions: number
   actionLabel: string
   belowOneCount: number
+  isGa4?: boolean
 }) {
   if (!connected) {
     return (
@@ -90,20 +94,25 @@ function PlatformCard({
           Full report →
         </Link>
       </div>
+      {isGa4 && (
+        <div className="mb-4 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+          Spend data pending Google Ads API approval — conversion revenue sourced from GA4
+        </div>
+      )}
       <div className="grid grid-cols-2 gap-3">
         <div className="rounded-xl bg-cream border border-cream-2 px-4 py-3">
           <p className="font-data text-[10px] uppercase tracking-wider text-ink-3">Spend (90d)</p>
-          <p className="mt-1 font-data text-base font-semibold text-ink">{fmt(spend)}</p>
+          <p className="mt-1 font-data text-base font-semibold text-ink">{isGa4 ? '—' : fmt(spend)}</p>
         </div>
         <div className="rounded-xl bg-cream border border-cream-2 px-4 py-3">
           <p className="font-data text-[10px] uppercase tracking-wider text-ink-3">ROAS (90d)</p>
-          <p className={`mt-1 font-data text-base font-semibold ${roas >= 2 ? 'text-teal-deep' : roas >= 1 ? 'text-yellow-700' : 'text-red-500'}`}>
-            {fmt(roas, false)}×
+          <p className={`mt-1 font-data text-base font-semibold ${isGa4 ? 'text-ink-3' : roas >= 2 ? 'text-teal-deep' : roas >= 1 ? 'text-yellow-700' : 'text-red-500'}`}>
+            {isGa4 ? '—' : `${fmt(roas, false)}×`}
           </p>
         </div>
         <div className="rounded-xl bg-cream border border-cream-2 px-4 py-3">
           <p className="font-data text-[10px] uppercase tracking-wider text-ink-3">Cost / {actionLabel}</p>
-          <p className="mt-1 font-data text-base font-semibold text-ink">{costPerAction > 0 ? fmt(costPerAction) : '—'}</p>
+          <p className="mt-1 font-data text-base font-semibold text-ink">{isGa4 ? '—' : costPerAction > 0 ? fmt(costPerAction) : '—'}</p>
         </div>
         <div className="rounded-xl bg-cream border border-cream-2 px-4 py-3">
           <p className="font-data text-[10px] uppercase tracking-wider text-ink-3">{actionLabel}s (90d)</p>
@@ -138,19 +147,24 @@ export default function AdvertisingOverview({
   const metaCpp90 = metaPurchases90 > 0 ? metaSpend90 / metaPurchases90 : 0
   const metaBelowOne = metaCampaigns.filter((c) => c.spend > 0 && c.roas < 1).length
 
+  // Detect GA4 fallback (spend is $0 when data sourced from GA4)
+  const googleIsGa4 = googleCampaigns.some((c) => c.data_source === 'ga4')
+
   // Compute Google metrics from 90d campaign data directly
   const googleSpend90 = googleCampaigns.reduce((s, c) => s + c.spend, 0)
   const googleConversions90 = googleCampaigns.reduce((s, c) => s + c.conversions, 0)
-  // Google campaigns store ROAS per campaign; compute blended from spend-weighted average
-  const googlePurchaseValue90 = googleCampaigns.reduce((s, c) => s + c.spend * c.roas, 0)
+  // Use conversion_value directly (works for both real Google Ads and GA4 fallback)
+  const googlePurchaseValue90 = googleCampaigns.reduce((s, c) => s + (c.conversion_value ?? 0), 0)
   const googleRoas90 = googleSpend90 > 0 ? googlePurchaseValue90 / googleSpend90 : 0
   const googleCpp90 = googleConversions90 > 0 ? googleSpend90 / googleConversions90 : 0
   const googleBelowOne = googleCampaigns.filter((c) => c.spend > 0 && c.roas < 1).length
 
+  // For blended ROAS, use Meta spend as denominator when Google is GA4 (no spend data)
   const totalSpend = metaSpend90 + googleSpend90
   const totalBelowOne = metaBelowOne + googleBelowOne
-  const blendedRoas = totalSpend > 0
-    ? (metaPurchaseValue90 + googlePurchaseValue90) / totalSpend
+  const blendedRoasDenominator = googleIsGa4 ? metaSpend90 : totalSpend
+  const blendedRoas = blendedRoasDenominator > 0
+    ? (metaPurchaseValue90 + googlePurchaseValue90) / blendedRoasDenominator
     : 0
 
   const anyConnected = metaConnected || googleConnected
@@ -188,8 +202,8 @@ export default function AdvertisingOverview({
         <>
           {/* Combined KPIs */}
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-            <MetricCard label="Total Spend (90d)" value={fmt(totalSpend)} sub="Meta + Google combined" />
-            <MetricCard label="Blended ROAS" value={`${fmt(blendedRoas, false)}×`} sub="weighted by spend" />
+            <MetricCard label="Total Spend (90d)" value={googleIsGa4 ? fmt(metaSpend90) : fmt(totalSpend)} sub={googleIsGa4 ? 'Meta only — Google spend pending' : 'Meta + Google combined'} />
+            <MetricCard label="Blended ROAS" value={`${fmt(blendedRoas, false)}×`} sub={googleIsGa4 ? 'Meta spend + GA4 Google revenue' : 'weighted by spend'} />
             <MetricCard label="Campaigns Flagged" value={totalBelowOne.toString()} sub="ROAS below 1× — losing money" />
             <MetricCard label="Platforms Active" value={[metaConnected, googleConnected].filter(Boolean).length.toString()} sub="connected ad platforms" />
           </div>
@@ -230,6 +244,7 @@ export default function AdvertisingOverview({
               actions={googleConversions90}
               actionLabel="Conversion"
               belowOneCount={googleBelowOne}
+              isGa4={googleIsGa4}
             />
           </div>
 

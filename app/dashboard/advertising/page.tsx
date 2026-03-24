@@ -20,7 +20,7 @@ export default async function AdvertisingPage() {
     supabase.from('stores').select('meta_access_token, meta_ad_account_id, google_ads_refresh_token, google_ads_customer_id').eq('id', STORE_ID).single(),
     service.from('meta_campaigns').select('id, name, spend, roas, status, purchases, purchase_value').eq('tenant_id', TENANT_ID).order('spend', { ascending: false }),
     service.from('meta_metrics_cache').select('metric_name, metric_value').eq('tenant_id', TENANT_ID),
-    service.from('google_campaigns').select('id, name, spend, roas, status, conversions').eq('tenant_id', TENANT_ID).order('spend', { ascending: false }),
+    service.from('google_campaigns').select('id, name, spend, roas, status, conversions, conversion_value, data_source').eq('tenant_id', TENANT_ID).order('spend', { ascending: false }),
     service.from('google_metrics_cache').select('metric_name, metric_value').eq('tenant_id', TENANT_ID),
   ])
 
