@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -226,6 +227,7 @@ function NotConnected() {
 const PAGE_SIZE = 25
 
 export default function KlaviyoDashboard({ connected, campaigns, flows, metrics }: Props) {
+  const router = useRouter()
   const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(null)
   const [insights, setInsights] = useState<Insight[]>([])
   const [insightsState, setInsightsState] = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
@@ -749,11 +751,22 @@ export default function KlaviyoDashboard({ connected, campaigns, flows, metrics 
           <section>
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-display text-base font-semibold text-ink">Key Insights</h2>
-              {insightsState === 'done' && (
-                <button onClick={loadInsights} className="text-xs text-teal hover:text-teal-dark font-medium transition">
-                  Regenerate
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => router.push(`/dashboard/chat?q=${encodeURIComponent('Analyze my email strategy — which campaigns and flows are performing best, and what should I do differently?')}`)}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-teal/25 bg-teal/5 px-3 py-1 text-xs font-medium text-teal hover:bg-teal hover:text-white transition"
+                >
+                  <svg className="h-3 w-3" viewBox="0 0 12 12" fill="currentColor">
+                    <path d="M6 1l1.2 3.8H11l-3 2.2 1.2 3.8L6 8.5l-3.2 2.3L4 7 1 4.8h3.8L6 1z" />
+                  </svg>
+                  Ask AI about email strategy
                 </button>
-              )}
+                {insightsState === 'done' && (
+                  <button onClick={loadInsights} className="text-xs text-teal hover:text-teal-dark font-medium transition">
+                    Regenerate
+                  </button>
+                )}
+              </div>
             </div>
 
             {insightsState === 'loading' && (

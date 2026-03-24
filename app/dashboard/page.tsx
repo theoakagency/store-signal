@@ -2,6 +2,7 @@ import { createSupabaseServerClient, createSupabaseServiceClient } from '@/lib/s
 import Link from 'next/link'
 import RevenueSection from './RevenueSection'
 import AiInsightsBrief, { type ExecutiveInsight } from './AiInsightsBrief'
+import AskAiRow from './_components/AskAiRow'
 
 export const metadata = {
   title: 'Executive Summary — Store Signal',
@@ -255,6 +256,16 @@ export default async function DashboardPage() {
           noAnimation
         />
       </div>
+
+      {/* Ask AI prompts */}
+      <AskAiRow
+        label="Ask AI"
+        prompts={[
+          'Why did revenue change this month?',
+          'Who should I focus on retaining?',
+          "What's my biggest opportunity right now?",
+        ]}
+      />
 
       {/* Revenue chart + channel breakdown */}
       <RevenueSection

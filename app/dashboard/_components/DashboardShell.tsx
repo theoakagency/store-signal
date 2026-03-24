@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import Sidebar from './Sidebar'
 import Topbar from './Topbar'
+import ChatBubble from './ChatBubble'
 
 interface DashboardShellProps {
   children: React.ReactNode
@@ -64,6 +65,7 @@ export default function DashboardShell({
           </div>
         </main>
       </div>
+      <ChatBubble />
     </div>
   )
 }

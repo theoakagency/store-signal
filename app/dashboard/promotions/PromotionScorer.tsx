@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 
 interface HistoryRow {
   id: string
@@ -130,6 +131,7 @@ function DimBar({ label, value }: { label: string; value: number }) {
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function PromotionScorer({ history }: { history: HistoryRow[] }) {
+  const router = useRouter()
   const [state, setState] = useState<'idle' | 'scoring' | 'done' | 'error'>('idle')
   const [analysis, setAnalysis] = useState<Analysis | null>(null)
   const [errorMsg, setErrorMsg] = useState('')
@@ -437,6 +439,17 @@ export default function PromotionScorer({ history }: { history: HistoryRow[] }) 
                   <p className="text-sm text-ink leading-relaxed">{analysis.what_to_try_instead}</p>
                 </div>
               )}
+
+              {/* Ask AI for alternatives */}
+              <button
+                onClick={() => router.push(`/dashboard/chat?q=${encodeURIComponent(`The "${form.name}" promotion scored ${analysis.overall_score}/100. What specific promotions would work better for my customer type?`)}`)}
+                className="w-full flex items-center justify-center gap-2 rounded-xl border border-teal/25 bg-teal/5 px-4 py-3 text-sm font-medium text-teal hover:bg-teal hover:text-white transition"
+              >
+                <svg className="h-4 w-4" viewBox="0 0 12 12" fill="currentColor">
+                  <path d="M6 1l1.2 3.8H11l-3 2.2 1.2 3.8L6 8.5l-3.2 2.3L4 7 1 4.8h3.8L6 1z" />
+                </svg>
+                Ask AI for better alternatives
+              </button>
 
               {/* Strengths + Risks */}
               <div className="grid grid-cols-2 gap-3">

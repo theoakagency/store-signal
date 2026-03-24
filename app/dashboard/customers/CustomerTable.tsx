@@ -4,6 +4,14 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 
+const SEGMENT_AI_PROMPTS: Record<string, string> = {
+  vip:     'Tell me about my VIP customers and what I can do to maximize their lifetime value',
+  active:  'Tell me about my active customers and how I can increase their purchase frequency',
+  at_risk: 'Tell me about my at-risk customers and what win-back tactics would work best for them',
+  lapsed:  'Tell me about my lapsed customers and the best way to re-engage them',
+  new:     'Tell me about my new customers and how I can convert them into repeat buyers',
+}
+
 interface Customer {
   id: string
   shopify_customer_id: number
@@ -209,6 +217,22 @@ export default function CustomerTable({
           )
         })}
       </div>
+
+      {/* Ask AI about segment */}
+      {activeSegment !== 'all' && SEGMENT_AI_PROMPTS[activeSegment] && (
+        <div className="flex items-center gap-2">
+          <span className="font-data text-[10px] uppercase tracking-widest text-ink-3">Ask AI</span>
+          <button
+            onClick={() => router.push(`/dashboard/chat?q=${encodeURIComponent(SEGMENT_AI_PROMPTS[activeSegment])}`)}
+            className="inline-flex items-center gap-1.5 rounded-full border border-teal/25 bg-teal/5 px-3 py-1.5 text-xs font-medium text-teal hover:bg-teal hover:text-white transition"
+          >
+            <svg className="h-3 w-3" viewBox="0 0 12 12" fill="currentColor">
+              <path d="M6 1l1.2 3.8H11l-3 2.2 1.2 3.8L6 8.5l-3.2 2.3L4 7 1 4.8h3.8L6 1z" />
+            </svg>
+            Ask AI about this segment
+          </button>
+        </div>
+      )}
 
       {/* Table */}
       <section className="rounded-2xl border border-cream-3 bg-white shadow-sm overflow-hidden">

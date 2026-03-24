@@ -5,6 +5,17 @@ import { usePathname } from 'next/navigation'
 
 const mainLinks = [
   {
+    href: '/dashboard/chat',
+    label: 'AI Chat',
+    exact: false,
+    icon: (
+      <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+        <path d="M14 10c0 1.1-.9 2-2 2H4l-3 3V4c0-1.1.9-2 2-2h9c1.1 0 2 .9 2 2v6z" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M5 7h.01M8 7h.01M11 7h.01" strokeLinecap="round" />
+      </svg>
+    ),
+  },
+  {
     href: '/dashboard',
     label: 'Executive Summary',
     exact: true,
