@@ -46,7 +46,7 @@ export async function POST(_req: NextRequest) {
   // line_items JSONB is needed for product analysis so we keep it,
   // but use a smaller page size (2,000) to keep response payloads manageable.
   const orders: OrderRow[] = []
-  const PAGE = 2000
+  const PAGE = 1000  // must be ≤ Supabase max-rows so the "< PAGE" sentinel works
   let from = 0
   while (true) {
     const { data, error } = await service

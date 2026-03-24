@@ -55,7 +55,7 @@ export async function POST(req: NextRequest) {
   ])
 
   const orders: OrderRow[] = []
-  const PAGE = 5000
+  const PAGE = 1000  // must be ≤ Supabase max-rows so the "< PAGE" sentinel works
   let from = 0
   while (true) {
     const { data, error } = await service
