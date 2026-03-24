@@ -407,38 +407,38 @@ const getEmailPerformance: AgentTool = {
     if (type === 'campaigns' || type === 'both') {
       const { data: campaigns } = await supabase
         .from('klaviyo_campaigns')
-        .select('name, status, revenue, recipients, opens, clicks, sent_at, channel')
+        .select('name, status, revenue_attributed, recipient_count, open_rate, click_rate, send_time, channel')
         .eq('tenant_id', tenantId)
-        .order('revenue', { ascending: false })
+        .order('revenue_attributed', { ascending: false })
         .limit(limit)
 
       result.campaigns = (campaigns ?? []).map((c) => ({
         name: c.name,
         status: c.status,
         channel: c.channel ?? 'email',
-        revenue: Number(c.revenue),
-        recipients: c.recipients,
-        open_rate: c.recipients > 0 ? ((c.opens / c.recipients) * 100).toFixed(1) + '%' : 'N/A',
-        click_rate: c.recipients > 0 ? ((c.clicks / c.recipients) * 100).toFixed(1) + '%' : 'N/A',
-        sent_at: c.sent_at,
+        revenue: Number(c.revenue_attributed),
+        recipients: c.recipient_count,
+        open_rate: c.open_rate != null ? (Number(c.open_rate) * 100).toFixed(1) + '%' : 'N/A',
+        click_rate: c.click_rate != null ? (Number(c.click_rate) * 100).toFixed(1) + '%' : 'N/A',
+        sent_at: c.send_time,
       }))
     }
 
     if (type === 'flows' || type === 'both') {
       const { data: flows } = await supabase
         .from('klaviyo_flows')
-        .select('name, status, revenue, recipients, opens, clicks')
+        .select('name, status, revenue_attributed, recipient_count, open_rate, click_rate')
         .eq('tenant_id', tenantId)
-        .order('revenue', { ascending: false })
+        .order('revenue_attributed', { ascending: false })
         .limit(limit)
 
       result.flows = (flows ?? []).map((f) => ({
         name: f.name,
         status: f.status,
-        revenue: Number(f.revenue),
-        recipients: f.recipients,
-        open_rate: f.recipients > 0 ? ((f.opens / f.recipients) * 100).toFixed(1) + '%' : 'N/A',
-        click_rate: f.recipients > 0 ? ((f.clicks / f.recipients) * 100).toFixed(1) + '%' : 'N/A',
+        revenue: Number(f.revenue_attributed),
+        recipients: f.recipient_count,
+        open_rate: f.open_rate != null ? (Number(f.open_rate) * 100).toFixed(1) + '%' : 'N/A',
+        click_rate: f.click_rate != null ? (Number(f.click_rate) * 100).toFixed(1) + '%' : 'N/A',
       }))
     }
 
@@ -752,7 +752,7 @@ const getBusinessHealthScore: AgentTool = {
       supabase.from('customers').select('total_spent, orders_count, updated_at').eq('tenant_id', tenantId),
       supabase.from('meta_campaigns').select('spend, roas, status').eq('tenant_id', tenantId),
       supabase.from('google_campaigns').select('conversion_value, conversions').eq('tenant_id', tenantId),
-      supabase.from('klaviyo_campaigns').select('revenue, recipients').eq('tenant_id', tenantId),
+      supabase.from('klaviyo_campaigns').select('revenue_attributed, recipient_count').eq('tenant_id', tenantId),
       supabase.from('stores').select('last_synced_at, klaviyo_api_key, gsc_refresh_token, meta_access_token, google_ads_refresh_token, ga4_refresh_token').eq('id', STORE_ID).single(),
     ])
 
@@ -770,7 +770,7 @@ const getBusinessHealthScore: AgentTool = {
       : 0
 
     const googleRevenue = (googleCampaigns ?? []).reduce((s, c) => s + Number(c.conversion_value ?? 0), 0)
-    const emailRevenue = (klaviyoCampaigns ?? []).reduce((s, c) => s + Number(c.revenue), 0)
+    const emailRevenue = (klaviyoCampaigns ?? []).reduce((s, c) => s + Number(c.revenue_attributed), 0)
 
     const s = store as {
       last_synced_at: string | null

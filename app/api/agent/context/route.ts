@@ -49,8 +49,8 @@ export async function POST(_req: NextRequest) {
     service.from('customers').select('total_spent, orders_count, updated_at').eq('tenant_id', TENANT_ID),
     service.from('meta_campaigns').select('spend, roas, purchase_value, purchases, status').eq('tenant_id', TENANT_ID),
     service.from('google_campaigns').select('conversion_value, conversions, data_source').eq('tenant_id', TENANT_ID),
-    service.from('klaviyo_campaigns').select('revenue, recipients, opens, name').eq('tenant_id', TENANT_ID).order('revenue', { ascending: false }).limit(3),
-    service.from('klaviyo_flows').select('revenue, name').eq('tenant_id', TENANT_ID).order('revenue', { ascending: false }).limit(3),
+    service.from('klaviyo_campaigns').select('revenue_attributed, recipient_count, open_rate, name').eq('tenant_id', TENANT_ID).order('revenue_attributed', { ascending: false }).limit(3),
+    service.from('klaviyo_flows').select('revenue_attributed, name').eq('tenant_id', TENANT_ID).order('revenue_attributed', { ascending: false }).limit(3),
     service.from('gsc_keywords').select('keyword, clicks, position').eq('tenant_id', TENANT_ID).order('clicks', { ascending: false }).limit(5),
     service.from('promotions').select('name, score').eq('tenant_id', TENANT_ID).order('score', { ascending: false }).limit(3),
   ])
@@ -75,8 +75,8 @@ export async function POST(_req: NextRequest) {
   const metaRevenue = (metaCampaigns ?? []).reduce((a, c) => a + Number(c.purchase_value), 0)
   const metaRoas = metaSpend > 0 ? metaRevenue / metaSpend : 0
   const googleRevenue = (googleCampaigns ?? []).reduce((a, c) => a + Number(c.conversion_value ?? 0), 0)
-  const emailRevenue = (klaviyoCampaigns ?? []).reduce((a, c) => a + Number(c.revenue), 0)
-    + (klaviyoFlows ?? []).reduce((a, c) => a + Number(c.revenue), 0)
+  const emailRevenue = (klaviyoCampaigns ?? []).reduce((a, c) => a + Number(c.revenue_attributed), 0)
+    + (klaviyoFlows ?? []).reduce((a, c) => a + Number(c.revenue_attributed), 0)
 
   const context = {
     business: {
@@ -104,8 +104,8 @@ export async function POST(_req: NextRequest) {
       lapsed_rate: allCustomers.length > 0 ? ((lapsedCount / allCustomers.length) * 100).toFixed(1) + '%' : 'N/A',
     },
     email_snapshot: s?.klaviyo_api_key ? {
-      top_campaigns: (klaviyoCampaigns ?? []).map((c) => ({ name: c.name, revenue: Number(c.revenue) })),
-      top_flows: (klaviyoFlows ?? []).map((f) => ({ name: f.name, revenue: Number(f.revenue) })),
+      top_campaigns: (klaviyoCampaigns ?? []).map((c) => ({ name: c.name, revenue: Number(c.revenue_attributed) })),
+      top_flows: (klaviyoFlows ?? []).map((f) => ({ name: f.name, revenue: Number(f.revenue_attributed) })),
       total_email_revenue: Math.round(emailRevenue * 100) / 100,
     } : null,
     search_snapshot: s?.gsc_refresh_token ? {
