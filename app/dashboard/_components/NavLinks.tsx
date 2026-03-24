@@ -59,12 +59,14 @@ export default function NavLinks({
   onNavigate,
   klaviyoConnected,
   gscConnected,
+  ga4Connected,
   metaConnected,
   googleAdsConnected,
 }: {
   onNavigate?: () => void
   klaviyoConnected?: boolean
   gscConnected?: boolean
+  ga4Connected?: boolean
   metaConnected?: boolean
   googleAdsConnected?: boolean
 }) {
@@ -117,6 +119,24 @@ export default function NavLinks({
         </svg>
         Search / GSC
         <span className={`ml-auto h-1.5 w-1.5 rounded-full ${gscConnected ? 'bg-teal' : 'bg-cream/20'}`} />
+      </Link>
+
+      {/* Analytics section */}
+      <div className="mt-4 mb-1 px-3">
+        <p className="text-[10px] font-data uppercase tracking-widest text-cream/25">Analytics</p>
+      </div>
+
+      <Link
+        href="/dashboard/analytics"
+        onClick={onNavigate}
+        className={`nav-link ${pathname.startsWith('/dashboard/analytics') ? 'active' : ''}`}
+      >
+        <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+          <path d="M1 13V7l3.5-4 3 3 3-5 3 4v5" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M1 13h14" strokeLinecap="round" />
+        </svg>
+        Analytics / GA4
+        <span className={`ml-auto h-1.5 w-1.5 rounded-full ${ga4Connected ? 'bg-teal' : 'bg-cream/20'}`} />
       </Link>
 
       {/* Advertising section */}

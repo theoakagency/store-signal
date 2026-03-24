@@ -11,6 +11,8 @@ interface Props {
   klaviyoAccountId: string | null
   gscConnected: boolean
   gscPropertyUrl: string | null
+  ga4Connected: boolean
+  ga4PropertyId: string | null
   metaConnected: boolean
   metaAdAccountId: string | null
   googleAdsConnected: boolean
@@ -293,6 +295,73 @@ function GoogleAdsModal({ onClose, onSuccess }: { onClose: () => void; onSuccess
   )
 }
 
+// ── GA4 Connect Modal ─────────────────────────────────────────────────────────
+
+function Ga4Modal({ onClose }: { onClose: () => void }) {
+  const [propertyId, setPropertyId] = useState('')
+  const [connecting, setConnecting] = useState(false)
+
+  const inputCls = 'w-full rounded-lg border border-cream-3 bg-cream px-3 py-2 text-sm text-ink focus:border-teal focus:outline-none focus:ring-1 focus:ring-teal transition'
+
+  function handleConnect() {
+    const id = propertyId.trim()
+    if (!id) return
+    setConnecting(true)
+    window.location.href = `/api/analytics/auth?property_id=${encodeURIComponent(id)}`
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-charcoal/50 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative z-10 w-full max-w-md rounded-2xl bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b border-cream-2 px-6 py-5">
+          <div className="flex items-center gap-3">
+            <div className="h-8 w-8 rounded-lg bg-[#E37400] flex items-center justify-center">
+              <svg className="h-5 w-5 text-white" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12.545 10.239v3.821h5.445c-.712 2.315-2.647 3.972-5.445 3.972a6.033 6.033 0 1 1 0-12.064 5.976 5.976 0 0 1 4.111 1.606l2.879-2.878A9.969 9.969 0 0 0 12.545 2C7.021 2 2.543 6.477 2.543 12s4.478 10 10.002 10c8.396 0 10.249-7.85 9.426-11.748l-9.426-.013z"/>
+              </svg>
+            </div>
+            <h2 className="font-display text-lg font-semibold text-ink">Connect Google Analytics 4</h2>
+          </div>
+          <button onClick={onClose} className="rounded-lg p-1.5 hover:bg-cream-2 transition text-ink-3">
+            <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 0 1 1.414 0L10 8.586l4.293-4.293a1 1 0 1 1 1.414 1.414L11.414 10l4.293 4.293a1 1 0 0 1-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 0 1-1.414-1.414L8.586 10 4.293 5.707a1 1 0 0 1 0-1.414z" clipRule="evenodd"/></svg>
+          </button>
+        </div>
+
+        <div className="px-6 py-5 space-y-4">
+          <div className="rounded-xl bg-cream border border-cream-2 px-4 py-3 text-xs text-ink-3 space-y-1">
+            <p className="font-medium text-ink-2">Where to find your Property ID:</p>
+            <p>GA4 → <strong>Admin</strong> (gear icon) → <strong>Property Settings</strong> → copy the <strong>Property ID</strong> (a numeric ID like <code className="bg-cream-3 px-1 rounded">123456789</code>)</p>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-ink-2 mb-1">GA4 Property ID</label>
+            <input
+              type="text"
+              value={propertyId}
+              onChange={(e) => setPropertyId(e.target.value)}
+              placeholder="123456789"
+              className={inputCls}
+            />
+            <p className="mt-1 text-[10px] text-ink-3">Numeric only — do not include &quot;properties/&quot;</p>
+          </div>
+
+          <div className="flex gap-2 pt-1">
+            <button onClick={onClose} className="flex-1 rounded-lg border border-cream-3 px-4 py-2.5 text-sm font-medium text-ink-2 hover:bg-cream transition">Cancel</button>
+            <button
+              onClick={handleConnect}
+              disabled={!propertyId.trim() || connecting}
+              className="flex-1 rounded-lg bg-[#E37400] px-4 py-2.5 text-sm font-semibold text-white hover:bg-orange-700 disabled:opacity-50 transition"
+            >
+              {connecting ? 'Redirecting…' : 'Connect with Google →'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── GSC Connect Modal ─────────────────────────────────────────────────────────
 
 function GscModal({ onClose }: { onClose: () => void }) {
@@ -558,6 +627,8 @@ export default function IntegrationsClient({
   klaviyoAccountId,
   gscConnected,
   gscPropertyUrl,
+  ga4Connected,
+  ga4PropertyId,
   metaConnected,
   metaAdAccountId,
   googleAdsConnected,
@@ -567,6 +638,7 @@ export default function IntegrationsClient({
   const searchParams = useSearchParams()
   const [showKlaviyoModal, setShowKlaviyoModal] = useState(false)
   const [showGscModal, setShowGscModal] = useState(false)
+  const [showGa4Modal, setShowGa4Modal] = useState(false)
   const [showMetaModal, setShowMetaModal] = useState(false)
   const [showGoogleAdsModal, setShowGoogleAdsModal] = useState(false)
   const [disconnectingGsc, setDisconnectingGsc] = useState(false)
@@ -591,6 +663,16 @@ export default function IntegrationsClient({
     const gscError = searchParams.get('gsc_error')
     if (gscError) {
       showToast(`GSC error: ${decodeURIComponent(gscError)}`)
+      router.replace('/dashboard/integrations')
+    }
+    if (searchParams.get('ga4_connected')) {
+      showToast('Google Analytics 4 connected! Running first sync…')
+      fetch('/api/analytics/sync', { method: 'POST' }).catch(() => null)
+      router.replace('/dashboard/integrations')
+    }
+    const ga4Error = searchParams.get('ga4_error')
+    if (ga4Error) {
+      showToast(`GA4 error: ${decodeURIComponent(ga4Error)}`)
       router.replace('/dashboard/integrations')
     }
   }, [searchParams, router])
@@ -625,6 +707,7 @@ export default function IntegrationsClient({
         <KlaviyoModal onClose={() => setShowKlaviyoModal(false)} onSuccess={handleKlaviyoSuccess} />
       )}
       {showGscModal && <GscModal onClose={() => setShowGscModal(false)} />}
+      {showGa4Modal && <Ga4Modal onClose={() => setShowGa4Modal(false)} />}
       {showMetaModal && <MetaModal onClose={() => setShowMetaModal(false)} onSuccess={handleMetaSuccess} />}
       {showGoogleAdsModal && <GoogleAdsModal onClose={() => setShowGoogleAdsModal(false)} onSuccess={() => { setShowGoogleAdsModal(false); router.refresh() }} />}
 
@@ -763,23 +846,42 @@ export default function IntegrationsClient({
                 )
               }
             />
-            {[
-              { name: 'Google Analytics 4', desc: 'Cross-reference session data with order revenue.' },
-              { name: 'Triple Whale', desc: 'Import ROAS and attributed revenue from paid channels.' },
-            ].map((i) => (
-              <IntegrationCard
-                key={i.name}
-                name={i.name}
-                description={i.desc}
-                logo={<div className="text-xs font-bold text-ink-3">{i.name[0]}</div>}
-                status="coming_soon"
-                action={
-                  <button onClick={() => showToast(`${i.name} integration coming soon`)} className="text-xs text-teal hover:text-teal-dark font-medium transition">
-                    Join waitlist
+            <IntegrationCard
+              name="Google Analytics 4"
+              description="Track sessions by channel, landing page performance, monthly trends, conversion rates, and ecommerce revenue. Also provides Google Ads campaign data as a fallback."
+              logo={
+                <div className="h-5 w-5 rounded bg-[#E37400] flex items-center justify-center">
+                  <svg className="h-3.5 w-3.5 text-white" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12.545 10.239v3.821h5.445c-.712 2.315-2.647 3.972-5.445 3.972a6.033 6.033 0 1 1 0-12.064 5.976 5.976 0 0 1 4.111 1.606l2.879-2.878A9.969 9.969 0 0 0 12.545 2C7.021 2 2.543 6.477 2.543 12s4.478 10 10.002 10c8.396 0 10.249-7.85 9.426-11.748l-9.426-.013z"/>
+                  </svg>
+                </div>
+              }
+              status={ga4Connected ? 'connected' : 'not_connected'}
+              meta={ga4Connected ? `Property ID: ${ga4PropertyId ?? 'connected'}` : undefined}
+              action={
+                ga4Connected ? (
+                  <div className="flex items-center gap-3">
+                    <a href="/dashboard/analytics" className="text-xs text-teal hover:text-teal-dark font-medium transition">View dashboard →</a>
+                    <button onClick={() => setShowGa4Modal(true)} className="text-xs text-ink-3 hover:text-ink transition">Re-connect</button>
+                  </div>
+                ) : (
+                  <button onClick={() => setShowGa4Modal(true)} className="inline-flex items-center gap-1.5 rounded-lg bg-[#E37400] px-3 py-1.5 text-xs font-semibold text-white hover:bg-orange-700 transition">
+                    Connect GA4
                   </button>
-                }
-              />
-            ))}
+                )
+              }
+            />
+            <IntegrationCard
+              name="Triple Whale"
+              description="Import ROAS and attributed revenue from paid channels."
+              logo={<div className="text-xs font-bold text-ink-3">T</div>}
+              status="coming_soon"
+              action={
+                <button onClick={() => showToast('Triple Whale integration coming soon')} className="text-xs text-teal hover:text-teal-dark font-medium transition">
+                  Join waitlist
+                </button>
+              }
+            />
           </div>
         </section>
 

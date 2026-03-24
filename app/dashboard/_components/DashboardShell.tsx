@@ -10,6 +10,7 @@ interface DashboardShellProps {
   lastSyncedAt: string | null
   klaviyoConnected: boolean
   gscConnected: boolean
+  ga4Connected: boolean
   metaConnected: boolean
   googleAdsConnected: boolean
 }
@@ -20,12 +21,13 @@ export default function DashboardShell({
   lastSyncedAt,
   klaviyoConnected,
   gscConnected,
+  ga4Connected,
   metaConnected,
   googleAdsConnected,
 }: DashboardShellProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
-  const navProps = { klaviyoConnected, gscConnected, metaConnected, googleAdsConnected }
+  const navProps = { klaviyoConnected, gscConnected, ga4Connected, metaConnected, googleAdsConnected }
 
   return (
     <div className="flex h-full">
