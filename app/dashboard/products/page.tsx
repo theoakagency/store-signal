@@ -1,4 +1,5 @@
 import { createSupabaseServiceClient } from '@/lib/supabase'
+import ProductDashboard from './ProductDashboard'
 
 export const metadata = { title: 'Product Intelligence — Store Signal' }
 
@@ -31,9 +32,6 @@ export default async function ProductsPage() {
       .order('ltv_of_customers_in_sequence', { ascending: false })
       .limit(50),
   ])
-
-  // Dynamic import to avoid making page.tsx a client component
-  const { default: ProductDashboard } = await import('./ProductDashboard')
 
   return (
     <ProductDashboard
