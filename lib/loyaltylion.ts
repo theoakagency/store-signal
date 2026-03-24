@@ -17,23 +17,21 @@ function headers(token: string): Record<string, string> {
 
 export interface LoyaltyCustomer {
   id: string | number
-  email: string
-  merchant_loyalty_points: {
-    balance: number
-    approved_earning: number
-    approved_spending: number
-  } | null
-  tier: { name: string } | null
+  email: string | null
+  points_approved: number
+  points_pending: number
+  points_spent: number
+  loyalty_tier_membership: { loyalty_tier: { name: string } } | null
+  enrolled: boolean
   enrolled_at: string | null
-  last_activity_at: string | null
 }
 
 export interface LoyaltyActivity {
   id: string | number
-  customer: { email: string } | null
-  name: string          // activity type, e.g. "purchase", "referral"
-  points: number        // points earned (positive) or spent (negative)
-  state: string         // "approved", "pending", "cancelled"
+  customer: { id: number; email: string; points_approved: number; points_spent: number } | null
+  value: number         // points amount (positive = earned, negative = spent)
+  state: string         // "approved", "pending", "declined"
+  rule: { id: number; name: string } | null  // activity type e.g. "$purchase", "$signup"
   created_at: string
 }
 
@@ -64,10 +62,12 @@ async function fetchAllPages<T>(
   params: Record<string, string> = {}
 ): Promise<T[]> {
   const results: T[] = []
-  let page = 1
+  let cursor: string | null = null
 
   do {
-    const query = new URLSearchParams({ per_page: '500', page: String(page), ...params })
+    const query = new URLSearchParams({ per_page: '500', ...params })
+    if (cursor) query.set('cursor', cursor)
+
     const res = await fetch(`${BASE_URL}${path}?${query}`, { headers: headers(token) })
 
     if (!res.ok) {
@@ -75,7 +75,12 @@ async function fetchAllPages<T>(
       throw new Error(`LoyaltyLion API error ${res.status}: ${body}`)
     }
 
-    const data = await res.json() as { customers?: T[]; activities?: T[]; rewards?: T[]; campaigns?: T[] }
+    const data = await res.json() as {
+      customers?: T[]
+      activities?: T[]
+      rewards?: T[]
+      cursor?: { next: string | null }
+    }
 
     // Extract the array by guessing the key from the path
     const key = path.replace('/', '') as keyof typeof data
@@ -83,10 +88,9 @@ async function fetchAllPages<T>(
 
     results.push(...items)
 
-    // LoyaltyLion uses page-based pagination; stop when fewer items returned than requested
-    if (items.length < 500) break
-    page++
-  } while (true)
+    // LoyaltyLion uses cursor-based pagination
+    cursor = data.cursor?.next ?? null
+  } while (cursor)
 
   return results
 }

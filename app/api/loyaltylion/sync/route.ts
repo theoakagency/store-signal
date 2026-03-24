@@ -60,12 +60,12 @@ export async function POST(_req: NextRequest) {
       id: String(c.id),
       tenant_id: TENANT_ID,
       email: c.email,
-      points_balance: c.merchant_loyalty_points?.balance ?? 0,
-      points_earned_total: c.merchant_loyalty_points?.approved_earning ?? 0,
-      points_spent_total: c.merchant_loyalty_points?.approved_spending ?? 0,
-      tier: c.tier?.name ?? null,
+      points_balance: c.points_approved ?? 0,
+      points_earned_total: c.points_approved ?? 0,
+      points_spent_total: c.points_spent ?? 0,
+      tier: c.loyalty_tier_membership?.loyalty_tier?.name ?? null,
       enrolled_at: c.enrolled_at,
-      last_activity_at: c.last_activity_at,
+      last_activity_at: null,
     }))
     await service.from('loyalty_customers').upsert(rows, { onConflict: 'id' })
   }
@@ -78,8 +78,8 @@ export async function POST(_req: NextRequest) {
       id: String(a.id),
       tenant_id: TENANT_ID,
       customer_email: a.customer?.email ?? null,
-      activity_type: a.name,
-      points_change: a.points,
+      activity_type: a.rule?.name ?? 'unknown',
+      points_change: a.value,
       description: null,
       created_at: a.created_at,
     }))
@@ -94,25 +94,25 @@ export async function POST(_req: NextRequest) {
   )
 
   const points_issued_30d = recentActivities
-    .filter((a) => a.points > 0)
-    .reduce((s, a) => s + a.points, 0)
+    .filter((a) => a.value > 0)
+    .reduce((s, a) => s + a.value, 0)
 
   const points_redeemed_30d = recentActivities
-    .filter((a) => a.points < 0)
-    .reduce((s, a) => s + Math.abs(a.points), 0)
+    .filter((a) => a.value < 0)
+    .reduce((s, a) => s + Math.abs(a.value), 0)
 
   const redemption_rate = points_issued_30d > 0 ? points_redeemed_30d / points_issued_30d : 0
 
   const redeemerEmails30d = new Set(
-    recentActivities.filter((a) => a.points < 0).map((a) => a.customer?.email)
+    recentActivities.filter((a) => a.value < 0).map((a) => a.customer?.email)
   )
   const active_redeemers_30d = redeemerEmails30d.size
 
   const avg_points_balance = customers.length > 0
-    ? customers.reduce((s, c) => s + (c.merchant_loyalty_points?.balance ?? 0), 0) / customers.length
+    ? customers.reduce((s, c) => s + (c.points_approved ?? 0), 0) / customers.length
     : 0
 
-  const total_points_outstanding = customers.reduce((s, c) => s + (c.merchant_loyalty_points?.balance ?? 0), 0)
+  const total_points_outstanding = customers.reduce((s, c) => s + (c.points_approved ?? 0), 0)
   const points_liability_value = total_points_outstanding * POINT_DOLLAR_VALUE
 
   // Tier breakdown
@@ -127,10 +127,10 @@ export async function POST(_req: NextRequest) {
   )
 
   for (const c of customers) {
-    const tier = c.tier?.name ?? 'No Tier'
+    const tier = c.loyalty_tier_membership?.loyalty_tier?.name ?? 'No Tier'
     if (!tierMap[tier]) tierMap[tier] = { count: 0, total_spent: 0 }
     tierMap[tier].count++
-    tierMap[tier].total_spent += spendByEmail.get(c.email) ?? 0
+    tierMap[tier].total_spent += spendByEmail.get(c.email ?? '') ?? 0
   }
 
   const tier_breakdown = Object.entries(tierMap).map(([tier, data]) => ({
@@ -141,13 +141,13 @@ export async function POST(_req: NextRequest) {
 
   // Top redeemers (by total points spent)
   const top_redeemers = [...customers]
-    .sort((a, b) => (b.merchant_loyalty_points?.approved_spending ?? 0) - (a.merchant_loyalty_points?.approved_spending ?? 0))
+    .sort((a, b) => (b.points_spent ?? 0) - (a.points_spent ?? 0))
     .slice(0, 20)
     .map((c) => ({
       email: c.email,
-      points_redeemed: c.merchant_loyalty_points?.approved_spending ?? 0,
-      ltv: spendByEmail.get(c.email) ?? 0,
-      tier: c.tier?.name ?? null,
+      points_redeemed: c.points_spent ?? 0,
+      ltv: spendByEmail.get(c.email ?? '') ?? 0,
+      tier: c.loyalty_tier_membership?.loyalty_tier?.name ?? null,
     }))
 
   // Promotion response analysis — campaigns endpoint not available in LoyaltyLion v2 API
