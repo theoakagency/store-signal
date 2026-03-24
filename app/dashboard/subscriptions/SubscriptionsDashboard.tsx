@@ -121,8 +121,28 @@ function NotConnected() {
 export default function SubscriptionsDashboard({ connected, metrics, recentCancellations, topSubscriptions }: Props) {
   const [aiInsight, setAiInsight] = useState('')
   const [aiLoading, setAiLoading] = useState(false)
+  const [syncing, setSyncing] = useState(false)
+  const [syncError, setSyncError] = useState('')
 
   if (!connected) return <NotConnected />
+
+  async function handleSync() {
+    setSyncing(true)
+    setSyncError('')
+    try {
+      const res = await fetch('/api/recharge/sync', { method: 'POST' })
+      const data = await res.json() as { error?: string; ok?: boolean }
+      if (data.error) {
+        setSyncError(data.error)
+        setSyncing(false)
+        return
+      }
+      window.location.reload()
+    } catch {
+      setSyncError('Network error — check console')
+      setSyncing(false)
+    }
+  }
 
   async function generateInsight() {
     if (aiLoading || !metrics) return
@@ -161,12 +181,19 @@ export default function SubscriptionsDashboard({ connected, metrics, recentCance
           )}
         </div>
         <button
-          onClick={() => { fetch('/api/recharge/sync', { method: 'POST' }).then(() => window.location.reload()) }}
-          className="rounded-lg border border-cream-3 px-4 py-2 text-sm font-medium text-ink-2 hover:bg-cream-2 transition"
+          onClick={handleSync}
+          disabled={syncing}
+          className="rounded-lg border border-cream-3 px-4 py-2 text-sm font-medium text-ink-2 hover:bg-cream-2 disabled:opacity-50 transition"
         >
-          Sync Now
+          {syncing ? 'Syncing…' : 'Sync Now'}
         </button>
       </div>
+
+      {syncError && (
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          Sync error: {syncError}
+        </div>
+      )}
 
       {!m ? (
         <div className="rounded-2xl border border-cream-3 bg-white p-10 text-center text-sm text-ink-3">

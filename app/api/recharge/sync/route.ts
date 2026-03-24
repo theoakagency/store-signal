@@ -41,17 +41,36 @@ export async function POST(_req: NextRequest) {
   if (!apiToken) return Response.json({ error: 'Recharge not connected' }, { status: 400 })
 
   // ── Fetch subscriptions ──────────────────────────────────────────────────────
-  const [active, cancelled, expired] = await Promise.all([
-    getSubscriptions(apiToken, 'ACTIVE'),
-    getSubscriptions(apiToken, 'CANCELLED'),
-    getSubscriptions(apiToken, 'EXPIRED'),
-  ])
+  let active: Awaited<ReturnType<typeof getSubscriptions>>
+  let cancelled: Awaited<ReturnType<typeof getSubscriptions>>
+  let expired: Awaited<ReturnType<typeof getSubscriptions>>
+  let charges: Awaited<ReturnType<typeof getCharges>>
+
+  try {
+    ;[active, cancelled, expired] = await Promise.all([
+      getSubscriptions(apiToken, 'ACTIVE'),
+      getSubscriptions(apiToken, 'CANCELLED'),
+      getSubscriptions(apiToken, 'EXPIRED'),
+    ])
+  } catch (e) {
+    const msg = (e as Error).message
+    console.error('Recharge subscription fetch error:', msg)
+    return Response.json({ error: `Subscription fetch failed: ${msg}` }, { status: 502 })
+  }
+
   const allSubscriptions = [...active, ...cancelled, ...expired]
 
   // ── Fetch last 12 months of charges ─────────────────────────────────────────
   const twelveMonthsAgo = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString()
   const now = new Date().toISOString()
-  const charges = await getCharges(apiToken, { from: twelveMonthsAgo, to: now })
+
+  try {
+    charges = await getCharges(apiToken, { from: twelveMonthsAgo, to: now })
+  } catch (e) {
+    const msg = (e as Error).message
+    console.error('Recharge charges fetch error:', msg)
+    return Response.json({ error: `Charges fetch failed: ${msg}` }, { status: 502 })
+  }
 
   // ── Upsert subscriptions ─────────────────────────────────────────────────────
   if (allSubscriptions.length > 0) {
@@ -245,7 +264,7 @@ export async function POST(_req: NextRequest) {
   )
 
   // ── Cache metrics ────────────────────────────────────────────────────────────
-  await service.from('recharge_metrics_cache').upsert({
+  const { error: cacheError } = await service.from('recharge_metrics_cache').upsert({
     tenant_id: TENANT_ID,
     active_subscribers: activeSubscribers,
     mrr: Math.round(mrr * 100) / 100,
@@ -261,6 +280,11 @@ export async function POST(_req: NextRequest) {
     calculated_at: new Date().toISOString(),
   }, { onConflict: 'tenant_id' })
 
+  if (cacheError) {
+    console.error('Recharge metrics cache upsert error:', cacheError.message)
+    return Response.json({ error: `Cache write failed: ${cacheError.message}` }, { status: 500 })
+  }
+
   return Response.json({
     ok: true,
     synced: {
@@ -272,6 +296,10 @@ export async function POST(_req: NextRequest) {
       mrr: Math.round(mrr * 100) / 100,
       arr: Math.round(arr * 100) / 100,
       churn_rate_30d: Math.round(churnRate30d * 10000) / 10000,
+    },
+    _debug: {
+      sample_subscription: allSubscriptions[0] ?? null,
+      sample_charge: charges[0] ?? null,
     },
   })
 }
