@@ -40,15 +40,10 @@ export async function POST(req: NextRequest) {
 
   const service = createSupabaseServiceClient()
 
-  // ── Fetch source data in parallel ────────────────────────────────────────────
-  // Orders: lightweight columns only (no line_items).
-  // Subscriptions + loyalty: small tables, fetch all.
-  const [ordersResult, subsResult, loyaltyResult] = await Promise.all([
-    service
-      .from('orders')
-      .select('email, total_price, processed_at, created_at')
-      .eq('store_id', STORE_ID)
-      .eq('financial_status', 'paid'),
+  // ── Fetch source data ─────────────────────────────────────────────────────────
+  // Orders: paginate in chunks of 5,000 to bypass the PostgREST max-rows limit.
+  // Subscriptions + loyalty: small tables, fetch all at once.
+  const [subsResult, loyaltyResult] = await Promise.all([
     service
       .from('recharge_subscriptions')
       .select('customer_email, status, price, charge_interval_frequency, order_interval_unit')
@@ -59,7 +54,21 @@ export async function POST(req: NextRequest) {
       .eq('tenant_id', TENANT_ID),
   ])
 
-  const orders = (ordersResult.data ?? []) as OrderRow[]
+  const orders: OrderRow[] = []
+  const PAGE = 5000
+  let from = 0
+  while (true) {
+    const { data, error } = await service
+      .from('orders')
+      .select('email, total_price, processed_at, created_at')
+      .eq('store_id', STORE_ID)
+      .eq('financial_status', 'paid')
+      .range(from, from + PAGE - 1)
+    if (error || !data || data.length === 0) break
+    orders.push(...(data as OrderRow[]))
+    if (data.length < PAGE) break
+    from += PAGE
+  }
 
   // ── Build subscription map (email → best active sub) ─────────────────────────
   const subsByEmail = new Map<string, { status: string; interval: string; mrr: number }>()

@@ -35,28 +35,39 @@ export async function POST(_req: NextRequest) {
 
   const service = createSupabaseServiceClient()
 
-  // Fetch all paid orders and active subscriptions in parallel
-  const [ordersResult, subsResult] = await Promise.all([
-    service
+  // Fetch subscriptions (small table, one shot)
+  const { data: subsData } = await service
+    .from('recharge_subscriptions')
+    .select('customer_email, product_title')
+    .eq('tenant_id', TENANT_ID)
+    .eq('status', 'active')
+
+  // Paginate through orders to bypass PostgREST max-rows limit.
+  // line_items JSONB is needed for product analysis so we keep it,
+  // but use a smaller page size (2,000) to keep response payloads manageable.
+  const orders: OrderRow[] = []
+  const PAGE = 2000
+  let from = 0
+  while (true) {
+    const { data, error } = await service
       .from('orders')
       .select('email, total_price, processed_at, created_at, line_items')
       .eq('store_id', STORE_ID)
       .eq('financial_status', 'paid')
-      .order('processed_at', { ascending: true }),
-    service
-      .from('recharge_subscriptions')
-      .select('customer_email, product_title')
-      .eq('tenant_id', TENANT_ID)
-      .eq('status', 'active'),
-  ])
+      .order('processed_at', { ascending: true })
+      .range(from, from + PAGE - 1)
+    if (error || !data || data.length === 0) break
+    orders.push(...(data as unknown as OrderRow[]))
+    if (data.length < PAGE) break
+    from += PAGE
+  }
 
-  const orders = (ordersResult.data ?? []) as unknown as OrderRow[]
   const totalOrderCount = orders.length
 
   // Build subscriber email set for conversion rate calculations
   const subscriberEmails = new Set<string>()
   const subscribedProductTitles = new Set<string>()
-  for (const sub of subsResult.data ?? []) {
+  for (const sub of subsData ?? []) {
     if (sub.customer_email) subscriberEmails.add(sub.customer_email.toLowerCase())
     if (sub.product_title) subscribedProductTitles.add(sub.product_title.toLowerCase())
   }
