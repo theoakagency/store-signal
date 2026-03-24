@@ -30,6 +30,10 @@ interface ShopifyOrder {
   processed_at: string | null
   created_at: string
   updated_at: string
+  source_name: string | null
+  referring_site: string | null
+  landing_site: string | null
+  note_attributes: Array<{ name: string; value: string }> | null
 }
 
 interface ShopifyLineItem {
@@ -145,6 +149,20 @@ async function fetchAllCustomers(token: string): Promise<ShopifyCustomer[]> {
   return customers
 }
 
+// ── UTM extraction ────────────────────────────────────────────────────────────
+
+function extractUtm(landingSite: string | null, param: string): string | null {
+  if (!landingSite) return null
+  try {
+    const url = new URL(
+      landingSite.startsWith('http') ? landingSite : `https://x.com${landingSite.startsWith('/') ? '' : '/'}${landingSite}`
+    )
+    return url.searchParams.get(param)
+  } catch {
+    return null
+  }
+}
+
 // ── Upsert helpers ────────────────────────────────────────────────────────────
 
 function mapOrder(order: ShopifyOrder) {
@@ -175,6 +193,12 @@ function mapOrder(order: ShopifyOrder) {
     tags: order.tags ? order.tags.split(', ').filter(Boolean) : [],
     processed_at: order.processed_at ?? null,
     updated_at: order.updated_at,
+    source_name: order.source_name ?? null,
+    referring_site: order.referring_site ?? null,
+    landing_site: order.landing_site ?? null,
+    utm_source: extractUtm(order.landing_site, 'utm_source'),
+    utm_medium: extractUtm(order.landing_site, 'utm_medium'),
+    utm_campaign: extractUtm(order.landing_site, 'utm_campaign'),
   }
 }
 

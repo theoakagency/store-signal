@@ -1,5 +1,6 @@
 import { createSupabaseServerClient } from '@/lib/supabase'
 import Link from 'next/link'
+import RevenueSection from './RevenueSection'
 
 export const metadata = {
   title: 'Executive Summary — Store Signal',
@@ -69,57 +70,6 @@ function statusBadge(status: string | null) {
   )
 }
 
-// ── Bar Chart ─────────────────────────────────────────────────────────────────
-
-function BarChart({ data }: { data: { month: string; revenue: number }[] }) {
-  const max = Math.max(...data.map((d) => d.revenue), 1)
-  const chartH = 120
-  const barW = 24
-  const gap = 8
-  const totalW = data.length * (barW + gap) - gap
-
-  return (
-    <div className="mt-4 overflow-x-auto pb-2">
-      <svg
-        width={totalW}
-        height={chartH + 28}
-        viewBox={`0 0 ${totalW} ${chartH + 28}`}
-        className="min-w-full"
-        aria-label="Monthly revenue bar chart"
-      >
-        {data.map((d, i) => {
-          const barH = Math.max(4, (d.revenue / max) * chartH)
-          const x = i * (barW + gap)
-          const y = chartH - barH
-          return (
-            <g key={d.month}>
-              <rect
-                x={x}
-                y={y}
-                width={barW}
-                height={barH}
-                rx={4}
-                fill="#4BBFAD"
-                opacity={i === data.length - 1 ? 0.5 : 1}
-              />
-              <text
-                x={x + barW / 2}
-                y={chartH + 16}
-                textAnchor="middle"
-                fontSize={9}
-                fill="#888888"
-                fontFamily="DM Mono, monospace"
-              >
-                {d.month}
-              </text>
-            </g>
-          )
-        })}
-      </svg>
-    </div>
-  )
-}
-
 // ── Page ───────────────────────────────────────────────────────────────────────
 
 export default async function DashboardPage() {
@@ -143,6 +93,7 @@ export default async function DashboardPage() {
     { data: klaviyoMetricsRows },
     { data: topCampaignRows },
     { data: topFlowRows },
+    { data: channelRows },
   ] = await Promise.all([
     supabase
       .from('orders')
@@ -186,6 +137,11 @@ export default async function DashboardPage() {
       .eq('tenant_id', TENANT_ID)
       .order('revenue_attributed', { ascending: false })
       .limit(1),
+    supabase
+      .from('sales_channel_cache')
+      .select('channel_name, revenue, order_count, avg_order_value')
+      .eq('tenant_id', TENANT_ID)
+      .eq('period', 'last_30d'),
   ])
 
   const curr = currentRows ?? []
@@ -285,14 +241,11 @@ export default async function DashboardPage() {
         />
       </div>
 
-      {/* Revenue chart */}
-      <section className="rounded-2xl border border-cream-3 bg-white p-6 shadow-sm">
-        <div className="flex items-center justify-between">
-          <h2 className="font-display text-base font-semibold text-ink">Monthly Revenue</h2>
-          <span className="font-data text-xs text-ink-3">Last 12 months</span>
-        </div>
-        <BarChart data={chartData} />
-      </section>
+      {/* Revenue chart + channel breakdown */}
+      <RevenueSection
+        monthlyData={chartData}
+        channelData30d={channelRows ?? []}
+      />
 
       {/* Email Intelligence card */}
       <section className="rounded-2xl border border-cream-3 bg-white p-6 shadow-sm">

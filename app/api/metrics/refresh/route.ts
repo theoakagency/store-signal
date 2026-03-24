@@ -11,6 +11,22 @@ export const maxDuration = 60
 const TENANT_ID = '00000000-0000-0000-0000-000000000001'
 const STORE_ID = '00000000-0000-0000-0000-000000000002'
 
+// Map Shopify source_name values to friendly channel names
+function toChannel(sourceName: string | null): string {
+  if (!sourceName) return 'Online Store'
+  const map: Record<string, string> = {
+    web: 'Online Store',
+    shopify: 'Online Store',
+    pos: 'Point of Sale',
+    shopify_draft_orders: 'Draft Orders',
+    instagram: 'Instagram',
+    facebook: 'Facebook',
+    shop_app: 'Shop App',
+    app: 'Shop App',
+  }
+  return map[sourceName.toLowerCase()] ?? 'Other'
+}
+
 export async function POST(_req: NextRequest) {
   const supabase = createSupabaseServiceClient()
 
@@ -19,7 +35,7 @@ export async function POST(_req: NextRequest) {
   const d60 = new Date(now); d60.setDate(d60.getDate() - 60)
   const d12m = new Date(now); d12m.setMonth(d12m.getMonth() - 12)
 
-  const [{ data: curr }, { data: prior }, { data: allCustomers }] = await Promise.all([
+  const [{ data: curr }, { data: prior }, { data: allCustomers }, { data: channelOrders30d }, { data: channelOrders12m }] = await Promise.all([
     supabase
       .from('orders')
       .select('total_price, currency')
@@ -37,6 +53,18 @@ export async function POST(_req: NextRequest) {
       .from('customers')
       .select('total_spent, orders_count')
       .eq('store_id', STORE_ID),
+    supabase
+      .from('orders')
+      .select('source_name, total_price')
+      .eq('store_id', STORE_ID)
+      .eq('financial_status', 'paid')
+      .gte('processed_at', d30.toISOString()),
+    supabase
+      .from('orders')
+      .select('source_name, total_price')
+      .eq('store_id', STORE_ID)
+      .eq('financial_status', 'paid')
+      .gte('processed_at', d12m.toISOString()),
   ])
 
   const currRevenue = (curr ?? []).reduce((s, r) => s + Number(r.total_price), 0)
@@ -77,7 +105,38 @@ export async function POST(_req: NextRequest) {
     return Response.json({ error: error.message }, { status: 500 })
   }
 
-  return Response.json({ refreshed: metrics.length, at: now.toISOString() })
+  // ── Sales channel cache ───────────────────────────────────────────────────
+  function buildChannelRows(orders: { source_name: string | null; total_price: string | number }[] | null, period: string) {
+    const map: Record<string, { count: number; revenue: number }> = {}
+    for (const o of orders ?? []) {
+      const ch = toChannel(o.source_name)
+      if (!map[ch]) map[ch] = { count: 0, revenue: 0 }
+      map[ch].count += 1
+      map[ch].revenue += Number(o.total_price)
+    }
+    return Object.entries(map).map(([channel_name, { count, revenue }]) => ({
+      tenant_id: TENANT_ID,
+      channel_name,
+      order_count: count,
+      revenue,
+      avg_order_value: count > 0 ? revenue / count : 0,
+      period,
+      calculated_at: now.toISOString(),
+    }))
+  }
+
+  const channelRows = [
+    ...buildChannelRows(channelOrders30d, 'last_30d'),
+    ...buildChannelRows(channelOrders12m, 'last_12m'),
+  ]
+
+  if (channelRows.length > 0) {
+    await supabase
+      .from('sales_channel_cache')
+      .upsert(channelRows, { onConflict: 'tenant_id,channel_name,period' })
+  }
+
+  return Response.json({ refreshed: metrics.length, channels: channelRows.length, at: now.toISOString() })
 }
 
 // Allow GET for convenience
