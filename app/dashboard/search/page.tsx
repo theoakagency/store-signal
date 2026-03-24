@@ -1,5 +1,5 @@
 import { createSupabaseServerClient } from '@/lib/supabase'
-import SearchDashboard from './SearchDashboard'
+import SearchDashboard, { type GscInsight } from './SearchDashboard'
 
 export const metadata = { title: 'Search Intelligence — Store Signal' }
 
@@ -14,6 +14,7 @@ export default async function SearchPage() {
     { data: keywords },
     { data: pages },
     { data: monthlyClicks },
+    { data: insightsCache },
   ] = await Promise.all([
     supabase
       .from('stores')
@@ -37,6 +38,11 @@ export default async function SearchPage() {
       .select('month, clicks, impressions')
       .eq('tenant_id', TENANT_ID)
       .order('month', { ascending: true }),
+    supabase
+      .from('gsc_insights_cache')
+      .select('insights, calculated_at')
+      .eq('tenant_id', TENANT_ID)
+      .maybeSingle(),
   ])
 
   return (
@@ -46,6 +52,8 @@ export default async function SearchPage() {
       keywords={keywords ?? []}
       pages={pages ?? []}
       monthlyClicks={monthlyClicks ?? []}
+      cachedInsights={(insightsCache?.insights as GscInsight[] | null) ?? null}
+      insightsCalculatedAt={insightsCache?.calculated_at ?? null}
     />
   )
 }

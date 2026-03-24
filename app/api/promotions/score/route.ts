@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
 
   // Fetch store context for the AI prompt
   const service = createSupabaseServiceClient()
-  const [{ data: statsRows }, { data: topCustomers }, { data: allCustomers }, { data: klaviyoMetrics }, { data: recentCampaigns }] = await Promise.all([
+  const [{ data: statsRows }, { data: topCustomers }, { data: allCustomers }, { data: klaviyoMetrics }, { data: recentCampaigns }, { data: gscKeywords }, { data: gscMonthly }] = await Promise.all([
     service
       .from('orders')
       .select('total_price, financial_status')
@@ -61,6 +61,17 @@ export async function POST(req: NextRequest) {
       .eq('tenant_id', TENANT_ID)
       .order('send_time', { ascending: false })
       .limit(5),
+    service
+      .from('gsc_keywords')
+      .select('query, clicks, impressions, ctr, position')
+      .eq('tenant_id', TENANT_ID)
+      .order('clicks', { ascending: false })
+      .limit(10),
+    service
+      .from('gsc_monthly_clicks')
+      .select('month, clicks')
+      .eq('tenant_id', TENANT_ID)
+      .order('month', { ascending: true }),
   ])
 
   const totalRevenue = (statsRows ?? []).reduce((s, r) => s + Number(r.total_price), 0)
@@ -104,6 +115,20 @@ ${channel?.toLowerCase().includes('email') && avgOpenRate
   : ''}`.trim()
     : ''
 
+  // Build GSC context if data is available
+  const hasGsc = (gscKeywords ?? []).length > 0
+  const gscTotal90d = (gscMonthly ?? []).slice(-3).reduce((s, m) => s + m.clicks, 0)
+  const gscPrior90d = (gscMonthly ?? []).slice(-6, -3).reduce((s, m) => s + m.clicks, 0)
+  const gscTrend = gscPrior90d > 0
+    ? ((gscTotal90d - gscPrior90d) / gscPrior90d) * 100
+    : null
+  const gscContext = hasGsc
+    ? `
+ORGANIC SEARCH (Google Search Console):
+- Traffic trend: ${gscTrend != null ? `${gscTrend >= 0 ? '+' : ''}${gscTrend.toFixed(1)}% vs prior 90 days` : 'unknown'}
+- Top 10 keywords: ${(gscKeywords ?? []).map((k) => `"${k.query}" (pos ${(k.position ?? 0).toFixed(1)}, ${k.clicks} clicks)`).join(', ')}`.trim()
+    : ''
+
   const storeContext = `
 Store: LashBox LA (beauty/lash retail, 10+ years in business)
 Total paid orders (all time): ${orderCount}
@@ -112,13 +137,18 @@ Average order value: $${aov.toFixed(2)}
 Average LTV (top 20 customers): $${avgLTV.toFixed(2)}
 Total customers in CRM: ${totalCustomers}
 Lapsed customers (90+ days inactive): ${lapsedCount} (${totalCustomers > 0 ? Math.round((lapsedCount / totalCustomers) * 100) : 0}%)
-${emailContext}`.trim()
+${emailContext}
+${gscContext}`.trim()
 
   const emailInstruction = hasKlaviyo && avgOpenRate
     ? `This store's email campaigns average ${(avgOpenRate * 100).toFixed(1)}% open rate and ${avgCampaignRevenue != null ? '$' + avgCampaignRevenue.toFixed(0) : 'an unknown amount'} revenue per send. Their automated flows generate ${flowRevenueRatio != null ? flowRevenueRatio.toFixed(1) + '×' : 'more'} revenue per recipient than broadcast campaigns. Factor this into the audience fit and buying motivation scores when the channel involves email.`
     : ''
 
-  const prompt = `You are a retail promotion strategist. A beauty brand (LashBox LA) wants to evaluate a promotion idea. Use the real store data below to give a grounded, honest assessment — validate or challenge the team's thinking.${emailInstruction ? ' ' + emailInstruction : ''}
+  const gscInstruction = hasGsc
+    ? ` This store's organic search traffic is ${gscTrend != null ? `${gscTrend >= 0 ? 'trending up' : 'trending down'} ${Math.abs(gscTrend).toFixed(1)}%` : 'trending'} vs the prior 90 days. Their top organic keywords are: ${(gscKeywords ?? []).slice(0, 5).map((k) => `"${k.query}"`).join(', ')}. Factor in whether this promotion could support or conflict with their SEO strategy — for example, whether it targets the same audience as their organic traffic or cannibalizes search intent.`
+    : ''
+
+  const prompt = `You are a retail promotion strategist. A beauty brand (LashBox LA) wants to evaluate a promotion idea. Use the real store data below to give a grounded, honest assessment — validate or challenge the team's thinking.${emailInstruction ? ' ' + emailInstruction : ''}${gscInstruction}
 
 STORE DATA:
 ${storeContext}
