@@ -1,12 +1,15 @@
 /**
- * Historical sync — processes one 30-day chunk at a time.
+ * Historical sync — processes one 7-day chunk at a time.
  *
  * POST /api/shopify/sync/historical
- * Body: { "chunk_start": "2022-01-01T00:00:00Z" }
+ * Body: { "chunk_start": "2024-01-01T00:00:00Z" }
  *       (omit to start from SHOPIFY_SYNC_MONTHS_BACK months ago)
  *
- * Returns: { orders, customers, errors, next_chunk_start }
+ * Returns: { orders, errors, chunk_start, chunk_end, next_chunk_start }
  * When next_chunk_start is null, the full historical import is complete.
+ *
+ * 7-day chunks keep each invocation under ~20s (compatible with 60s limit).
+ * For 12 months run the loop ~52 times.
  */
 
 import { NextRequest } from 'next/server'
@@ -20,7 +23,7 @@ const SYNC_MONTHS_BACK = parseInt(process.env.SHOPIFY_SYNC_MONTHS_BACK ?? '12', 
 const TENANT_ID = '00000000-0000-0000-0000-000000000001'
 const STORE_ID = '00000000-0000-0000-0000-000000000002'
 
-const CHUNK_DAYS = 30
+const CHUNK_DAYS = 7
 
 interface ShopifyOrder {
   id: number
@@ -80,7 +83,7 @@ async function fetchOrdersInWindow(
   let isFirst = true
 
   while (url) {
-    if (!isFirst) await sleep(500)
+    if (!isFirst) await sleep(150)
     isFirst = false
 
     const fullUrl = `https://${SHOPIFY_STORE}/admin/api/2024-10/${url}`
