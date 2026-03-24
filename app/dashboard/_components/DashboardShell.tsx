@@ -10,6 +10,8 @@ interface DashboardShellProps {
   lastSyncedAt: string | null
   klaviyoConnected: boolean
   gscConnected: boolean
+  metaConnected: boolean
+  googleAdsConnected: boolean
 }
 
 export default function DashboardShell({
@@ -18,14 +20,18 @@ export default function DashboardShell({
   lastSyncedAt,
   klaviyoConnected,
   gscConnected,
+  metaConnected,
+  googleAdsConnected,
 }: DashboardShellProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
+
+  const navProps = { klaviyoConnected, gscConnected, metaConnected, googleAdsConnected }
 
   return (
     <div className="flex h-full">
       {/* ── Desktop sidebar ────────────────────────────────────── */}
       <aside className="hidden lg:flex lg:w-[230px] lg:shrink-0 bg-charcoal flex-col">
-        <Sidebar klaviyoConnected={klaviyoConnected} gscConnected={gscConnected} />
+        <Sidebar {...navProps} />
       </aside>
 
       {/* ── Mobile sidebar overlay ─────────────────────────────── */}
@@ -38,7 +44,7 @@ export default function DashboardShell({
           />
           {/* Drawer */}
           <aside className="absolute inset-y-0 left-0 z-50 w-[230px] bg-charcoal animate-slide-in-right">
-            <Sidebar onNavigate={() => setSidebarOpen(false)} klaviyoConnected={klaviyoConnected} gscConnected={gscConnected} />
+            <Sidebar onNavigate={() => setSidebarOpen(false)} {...navProps} />
           </aside>
         </div>
       )}

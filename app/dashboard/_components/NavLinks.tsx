@@ -59,10 +59,14 @@ export default function NavLinks({
   onNavigate,
   klaviyoConnected,
   gscConnected,
+  metaConnected,
+  googleAdsConnected,
 }: {
   onNavigate?: () => void
   klaviyoConnected?: boolean
   gscConnected?: boolean
+  metaConnected?: boolean
+  googleAdsConnected?: boolean
 }) {
   const pathname = usePathname()
 
@@ -113,6 +117,48 @@ export default function NavLinks({
         </svg>
         Search / GSC
         <span className={`ml-auto h-1.5 w-1.5 rounded-full ${gscConnected ? 'bg-teal' : 'bg-cream/20'}`} />
+      </Link>
+
+      {/* Advertising section */}
+      <div className="mt-4 mb-1 px-3">
+        <p className="text-[10px] font-data uppercase tracking-widest text-cream/25">Advertising</p>
+      </div>
+
+      <Link
+        href="/dashboard/advertising"
+        onClick={onNavigate}
+        className={`nav-link ${pathname === '/dashboard/advertising' ? 'active' : ''}`}
+      >
+        <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+          <path d="M1 12L5 7l3 3 3-5 3 3" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        Overview
+      </Link>
+
+      <Link
+        href="/dashboard/meta"
+        onClick={onNavigate}
+        className={`nav-link ${pathname.startsWith('/dashboard/meta') ? 'active' : ''}`}
+      >
+        <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+          <rect x="2" y="3" width="5" height="10" rx="1.5" />
+          <path d="M7 8h5M9 5l3 3-3 3" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        Meta Ads
+        <span className={`ml-auto h-1.5 w-1.5 rounded-full ${metaConnected ? 'bg-teal' : 'bg-cream/20'}`} />
+      </Link>
+
+      <Link
+        href="/dashboard/google-ads"
+        onClick={onNavigate}
+        className={`nav-link ${pathname.startsWith('/dashboard/google-ads') ? 'active' : ''}`}
+      >
+        <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+          <circle cx="8" cy="8" r="6" />
+          <path d="M8 5v3l2 2" strokeLinecap="round" />
+        </svg>
+        Google Ads
+        <span className={`ml-auto h-1.5 w-1.5 rounded-full ${googleAdsConnected ? 'bg-teal' : 'bg-cream/20'}`} />
       </Link>
     </nav>
   )
