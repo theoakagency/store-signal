@@ -89,35 +89,31 @@ async function gaqlSearch(
   query: string
 ): Promise<GaqlRow[]> {
   const cleanId = customerId.replace(/-/g, '')
-  const res = await fetch(`${BASE_URL}/customers/${cleanId}/googleAds:searchStream`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${accessToken}`,
-      'developer-token': developerToken,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ query }),
-  })
-
-  if (!res.ok) {
-    const text = await res.text()
-    throw new Error(`Google Ads API error (${res.status}): ${text}`)
+  const url = `${BASE_URL}/customers/${cleanId}/googleAds:search`
+  const headers = {
+    'Authorization': `Bearer ${accessToken}`,
+    'developer-token': developerToken,
+    'Content-Type': 'application/json',
   }
 
-  // searchStream returns newline-delimited JSON objects
-  const text = await res.text()
   const rows: GaqlRow[] = []
+  let pageToken: string | undefined
 
-  for (const line of text.split('\n')) {
-    const trimmed = line.trim()
-    if (!trimmed || trimmed === '[' || trimmed === ']') continue
-    try {
-      const parsed = JSON.parse(trimmed.replace(/^,/, '')) as { results?: GaqlRow[] }
-      if (parsed.results) rows.push(...parsed.results)
-    } catch {
-      // skip malformed lines
+  do {
+    const body: Record<string, unknown> = { query, pageSize: 10000 }
+    if (pageToken) body.pageToken = pageToken
+
+    const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) })
+
+    if (!res.ok) {
+      const text = await res.text()
+      throw new Error(`Google Ads API error (${res.status}): ${text}`)
     }
-  }
+
+    const data = await res.json() as { results?: GaqlRow[]; nextPageToken?: string }
+    if (data.results) rows.push(...data.results)
+    pageToken = data.nextPageToken
+  } while (pageToken)
 
   return rows
 }
