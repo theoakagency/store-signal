@@ -16,22 +16,24 @@ function headers(token: string): Record<string, string> {
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface LoyaltyCustomer {
-  id: string
+  id: string | number
   email: string
-  points_balance: number
-  points_earned_total: number
-  points_spent_total: number
+  merchant_loyalty_points: {
+    balance: number
+    approved_earning: number
+    approved_spending: number
+  } | null
   tier: { name: string } | null
   enrolled_at: string | null
   last_activity_at: string | null
 }
 
 export interface LoyaltyActivity {
-  id: string
-  customer: { email: string }
-  activity_type: string
-  points_change: number
-  description: string | null
+  id: string | number
+  customer: { email: string } | null
+  name: string          // activity type, e.g. "purchase", "referral"
+  points: number        // points earned (positive) or spent (negative)
+  state: string         // "approved", "pending", "cancelled"
   created_at: string
 }
 

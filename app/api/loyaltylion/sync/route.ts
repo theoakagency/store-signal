@@ -60,9 +60,9 @@ export async function POST(_req: NextRequest) {
       id: String(c.id),
       tenant_id: TENANT_ID,
       email: c.email,
-      points_balance: c.points_balance,
-      points_earned_total: c.points_earned_total,
-      points_spent_total: c.points_spent_total,
+      points_balance: c.merchant_loyalty_points?.balance ?? 0,
+      points_earned_total: c.merchant_loyalty_points?.approved_earning ?? 0,
+      points_spent_total: c.merchant_loyalty_points?.approved_spending ?? 0,
       tier: c.tier?.name ?? null,
       enrolled_at: c.enrolled_at,
       last_activity_at: c.last_activity_at,
@@ -71,14 +71,16 @@ export async function POST(_req: NextRequest) {
   }
 
   // ── Upsert activities ────────────────────────────────────────────────────────
-  if (activities.length > 0) {
-    const rows = activities.map((a) => ({
+  // Only store approved activities
+  const approvedActivities = activities.filter((a) => a.state === 'approved')
+  if (approvedActivities.length > 0) {
+    const rows = approvedActivities.map((a) => ({
       id: String(a.id),
       tenant_id: TENANT_ID,
       customer_email: a.customer?.email ?? null,
-      activity_type: a.activity_type,
-      points_change: a.points_change,
-      description: a.description ?? null,
+      activity_type: a.name,
+      points_change: a.points,
+      description: null,
       created_at: a.created_at,
     }))
     await service.from('loyalty_activities').upsert(rows, { onConflict: 'id' })
@@ -86,32 +88,31 @@ export async function POST(_req: NextRequest) {
 
   // ── Compute metrics ──────────────────────────────────────────────────────────
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
-  const fortyFourDaysAgo = new Date(Date.now() - 44 * 24 * 60 * 60 * 1000)
 
-  const recentActivities = activities.filter(
+  const recentActivities = approvedActivities.filter(
     (a) => new Date(a.created_at) >= thirtyDaysAgo
   )
 
   const points_issued_30d = recentActivities
-    .filter((a) => a.points_change > 0)
-    .reduce((s, a) => s + a.points_change, 0)
+    .filter((a) => a.points > 0)
+    .reduce((s, a) => s + a.points, 0)
 
   const points_redeemed_30d = recentActivities
-    .filter((a) => a.points_change < 0)
-    .reduce((s, a) => s + Math.abs(a.points_change), 0)
+    .filter((a) => a.points < 0)
+    .reduce((s, a) => s + Math.abs(a.points), 0)
 
   const redemption_rate = points_issued_30d > 0 ? points_redeemed_30d / points_issued_30d : 0
 
   const redeemerEmails30d = new Set(
-    recentActivities.filter((a) => a.points_change < 0).map((a) => a.customer?.email)
+    recentActivities.filter((a) => a.points < 0).map((a) => a.customer?.email)
   )
   const active_redeemers_30d = redeemerEmails30d.size
 
   const avg_points_balance = customers.length > 0
-    ? customers.reduce((s, c) => s + c.points_balance, 0) / customers.length
+    ? customers.reduce((s, c) => s + (c.merchant_loyalty_points?.balance ?? 0), 0) / customers.length
     : 0
 
-  const total_points_outstanding = customers.reduce((s, c) => s + c.points_balance, 0)
+  const total_points_outstanding = customers.reduce((s, c) => s + (c.merchant_loyalty_points?.balance ?? 0), 0)
   const points_liability_value = total_points_outstanding * POINT_DOLLAR_VALUE
 
   // Tier breakdown
@@ -140,11 +141,11 @@ export async function POST(_req: NextRequest) {
 
   // Top redeemers (by total points spent)
   const top_redeemers = [...customers]
-    .sort((a, b) => b.points_spent_total - a.points_spent_total)
+    .sort((a, b) => (b.merchant_loyalty_points?.approved_spending ?? 0) - (a.merchant_loyalty_points?.approved_spending ?? 0))
     .slice(0, 20)
     .map((c) => ({
       email: c.email,
-      points_redeemed: c.points_spent_total,
+      points_redeemed: c.merchant_loyalty_points?.approved_spending ?? 0,
       ltv: spendByEmail.get(c.email) ?? 0,
       tier: c.tier?.name ?? null,
     }))
