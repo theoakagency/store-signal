@@ -19,13 +19,13 @@ export default async function LoyaltyPage() {
     { data: metricsCache },
     { data: totalCustomers },
   ] = await Promise.all([
-    service.from('stores').select('loyaltylion_token, loyaltylion_secret').eq('id', STORE_ID).single(),
+    service.from('stores').select('loyaltylion_token').eq('id', STORE_ID).single(),
     service.from('loyalty_metrics_cache').select('*').eq('tenant_id', TENANT_ID).maybeSingle(),
     service.from('customers').select('id', { count: 'exact', head: true }).eq('tenant_id', TENANT_ID),
   ])
 
-  const s = store as { loyaltylion_token: string | null; loyaltylion_secret: string | null } | null
-  const connected = !!(s?.loyaltylion_token && s?.loyaltylion_secret)
+  const s = store as { loyaltylion_token: string | null } | null
+  const connected = !!s?.loyaltylion_token
 
   return (
     <LoyaltyDashboard
