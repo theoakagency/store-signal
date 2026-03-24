@@ -102,7 +102,7 @@ export async function POST(_req: NextRequest) {
   const currency = curr?.[0]?.currency ?? 'USD'
 
   // Build the revenue_by_month array in YYYY-MM format
-  const revenueByMonth = (monthlyRows ?? []).map((r) => ({
+  const revenueByMonth = (monthlyRows ?? []).map((r: { month: string; revenue: number; order_count: number }) => ({
     month: r.month as string,
     revenue: Number(r.revenue),
     order_count: Number(r.order_count),

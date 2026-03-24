@@ -820,7 +820,7 @@ const getSubscriptionData: AgentTool = {
   schema: {
     name: 'get_subscription_data',
     description: 'Get Recharge subscription metrics: active subscribers, MRR, ARR, churn rate, interval breakdown, and subscriber vs non-subscriber LTV comparison.',
-    inputSchema: {
+    input_schema: {
       type: 'object' as const,
       properties: {},
       required: [],
@@ -860,7 +860,7 @@ const getLoyaltyData: AgentTool = {
   schema: {
     name: 'get_loyalty_data',
     description: 'Get LoyaltyLion program metrics: enrolled customers, redemption rate, points liability, promotion lift analysis, and tier breakdown.',
-    inputSchema: {
+    input_schema: {
       type: 'object' as const,
       properties: {},
       required: [],
