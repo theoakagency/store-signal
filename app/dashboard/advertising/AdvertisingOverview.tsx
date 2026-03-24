@@ -13,6 +13,7 @@ interface BaseCampaign {
 
 interface MetaCampaign extends BaseCampaign {
   purchases: number
+  purchase_value: number
 }
 
 interface GoogleCampaign extends BaseCampaign {
@@ -91,11 +92,11 @@ function PlatformCard({
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div className="rounded-xl bg-cream border border-cream-2 px-4 py-3">
-          <p className="font-data text-[10px] uppercase tracking-wider text-ink-3">Spend (30d)</p>
+          <p className="font-data text-[10px] uppercase tracking-wider text-ink-3">Spend (90d)</p>
           <p className="mt-1 font-data text-base font-semibold text-ink">{fmt(spend)}</p>
         </div>
         <div className="rounded-xl bg-cream border border-cream-2 px-4 py-3">
-          <p className="font-data text-[10px] uppercase tracking-wider text-ink-3">ROAS (30d)</p>
+          <p className="font-data text-[10px] uppercase tracking-wider text-ink-3">ROAS (90d)</p>
           <p className={`mt-1 font-data text-base font-semibold ${roas >= 2 ? 'text-teal-deep' : roas >= 1 ? 'text-yellow-700' : 'text-red-500'}`}>
             {fmt(roas, false)}×
           </p>
@@ -105,7 +106,7 @@ function PlatformCard({
           <p className="mt-1 font-data text-base font-semibold text-ink">{costPerAction > 0 ? fmt(costPerAction) : '—'}</p>
         </div>
         <div className="rounded-xl bg-cream border border-cream-2 px-4 py-3">
-          <p className="font-data text-[10px] uppercase tracking-wider text-ink-3">{actionLabel}s (30d)</p>
+          <p className="font-data text-[10px] uppercase tracking-wider text-ink-3">{actionLabel}s (90d)</p>
           <p className="mt-1 font-data text-base font-semibold text-ink">{actions.toFixed(0)}</p>
         </div>
       </div>
@@ -129,22 +130,27 @@ export default function AdvertisingOverview({
   const [aiInsight, setAiInsight] = useState<string | null>(null)
   const [loadingAi, setLoadingAi] = useState(false)
 
-  const metaSpend30 = metaMetrics['total_ad_spend_30d'] ?? 0
-  const metaRoas30 = metaMetrics['total_roas_30d'] ?? 0
-  const metaCpp = metaMetrics['cost_per_purchase_30d'] ?? 0
-  const metaPurchases = metaMetrics['total_purchases_30d'] ?? 0
+  // Compute Meta metrics from 90d campaign data directly (avoids 30d cache showing $0)
+  const metaSpend90 = metaCampaigns.reduce((s, c) => s + c.spend, 0)
+  const metaPurchaseValue90 = metaCampaigns.reduce((s, c) => s + c.purchase_value, 0)
+  const metaRoas90 = metaSpend90 > 0 ? metaPurchaseValue90 / metaSpend90 : 0
+  const metaPurchases90 = metaCampaigns.reduce((s, c) => s + c.purchases, 0)
+  const metaCpp90 = metaPurchases90 > 0 ? metaSpend90 / metaPurchases90 : 0
   const metaBelowOne = metaCampaigns.filter((c) => c.spend > 0 && c.roas < 1).length
 
-  const googleSpend30 = googleMetrics['total_ad_spend_30d'] ?? 0
-  const googleRoas30 = googleMetrics['total_roas_30d'] ?? 0
-  const googleCpp = googleMetrics['cost_per_conversion_30d'] ?? 0
-  const googleConversions = googleMetrics['total_conversions_30d'] ?? 0
+  // Compute Google metrics from 90d campaign data directly
+  const googleSpend90 = googleCampaigns.reduce((s, c) => s + c.spend, 0)
+  const googleConversions90 = googleCampaigns.reduce((s, c) => s + c.conversions, 0)
+  // Google campaigns store ROAS per campaign; compute blended from spend-weighted average
+  const googlePurchaseValue90 = googleCampaigns.reduce((s, c) => s + c.spend * c.roas, 0)
+  const googleRoas90 = googleSpend90 > 0 ? googlePurchaseValue90 / googleSpend90 : 0
+  const googleCpp90 = googleConversions90 > 0 ? googleSpend90 / googleConversions90 : 0
   const googleBelowOne = googleCampaigns.filter((c) => c.spend > 0 && c.roas < 1).length
 
-  const totalSpend = metaSpend30 + googleSpend30
+  const totalSpend = metaSpend90 + googleSpend90
   const totalBelowOne = metaBelowOne + googleBelowOne
   const blendedRoas = totalSpend > 0
-    ? ((metaSpend30 * metaRoas30) + (googleSpend30 * googleRoas30)) / totalSpend
+    ? (metaPurchaseValue90 + googlePurchaseValue90) / totalSpend
     : 0
 
   const anyConnected = metaConnected || googleConnected
@@ -182,7 +188,7 @@ export default function AdvertisingOverview({
         <>
           {/* Combined KPIs */}
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-            <MetricCard label="Total Spend (30d)" value={fmt(totalSpend)} sub="Meta + Google combined" />
+            <MetricCard label="Total Spend (90d)" value={fmt(totalSpend)} sub="Meta + Google combined" />
             <MetricCard label="Blended ROAS" value={`${fmt(blendedRoas, false)}×`} sub="weighted by spend" />
             <MetricCard label="Campaigns Flagged" value={totalBelowOne.toString()} sub="ROAS below 1× — losing money" />
             <MetricCard label="Platforms Active" value={[metaConnected, googleConnected].filter(Boolean).length.toString()} sub="connected ad platforms" />
@@ -199,10 +205,10 @@ export default function AdvertisingOverview({
               }
               connected={metaConnected}
               href="/dashboard/meta"
-              spend={metaSpend30}
-              roas={metaRoas30}
-              costPerAction={metaCpp}
-              actions={metaPurchases}
+              spend={metaSpend90}
+              roas={metaRoas90}
+              costPerAction={metaCpp90}
+              actions={metaPurchases90}
               actionLabel="Purchase"
               belowOneCount={metaBelowOne}
             />
@@ -218,23 +224,23 @@ export default function AdvertisingOverview({
               }
               connected={googleConnected}
               href="/dashboard/google-ads"
-              spend={googleSpend30}
-              roas={googleRoas30}
-              costPerAction={googleCpp}
-              actions={googleConversions}
+              spend={googleSpend90}
+              roas={googleRoas90}
+              costPerAction={googleCpp90}
+              actions={googleConversions90}
               actionLabel="Conversion"
               belowOneCount={googleBelowOne}
             />
           </div>
 
           {/* Which platform is winning */}
-          {metaConnected && googleConnected && metaSpend30 > 0 && googleSpend30 > 0 && (
+          {metaConnected && googleConnected && metaSpend90 > 0 && googleSpend90 > 0 && (
             <section className="rounded-2xl border border-cream-3 bg-white p-6 shadow-sm">
               <h2 className="font-display text-base font-semibold text-ink">Platform ROI Comparison</h2>
               <div className="mt-4 space-y-3">
                 {[
-                  { label: 'Meta Ads ROAS', value: metaRoas30, max: Math.max(metaRoas30, googleRoas30, 0.1), color: '#1877F2' },
-                  { label: 'Google Ads ROAS', value: googleRoas30, max: Math.max(metaRoas30, googleRoas30, 0.1), color: '#4285F4' },
+                  { label: 'Meta Ads ROAS', value: metaRoas90, max: Math.max(metaRoas90, googleRoas90, 0.1), color: '#1877F2' },
+                  { label: 'Google Ads ROAS', value: googleRoas90, max: Math.max(metaRoas90, googleRoas90, 0.1), color: '#4285F4' },
                 ].map((item) => (
                   <div key={item.label} className="flex items-center gap-3">
                     <div className="w-32 shrink-0 text-xs text-ink-2">{item.label}</div>
@@ -246,10 +252,10 @@ export default function AdvertisingOverview({
                 ))}
               </div>
               <p className="mt-3 text-xs text-ink-3">
-                {metaRoas30 > googleRoas30
-                  ? `Meta Ads is delivering ${((metaRoas30 / Math.max(googleRoas30, 0.01) - 1) * 100).toFixed(0)}% better ROAS than Google Ads — consider shifting budget toward Meta.`
-                  : googleRoas30 > metaRoas30
-                  ? `Google Ads is delivering ${((googleRoas30 / Math.max(metaRoas30, 0.01) - 1) * 100).toFixed(0)}% better ROAS than Meta Ads — consider shifting budget toward Google.`
+                {metaRoas90 > googleRoas90
+                  ? `Meta Ads is delivering ${((metaRoas90 / Math.max(googleRoas90, 0.01) - 1) * 100).toFixed(0)}% better ROAS than Google Ads — consider shifting budget toward Meta.`
+                  : googleRoas90 > metaRoas90
+                  ? `Google Ads is delivering ${((googleRoas90 / Math.max(metaRoas90, 0.01) - 1) * 100).toFixed(0)}% better ROAS than Meta Ads — consider shifting budget toward Google.`
                   : 'Both platforms are delivering similar ROAS.'}
               </p>
             </section>

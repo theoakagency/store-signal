@@ -187,17 +187,18 @@ function MetaModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () 
 // ── Google Ads Connect Modal ───────────────────────────────────────────────────
 
 function GoogleAdsModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
-  const [customerId, setCustomerId] = useState('')
   const [devToken, setDevToken] = useState('')
   const [showDevToken, setShowDevToken] = useState(false)
+  const [showInstructions, setShowInstructions] = useState(false)
   const [connecting, setConnecting] = useState(false)
 
   const inputCls = 'w-full rounded-lg border border-cream-3 bg-cream px-3 py-2 text-sm text-ink focus:border-teal focus:outline-none focus:ring-1 focus:ring-teal transition'
 
   function handleConnect() {
-    if (!customerId.trim() || !devToken.trim()) return
+    if (!devToken.trim()) return
     setConnecting(true)
-    const params = new URLSearchParams({ customer_id: customerId.trim(), developer_token: devToken.trim() })
+    // Customer ID is pre-configured — only dev token is required from the user
+    const params = new URLSearchParams({ developer_token: devToken.trim() })
     window.location.href = `/api/google-ads/auth?${params}`
   }
 
@@ -221,32 +222,69 @@ function GoogleAdsModal({ onClose, onSuccess }: { onClose: () => void; onSuccess
         </div>
 
         <div className="px-6 py-5 space-y-4">
-          <div className="rounded-xl bg-cream border border-cream-2 px-4 py-3 text-xs text-ink-3 space-y-1">
-            <p className="font-medium text-ink-2">Before connecting:</p>
-            <p>1. <strong>Customer ID</strong>: 10-digit number in the top-right of Google Ads dashboard (e.g. 123-456-7890)</p>
-            <p>2. <strong>Developer Token</strong>: Google Ads API Center → Your API Center → copy Developer Token (Basic Access is free)</p>
-            <p>3. Your Google account must have admin access to the Google Ads customer</p>
+          <p className="text-sm text-ink-2">
+            Connect your Google Ads account using your existing Google login. A free{' '}
+            <strong>Developer Token</strong> (Basic Access) is required by the Google Ads API.
+          </p>
+
+          {/* Developer Token instructions accordion */}
+          <div className="rounded-xl border border-cream-2 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setShowInstructions((v) => !v)}
+              className="flex w-full items-center justify-between bg-cream px-4 py-3 text-xs font-medium text-ink-2 hover:bg-cream-2 transition"
+            >
+              <span>How to get a free Developer Token</span>
+              <svg className={`h-4 w-4 text-ink-3 transition-transform ${showInstructions ? 'rotate-180' : ''}`} viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M5.293 7.293a1 1 0 0 1 1.414 0L10 10.586l3.293-3.293a1 1 0 1 1 1.414 1.414l-4 4a1 1 0 0 1-1.414 0l-4-4a1 1 0 0 1 0-1.414z" clipRule="evenodd"/>
+              </svg>
+            </button>
+            {showInstructions && (
+              <div className="border-t border-cream-2 bg-white px-4 py-3 text-xs text-ink-3 space-y-2">
+                <p>1. Sign in to your Google Ads account at <strong>ads.google.com</strong></p>
+                <p>2. Click the <strong>Tools &amp; Settings</strong> wrench icon (top right)</p>
+                <p>3. Under &quot;Setup&quot;, click <strong>API Center</strong></p>
+                <p>4. Fill in the &quot;Your API Center&quot; form (takes ~2 minutes). Select <strong>Basic Access</strong> — it&apos;s free and sufficient.</p>
+                <p>5. Your Developer Token will appear at the top of the API Center page.</p>
+                <a
+                  href="https://developers.google.com/google-ads/api/docs/first-call/dev-token"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-teal hover:text-teal-dark font-medium transition"
+                >
+                  Full guide on Google Developers →
+                </a>
+              </div>
+            )}
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-ink-2 mb-1">Customer ID *</label>
-            <input type="text" value={customerId} onChange={(e) => setCustomerId(e.target.value)} placeholder="123-456-7890" className={inputCls} />
-          </div>
-
-          <div>
-            <label className="block text-xs font-medium text-ink-2 mb-1">Developer Token *</label>
+            <label className="block text-xs font-medium text-ink-2 mb-1">
+              Developer Token <span className="text-ink-3 font-normal">(from Google Ads API Center)</span>
+            </label>
             <div className="relative">
-              <input type={showDevToken ? 'text' : 'password'} value={devToken} onChange={(e) => setDevToken(e.target.value)} placeholder="••••••••••••••••" className={inputCls + ' pr-10'} />
+              <input
+                type={showDevToken ? 'text' : 'password'}
+                value={devToken}
+                onChange={(e) => setDevToken(e.target.value)}
+                placeholder="Paste your Developer Token here"
+                className={inputCls + ' pr-10'}
+              />
               <button type="button" onClick={() => setShowDevToken((v) => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-3 hover:text-ink">
                 <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path d="M10 12a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"/><path fillRule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 1 1-8 0 4 4 0 0 1 8 0z" clipRule="evenodd"/></svg>
               </button>
             </div>
+            <p className="mt-1 text-[10px] text-ink-3">Your Google account will be authorized via OAuth on the next screen.</p>
           </div>
 
           <div className="flex gap-2 pt-1">
             <button onClick={onClose} className="flex-1 rounded-lg border border-cream-3 px-4 py-2.5 text-sm font-medium text-ink-2 hover:bg-cream transition">Cancel</button>
-            <button onClick={handleConnect} disabled={!customerId.trim() || !devToken.trim() || connecting} className="flex-1 rounded-lg bg-[#4285F4] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#3367d6] disabled:opacity-50 transition">
-              {connecting ? 'Redirecting…' : 'Connect with Google'}
+            <button
+              onClick={handleConnect}
+              disabled={!devToken.trim() || connecting}
+              className="flex-1 rounded-lg bg-[#4285F4] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#3367d6] disabled:opacity-50 transition"
+            >
+              {connecting ? 'Redirecting…' : 'Continue with Google →'}
             </button>
           </div>
         </div>

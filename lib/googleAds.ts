@@ -1,8 +1,8 @@
-// ── Google Ads API v17 service ────────────────────────────────────────────────
+// ── Google Ads API v19 service ────────────────────────────────────────────────
 // REST API via searchStream endpoint + OAuth2 + developer-token header
 
 const TOKEN_URL = 'https://oauth2.googleapis.com/token'
-const BASE_URL = 'https://googleads.googleapis.com/v17'
+const BASE_URL = 'https://googleads.googleapis.com/v19'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 

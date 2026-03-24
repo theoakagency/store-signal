@@ -6,6 +6,7 @@ export const maxDuration = 60
 
 const TENANT_ID = '00000000-0000-0000-0000-000000000001'
 const STORE_ID = '00000000-0000-0000-0000-000000000002'
+const GOOGLE_ADS_CUSTOMER_ID = '9145748200'
 
 export async function POST(_req: NextRequest) {
   const supabase = await createSupabaseServerClient()
@@ -20,11 +21,16 @@ export async function POST(_req: NextRequest) {
     .eq('id', STORE_ID)
     .single()
 
-  if (!store?.google_ads_refresh_token || !store?.google_ads_customer_id || !store?.google_ads_developer_token) {
+  if (!store?.google_ads_refresh_token) {
     return Response.json({ error: 'Google Ads not connected — complete OAuth setup in Integrations' }, { status: 400 })
   }
+  if (!store?.google_ads_developer_token) {
+    return Response.json({ error: 'Google Ads Developer Token missing — re-connect in Integrations and enter your Developer Token' }, { status: 400 })
+  }
 
-  const { google_ads_customer_id: customerId, google_ads_refresh_token: refreshToken, google_ads_developer_token: devToken } = store
+  // Always use the known constant — DB value may be stale from a previous mis-entry
+  const customerId = GOOGLE_ADS_CUSTOMER_ID
+  const { google_ads_refresh_token: refreshToken, google_ads_developer_token: devToken } = store
 
   try {
     const [campaigns, summary30d] = await Promise.all([

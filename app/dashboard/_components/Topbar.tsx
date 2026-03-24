@@ -11,6 +11,9 @@ const PAGE_TITLES: Record<string, string> = {
   '/dashboard/klaviyo': 'Email Intelligence',
   '/dashboard/search': 'Search Intelligence',
   '/dashboard/integrations': 'Integrations',
+  '/dashboard/advertising': 'Advertising Overview',
+  '/dashboard/meta': 'Meta Ads',
+  '/dashboard/google-ads': 'Google Ads',
 }
 
 interface TopbarProps {
