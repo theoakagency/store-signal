@@ -10,7 +10,6 @@ interface MinMessage {
 }
 
 function renderTextPreview(text: string): string {
-  // Strip markdown for bubble preview
   return text
     .replace(/\*\*([^*]+)\*\*/g, '$1')
     .replace(/#{1,3}\s/g, '')
@@ -29,14 +28,20 @@ export default function ChatBubble() {
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  // Don't render on the full chat page
-  if (pathname === '/dashboard/chat') return null
+  // ALL hooks must be declared before any conditional returns
 
-  // ── Persist open/closed state ──────────────────────────────────────────────
   useEffect(() => {
     const saved = localStorage.getItem('ss_bubble_open')
     if (saved === 'true') setIsOpen(true)
   }, [])
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages, streamingText])
+
+  useEffect(() => {
+    if (isOpen) setTimeout(() => inputRef.current?.focus(), 200)
+  }, [isOpen])
 
   const toggleOpen = () => {
     setIsOpen((prev) => {
@@ -45,17 +50,6 @@ export default function ChatBubble() {
     })
   }
 
-  // ── Auto-scroll ────────────────────────────────────────────────────────────
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, streamingText])
-
-  // ── Focus input when opened ────────────────────────────────────────────────
-  useEffect(() => {
-    if (isOpen) setTimeout(() => inputRef.current?.focus(), 200)
-  }, [isOpen])
-
-  // ── Send message ───────────────────────────────────────────────────────────
   const sendMessage = useCallback(async (text: string) => {
     if (!text.trim() || isLoading) return
 
@@ -118,7 +112,9 @@ export default function ChatBubble() {
     }
   }, [isLoading])
 
-  // ── Render ─────────────────────────────────────────────────────────────────
+  // Don't render on the full chat page — AFTER all hooks
+  if (pathname === '/dashboard/chat') return null
+
   return (
     <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3">
       {/* Slide-up panel */}
