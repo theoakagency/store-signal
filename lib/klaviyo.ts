@@ -158,6 +158,7 @@ export interface CampaignWithStats {
   id: string
   name: string
   subject: string | null
+  channel: string
   status: string
   send_time: string | null
   created_at: string
@@ -172,6 +173,7 @@ export interface CampaignWithStats {
 export interface FlowWithStats {
   id: string
   name: string
+  channel: string
   status: string
   trigger_type: string | null
   created_at: string
@@ -257,6 +259,34 @@ async function fetchAllPages<T>(
   return items
 }
 
+// ── Internal helpers ──────────────────────────────────────────────────────────
+
+/**
+ * Detect whether a flow contains email, SMS, or both types of send actions.
+ * Fetches the first page of flow-actions and inspects action_type values.
+ */
+async function detectFlowChannel(
+  apiKey: string,
+  flowId: string
+): Promise<'email' | 'sms' | 'multi'> {
+  try {
+    const res = await kv<{
+      data: Array<{ type: string; attributes: { action_type: string } }>
+    }>(
+      apiKey,
+      `/flow-actions/?filter=equals(flow.id,'${flowId}')&fields[flow-action]=action_type&page[size]=50`
+    )
+    const actions = res.data ?? []
+    const hasSMS = actions.some((a) => a.attributes.action_type === 'SEND_SMS')
+    const hasEmail = actions.some((a) => a.attributes.action_type === 'SEND_EMAIL')
+    if (hasSMS && hasEmail) return 'multi'
+    if (hasSMS) return 'sms'
+    return 'email'
+  } catch {
+    return 'email'
+  }
+}
+
 // ── Public API functions ───────────────────────────────────────────────────────
 
 /** Verify API key works — returns account info. */
@@ -266,11 +296,11 @@ export async function getAccount(apiKey: string): Promise<KlaviyoAccount> {
   return res.data[0]
 }
 
-/** Fetch all email campaigns. */
-export async function getCampaigns(apiKey: string): Promise<KlaviyoCampaign[]> {
+/** Fetch all campaigns for the given channel ('email' or 'sms'). */
+export async function getCampaigns(apiKey: string, channel: 'email' | 'sms' = 'email'): Promise<KlaviyoCampaign[]> {
   return fetchAllPages<KlaviyoCampaign>(
     apiKey,
-    `/campaigns/?filter=equals(messages.channel,'email')&sort=-created_at`
+    `/campaigns/?filter=equals(messages.channel,'${channel}')&sort=-created_at`
   )
 }
 
@@ -421,12 +451,15 @@ export async function getFlowStats(
 }
 
 /**
- * Full campaign sync: fetches campaigns, their messages (for subject),
+ * Full campaign sync for a given channel: fetches campaigns, their messages (for subject),
  * and stats. Returns enriched CampaignWithStats array.
  */
-export async function getEnrichedCampaigns(apiKey: string): Promise<CampaignWithStats[]> {
+export async function getEnrichedCampaigns(
+  apiKey: string,
+  channel: 'email' | 'sms' = 'email'
+): Promise<CampaignWithStats[]> {
   const [campaigns, metricId] = await Promise.all([
-    getCampaigns(apiKey),
+    getCampaigns(apiKey, channel),
     getPlacedOrderMetricId(apiKey),
   ])
 
@@ -439,26 +472,28 @@ export async function getEnrichedCampaigns(apiKey: string): Promise<CampaignWith
     ? await getCampaignStats(apiKey, metricId, startDate, endDate)
     : {}
 
-  // Fetch subject lines for sent campaigns in batches to avoid rate limits
+  // Fetch subject lines for sent email campaigns in batches (SMS has no subject)
   const subjectMap: Record<string, string> = {}
-  const sentCampaigns = campaigns.filter((c) => c.attributes.status === 'Sent' || c.attributes.status === 'sent')
-  const BATCH = 5
+  if (channel === 'email') {
+    const sentCampaigns = campaigns.filter((c) => c.attributes.status === 'Sent' || c.attributes.status === 'sent')
+    const BATCH = 5
 
-  for (let i = 0; i < Math.min(sentCampaigns.length, 100); i += BATCH) {
-    const batch = sentCampaigns.slice(i, i + BATCH)
-    await Promise.allSettled(
-      batch.map(async (c) => {
-        try {
-          const msgs = await getCampaignMessages(apiKey, c.id)
-          if (msgs[0]?.attributes.subject) {
-            subjectMap[c.id] = msgs[0].attributes.subject
+    for (let i = 0; i < Math.min(sentCampaigns.length, 100); i += BATCH) {
+      const batch = sentCampaigns.slice(i, i + BATCH)
+      await Promise.allSettled(
+        batch.map(async (c) => {
+          try {
+            const msgs = await getCampaignMessages(apiKey, c.id)
+            if (msgs[0]?.attributes.subject) {
+              subjectMap[c.id] = msgs[0].attributes.subject
+            }
+          } catch {
+            // best-effort
           }
-        } catch {
-          // best-effort
-        }
-      })
-    )
-    if (i + BATCH < sentCampaigns.length) await sleep(300)
+        })
+      )
+      if (i + BATCH < sentCampaigns.length) await sleep(300)
+    }
   }
 
   return campaigns.map((c) => {
@@ -471,12 +506,13 @@ export async function getEnrichedCampaigns(apiKey: string): Promise<CampaignWith
       id: c.id,
       name: c.attributes.name,
       subject: subjectMap[c.id] ?? null,
+      channel,
       status: c.attributes.status,
       send_time: c.attributes.send_time ?? c.attributes.scheduled_at,
       created_at: c.attributes.created_at,
       updated_at: c.attributes.updated_at,
       recipient_count: delivered,
-      open_rate: delivered > 0 ? opensUnique / delivered : null,
+      open_rate: channel === 'email' && delivered > 0 ? opensUnique / delivered : null,
       click_rate: delivered > 0 ? clicksUnique / delivered : null,
       revenue_attributed: (stats.revenue_per_recipient ?? 0) * delivered,
       unsubscribe_count: stats.unsubscribes ?? 0,
@@ -485,8 +521,8 @@ export async function getEnrichedCampaigns(apiKey: string): Promise<CampaignWith
 }
 
 /**
- * Full flow sync: fetches flows and their stats.
- * Returns enriched FlowWithStats array.
+ * Full flow sync: fetches flows, detects channel (email/sms/multi) from flow actions,
+ * and fetches stats. Returns enriched FlowWithStats array.
  */
 export async function getEnrichedFlows(apiKey: string): Promise<FlowWithStats[]> {
   const [flows, metricId] = await Promise.all([
@@ -502,20 +538,35 @@ export async function getEnrichedFlows(apiKey: string): Promise<FlowWithStats[]>
     ? await getFlowStats(apiKey, metricId, startDate, endDate)
     : {}
 
+  // Detect channel for each flow in batches of 5
+  const channelMap: Record<string, string> = {}
+  const BATCH = 5
+  for (let i = 0; i < flows.length; i += BATCH) {
+    const batch = flows.slice(i, i + BATCH)
+    await Promise.allSettled(
+      batch.map(async (f) => {
+        channelMap[f.id] = await detectFlowChannel(apiKey, f.id)
+      })
+    )
+    if (i + BATCH < flows.length) await sleep(200)
+  }
+
   return flows.map((f) => {
     const stats = statsMap[f.id] ?? {}
     const delivered = stats.delivered ?? stats.recipients ?? 0
     const opensUnique = stats.opens_unique ?? 0
     const clicksUnique = stats.clicks_unique ?? 0
+    const ch = channelMap[f.id] ?? 'email'
     return {
       id: f.id,
       name: f.attributes.name,
+      channel: ch,
       status: f.attributes.status,
       trigger_type: f.attributes.trigger_type,
       created_at: f.attributes.created,
       updated_at: f.attributes.updated,
       recipient_count: delivered,
-      open_rate: delivered > 0 ? opensUnique / delivered : null,
+      open_rate: ch !== 'sms' && delivered > 0 ? opensUnique / delivered : null,
       click_rate: delivered > 0 ? clicksUnique / delivered : null,
       conversion_rate: null,
       revenue_attributed: (stats.revenue_per_recipient ?? 0) * delivered,

@@ -56,16 +56,21 @@ export async function POST(req: NextRequest) {
     await service.from('sync_log').update(patch).eq('id', logId)
   }
 
-  // ── Sync campaigns ────────────────────────────────────────────────────────────
+  // ── Sync campaigns (email + SMS) ──────────────────────────────────────────────
   try {
     await updateLog({ metadata: { stage: 'fetching_campaigns' } })
-    const campaigns = await getEnrichedCampaigns(apiKey)
-    results.detail = { campaignCount: campaigns.length }
+    const [emailCampaigns, smsCampaigns] = await Promise.all([
+      getEnrichedCampaigns(apiKey, 'email'),
+      getEnrichedCampaigns(apiKey, 'sms'),
+    ])
+    const campaigns = [...emailCampaigns, ...smsCampaigns]
+    results.detail = { campaignCount: campaigns.length, emailCount: emailCampaigns.length, smsCount: smsCampaigns.length }
     const rows = campaigns.map((c) => ({
       id: c.id,
       tenant_id: TENANT_ID,
       name: c.name,
       subject: c.subject,
+      channel: c.channel,
       status: c.status,
       send_time: c.send_time,
       recipient_count: c.recipient_count,
@@ -88,15 +93,33 @@ export async function POST(req: NextRequest) {
 
     // ── Calculate and cache metrics ─────────────────────────────────────────────
     const now = new Date().toISOString()
+
+    // Per-channel campaign splits
     const totalCampaignRevenue = campaigns.reduce((s, c) => s + c.revenue_attributed, 0)
-    const campaignsWithRates = campaigns.filter((c) => c.open_rate !== null)
-    const avgOpenRate = campaignsWithRates.length > 0
-      ? campaignsWithRates.reduce((s, c) => s + (c.open_rate ?? 0), 0) / campaignsWithRates.length
+    const totalCampaignRecipients = campaigns.reduce((s, c) => s + c.recipient_count, 0)
+
+    const totalEmailCampaignRevenue = emailCampaigns.reduce((s, c) => s + c.revenue_attributed, 0)
+    const totalEmailCampaignRecipients = emailCampaigns.reduce((s, c) => s + c.recipient_count, 0)
+
+    const totalSmsCampaignRevenue = smsCampaigns.reduce((s, c) => s + c.revenue_attributed, 0)
+    const totalSmsCampaignRecipients = smsCampaigns.reduce((s, c) => s + c.recipient_count, 0)
+
+    // Email campaign rates (opens only available on email)
+    const emailCampaignsWithRates = emailCampaigns.filter((c) => c.open_rate !== null)
+    const avgOpenRate = emailCampaignsWithRates.length > 0
+      ? emailCampaignsWithRates.reduce((s, c) => s + (c.open_rate ?? 0), 0) / emailCampaignsWithRates.length
       : 0
-    const avgClickRate = campaignsWithRates.length > 0
-      ? campaignsWithRates.reduce((s, c) => s + (c.click_rate ?? 0), 0) / campaignsWithRates.length
+    const avgClickRate = emailCampaignsWithRates.length > 0
+      ? emailCampaignsWithRates.reduce((s, c) => s + (c.click_rate ?? 0), 0) / emailCampaignsWithRates.length
       : 0
-    const totalUnsubscribes = campaigns.reduce((s, c) => s + c.unsubscribe_count, 0)
+    const totalUnsubscribes = emailCampaigns.reduce((s, c) => s + c.unsubscribe_count, 0)
+
+    // SMS-specific rates
+    const smsCampaignsWithClicks = smsCampaigns.filter((c) => c.click_rate !== null)
+    const avgSmsClickRate = smsCampaignsWithClicks.length > 0
+      ? smsCampaignsWithClicks.reduce((s, c) => s + (c.click_rate ?? 0), 0) / smsCampaignsWithClicks.length
+      : 0
+    const smsOptoutCount = smsCampaigns.reduce((s, c) => s + c.unsubscribe_count, 0)
 
     const sortedByRevenue = [...campaigns].sort((a, b) => b.revenue_attributed - a.revenue_attributed)
     const bestCampaign = sortedByRevenue[0]
@@ -118,22 +141,30 @@ export async function POST(req: NextRequest) {
     const totalCustomers = (custStats ?? []).length
     const avgLTV = totalCustomers > 0 ? totalOrderRevenue / totalCustomers : 0
     const estimatedUnsubscribeCost = totalUnsubscribes * avgLTV
+    const estimatedSmsOptoutCost = smsOptoutCount * avgLTV
 
-    const campaignsNegativeROI = campaigns.filter((c) => {
+    const campaignsNegativeROI = emailCampaigns.filter((c) => {
       const estCost = c.recipient_count * 0.002  // ~$0.002 per email sent
       return c.revenue_attributed < estCost
     }).length
 
-    const totalCampaignRecipients = campaigns.reduce((s, c) => s + c.recipient_count, 0)
-
     const campaignMetrics = [
       { metric_name: 'total_campaign_revenue', metric_value: totalCampaignRevenue, metric_metadata: {} },
       { metric_name: 'total_campaign_recipients', metric_value: totalCampaignRecipients, metric_metadata: {} },
+      { metric_name: 'total_email_campaign_revenue', metric_value: totalEmailCampaignRevenue, metric_metadata: {} },
+      { metric_name: 'total_email_campaign_recipients', metric_value: totalEmailCampaignRecipients, metric_metadata: {} },
+      { metric_name: 'total_sms_campaign_revenue', metric_value: totalSmsCampaignRevenue, metric_metadata: {} },
+      { metric_name: 'total_sms_campaign_recipients', metric_value: totalSmsCampaignRecipients, metric_metadata: {} },
       { metric_name: 'avg_campaign_open_rate', metric_value: avgOpenRate, metric_metadata: {} },
       { metric_name: 'avg_campaign_click_rate', metric_value: avgClickRate, metric_metadata: {} },
       { metric_name: 'total_campaign_unsubscribes', metric_value: totalUnsubscribes, metric_metadata: {} },
       { metric_name: 'estimated_unsubscribe_cost', metric_value: estimatedUnsubscribeCost, metric_metadata: { avg_ltv: avgLTV } },
+      { metric_name: 'avg_sms_click_rate', metric_value: avgSmsClickRate, metric_metadata: {} },
+      { metric_name: 'sms_optout_count', metric_value: smsOptoutCount, metric_metadata: {} },
+      { metric_name: 'estimated_sms_optout_cost', metric_value: estimatedSmsOptoutCost, metric_metadata: { avg_ltv: avgLTV } },
       { metric_name: 'campaigns_with_negative_roi', metric_value: campaignsNegativeROI, metric_metadata: {} },
+      { metric_name: 'email_campaign_count', metric_value: emailCampaigns.length, metric_metadata: {} },
+      { metric_name: 'sms_campaign_count', metric_value: smsCampaigns.length, metric_metadata: {} },
       {
         metric_name: 'best_performing_campaign',
         metric_value: bestCampaign?.revenue_attributed ?? 0,
@@ -166,6 +197,7 @@ export async function POST(req: NextRequest) {
       id: f.id,
       tenant_id: TENANT_ID,
       name: f.name,
+      channel: f.channel,
       status: f.status,
       trigger_type: f.trigger_type,
       revenue_attributed: f.revenue_attributed,
@@ -190,6 +222,14 @@ export async function POST(req: NextRequest) {
     const now = new Date().toISOString()
     const totalFlowRevenue = flows.reduce((s, f) => s + f.revenue_attributed, 0)
     const totalFlowRecipients = flows.reduce((s, f) => s + f.recipient_count, 0)
+
+    const emailFlows = flows.filter((f) => f.channel === 'email' || f.channel === 'multi')
+    const smsFlows = flows.filter((f) => f.channel === 'sms' || f.channel === 'multi')
+    const totalEmailFlowRevenue = flows.filter((f) => f.channel !== 'sms').reduce((s, f) => s + f.revenue_attributed, 0)
+    const totalEmailFlowRecipients = flows.filter((f) => f.channel !== 'sms').reduce((s, f) => s + f.recipient_count, 0)
+    const totalSmsFlowRevenue = flows.filter((f) => f.channel === 'sms' || f.channel === 'multi').reduce((s, f) => s + f.revenue_attributed, 0)
+    const totalSmsFlowRecipients = flows.filter((f) => f.channel === 'sms' || f.channel === 'multi').reduce((s, f) => s + f.recipient_count, 0)
+
     const sortedFlows = [...flows].sort((a, b) => b.revenue_attributed - a.revenue_attributed)
     const bestFlow = sortedFlows[0]
 
@@ -211,9 +251,26 @@ export async function POST(req: NextRequest) {
     const emailRevenue = campaignRevenue + totalFlowRevenue
     const emailVsTotal = shopifyRevenue > 0 ? emailRevenue / shopifyRevenue : 0
 
+    // Total SMS revenue (SMS campaigns + SMS flows)
+    const { data: smsCampaignRevenueRow } = await service
+      .from('klaviyo_metrics_cache')
+      .select('metric_value')
+      .eq('tenant_id', TENANT_ID)
+      .eq('metric_name', 'total_sms_campaign_revenue')
+      .single()
+    const smsCampaignRevenue = Number(smsCampaignRevenueRow?.metric_value ?? 0)
+    const totalSmsRevenue = smsCampaignRevenue + totalSmsFlowRevenue
+
     const flowMetrics = [
       { metric_name: 'total_flow_revenue', metric_value: totalFlowRevenue, metric_metadata: {} },
       { metric_name: 'total_flow_recipients', metric_value: totalFlowRecipients, metric_metadata: {} },
+      { metric_name: 'total_email_flow_revenue', metric_value: totalEmailFlowRevenue, metric_metadata: {} },
+      { metric_name: 'total_email_flow_recipients', metric_value: totalEmailFlowRecipients, metric_metadata: {} },
+      { metric_name: 'total_sms_flow_revenue', metric_value: totalSmsFlowRevenue, metric_metadata: {} },
+      { metric_name: 'total_sms_flow_recipients', metric_value: totalSmsFlowRecipients, metric_metadata: {} },
+      { metric_name: 'total_sms_revenue', metric_value: totalSmsRevenue, metric_metadata: {} },
+      { metric_name: 'email_flow_count', metric_value: emailFlows.length, metric_metadata: {} },
+      { metric_name: 'sms_flow_count', metric_value: smsFlows.length, metric_metadata: {} },
       { metric_name: 'email_revenue_total', metric_value: emailRevenue, metric_metadata: {} },
       { metric_name: 'email_revenue_vs_total', metric_value: emailVsTotal, metric_metadata: { shopify_revenue: shopifyRevenue } },
       {

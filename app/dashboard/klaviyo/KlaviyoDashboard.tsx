@@ -9,6 +9,7 @@ interface Campaign {
   id: string
   name: string
   subject: string | null
+  channel: string
   status: string
   send_time: string | null
   recipient_count: number
@@ -22,6 +23,7 @@ interface Campaign {
 interface Flow {
   id: string
   name: string
+  channel: string
   status: string
   trigger_type: string | null
   recipient_count: number
@@ -94,6 +96,18 @@ function ROIBadge({ roi }: { roi: number }) {
   if (roi > 0.2) return <span className="rounded-full bg-teal-pale px-2 py-0.5 text-xs font-semibold text-teal-deep">Good</span>
   if (roi > 0) return <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700">Marginal</span>
   return <span className="rounded-full bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-600">Negative</span>
+}
+
+// ── Channel badge ─────────────────────────────────────────────────────────────
+
+function ChannelBadge({ channel }: { channel: string }) {
+  if (channel === 'sms') {
+    return <span className="rounded-full bg-violet-100 px-1.5 py-0.5 text-xs font-semibold text-violet-700">SMS</span>
+  }
+  if (channel === 'multi') {
+    return <span className="rounded-full bg-sky-100 px-1.5 py-0.5 text-xs font-semibold text-sky-700">Multi</span>
+  }
+  return <span className="rounded-full bg-teal-pale px-1.5 py-0.5 text-xs font-semibold text-teal-deep">Email</span>
 }
 
 // ── Campaign detail panel ─────────────────────────────────────────────────────
@@ -273,7 +287,22 @@ export default function KlaviyoDashboard({ connected, campaigns, flows, metrics 
   const avgClickRate = m('avg_campaign_click_rate')
   const estUnsubCost = m('estimated_unsubscribe_cost')
 
-  // Broadcast vs Flow comparison — use cached totals for accurate RPR, fall back to array sums
+  // Per-channel RPR for 4-way breakdown
+  const emailCampaignRevenue = m('total_email_campaign_revenue') || m('total_campaign_revenue')
+  const emailCampaignRecip = m('total_email_campaign_recipients') || m('total_campaign_recipients') || campaigns.filter(c => (c.channel ?? 'email') !== 'sms').reduce((s, c) => s + c.recipient_count, 0)
+  const smsCampaignRevenue = m('total_sms_campaign_revenue')
+  const smsCampaignRecip = m('total_sms_campaign_recipients')
+  const emailFlowRevenue = m('total_email_flow_revenue') || m('total_flow_revenue')
+  const emailFlowRecip = m('total_email_flow_recipients') || m('total_flow_recipients') || flows.filter(f => f.channel !== 'sms').reduce((s, f) => s + f.recipient_count, 0)
+  const smsFlowRevenue = m('total_sms_flow_revenue')
+  const smsFlowRecip = m('total_sms_flow_recipients')
+
+  const emailCampaignRPR = emailCampaignRecip > 0 ? emailCampaignRevenue / emailCampaignRecip : 0
+  const smsCampaignRPR = smsCampaignRecip > 0 ? smsCampaignRevenue / smsCampaignRecip : 0
+  const emailFlowRPR = emailFlowRecip > 0 ? emailFlowRevenue / emailFlowRecip : 0
+  const smsFlowRPR = smsFlowRecip > 0 ? smsFlowRevenue / smsFlowRecip : 0
+
+  // Legacy 2-col values (used in multiplier text)
   const broadcastRevenue = m('total_campaign_revenue')
   const flowRevenue = m('total_flow_revenue')
   const totalCampaignRecip = m('total_campaign_recipients') || campaigns.reduce((s, c) => s + c.recipient_count, 0)
@@ -289,6 +318,10 @@ export default function KlaviyoDashboard({ connected, campaigns, flows, metrics 
     ? (flowRPR > broadcastRPR ? flowRPR / broadcastRPR : broadcastRPR / flowRPR)
     : null
   const flowsWin = flowRPR > broadcastRPR
+
+  // 4-way breakdown data — filter out SMS columns if no SMS data
+  const hasSmsData = m('sms_campaign_count') > 0 || m('sms_flow_count') > 0
+  const maxRPR = Math.max(emailCampaignRPR, smsCampaignRPR, emailFlowRPR, smsFlowRPR, 0.001)
 
   return (
     <div className="space-y-6">
@@ -349,6 +382,56 @@ export default function KlaviyoDashboard({ connected, campaigns, flows, metrics 
             />
           </div>
 
+          {/* SMS Performance section — only when SMS data exists */}
+          {m('sms_campaign_count') > 0 && (() => {
+            const emailCampaignRPR = m('total_email_campaign_recipients') > 0
+              ? m('total_email_campaign_revenue') / m('total_email_campaign_recipients')
+              : 0
+            const smsCampaignRPR = m('total_sms_campaign_recipients') > 0
+              ? m('total_sms_campaign_revenue') / m('total_sms_campaign_recipients')
+              : 0
+            const smsVsEmail = emailCampaignRPR > 0 && smsCampaignRPR > 0
+              ? `${(smsCampaignRPR / emailCampaignRPR).toFixed(1)}× vs email RPR`
+              : null
+            return (
+              <section className="rounded-2xl border border-violet-200 bg-white shadow-sm overflow-hidden">
+                <div className="flex items-center gap-2 px-5 pt-5 pb-3 border-b border-violet-100">
+                  <span className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-semibold text-violet-700">SMS</span>
+                  <h2 className="font-display text-base font-semibold text-ink">SMS Performance</h2>
+                </div>
+                <div className="grid grid-cols-1 gap-4 p-5 sm:grid-cols-2 xl:grid-cols-4">
+                  <div className="rounded-2xl border border-cream-3 bg-cream px-5 py-5">
+                    <p className="font-data text-xs uppercase tracking-wider text-ink-3">Total SMS Revenue</p>
+                    <p className="mt-2 font-display text-3xl font-semibold text-ink">{usd(m('total_sms_revenue'))}</p>
+                    <p className="mt-1 text-xs text-ink-3">campaigns + flows</p>
+                  </div>
+                  <div className="rounded-2xl border border-cream-3 bg-cream px-5 py-5">
+                    <p className="font-data text-xs uppercase tracking-wider text-ink-3">SMS Click Rate</p>
+                    <p className="mt-2 font-display text-3xl font-semibold text-ink">{pct(m('avg_sms_click_rate'))}</p>
+                    <p className="mt-1 text-xs text-ink-3">
+                      vs {pct(avgClickRate)} email click rate
+                      {m('avg_sms_click_rate') > 0 && avgClickRate > 0 && (
+                        <span className={`ml-1 font-semibold ${m('avg_sms_click_rate') > avgClickRate ? 'text-teal-deep' : 'text-red-500'}`}>
+                          ({m('avg_sms_click_rate') > avgClickRate ? '↑' : '↓'}{Math.abs(((m('avg_sms_click_rate') - avgClickRate) / avgClickRate) * 100).toFixed(0)}%)
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-cream-3 bg-cream px-5 py-5">
+                    <p className="font-data text-xs uppercase tracking-wider text-ink-3">SMS Opt-out Cost</p>
+                    <p className="mt-2 font-display text-3xl font-semibold text-ink">{usd(m('estimated_sms_optout_cost'))}</p>
+                    <p className="mt-1 text-xs text-ink-3">{m('sms_optout_count').toLocaleString()} opt-outs × avg LTV</p>
+                  </div>
+                  <div className="rounded-2xl border border-cream-3 bg-cream px-5 py-5">
+                    <p className="font-data text-xs uppercase tracking-wider text-ink-3">SMS Rev / Recipient</p>
+                    <p className="mt-2 font-display text-3xl font-semibold text-ink">{usd(smsCampaignRPR)}</p>
+                    <p className="mt-1 text-xs text-ink-3">{smsVsEmail ?? 'per SMS recipient'}</p>
+                  </div>
+                </div>
+              </section>
+            )
+          })()}
+
           {/* Tabbed campaigns / flows table */}
           <section className="rounded-2xl border border-cream-3 bg-white shadow-sm overflow-hidden">
             {/* Tab bar */}
@@ -379,6 +462,7 @@ export default function KlaviyoDashboard({ connected, campaigns, flows, metrics 
                       <thead>
                         <tr className="border-b border-cream-2 text-xs font-medium text-ink-3">
                           <th className="px-5 py-2.5 text-left">Campaign</th>
+                          <th className="px-5 py-2.5 text-left">Ch.</th>
                           <th className="px-5 py-2.5 text-left">Date</th>
                           <th className="px-5 py-2.5 text-right">Recipients</th>
                           <th className="px-5 py-2.5 text-right">Open</th>
@@ -404,6 +488,7 @@ export default function KlaviyoDashboard({ connected, campaigns, flows, metrics 
                                 <p className="font-medium text-ink truncate">{c.name}</p>
                                 {c.subject && <p className="text-xs text-ink-3 truncate italic">{c.subject}</p>}
                               </td>
+                              <td className="px-5 py-3 whitespace-nowrap"><ChannelBadge channel={c.channel ?? 'email'} /></td>
                               <td className="px-5 py-3 font-data text-xs text-ink-2 whitespace-nowrap">{fmtDate(c.send_time)}</td>
                               <td className="px-5 py-3 font-data text-xs text-right text-ink-2">{c.recipient_count.toLocaleString()}</td>
                               <td className="px-5 py-3 font-data text-xs text-right text-ink-2">{pct(c.open_rate)}</td>
@@ -561,6 +646,7 @@ export default function KlaviyoDashboard({ connected, campaigns, flows, metrics 
                     <thead>
                       <tr className="border-b border-cream-2 text-xs font-medium text-ink-3">
                         <th className="px-5 py-2.5 text-left">Flow Name</th>
+                        <th className="px-5 py-2.5 text-left">Ch.</th>
                         <th className="px-5 py-2.5 text-left">Trigger</th>
                         <th className="px-5 py-2.5 text-right">Recipients</th>
                         <th className="px-5 py-2.5 text-right">Open Rate</th>
@@ -579,6 +665,7 @@ export default function KlaviyoDashboard({ connected, campaigns, flows, metrics 
                                 {f.name}
                               </div>
                             </td>
+                            <td className="px-5 py-3 whitespace-nowrap"><ChannelBadge channel={f.channel ?? 'email'} /></td>
                             <td className="px-5 py-3 text-xs text-ink-3 capitalize">{f.trigger_type?.replace(/_/g, ' ') ?? '—'}</td>
                             <td className="px-5 py-3 font-data text-xs text-right text-ink-2">{f.recipient_count.toLocaleString()}</td>
                             <td className="px-5 py-3 font-data text-xs text-right text-ink-2">{pct(f.open_rate)}</td>
@@ -615,43 +702,41 @@ export default function KlaviyoDashboard({ connected, campaigns, flows, metrics 
               </div>
             )}
 
-            {/* Two-column breakdown */}
-            <div className="grid grid-cols-2 gap-px bg-white/10 mx-6 mb-6 rounded-xl overflow-hidden">
-              {[
-                {
-                  label: 'Automated Flows',
-                  revenue: flowRevenue,
-                  rpr: flowRPR,
-                  count: flows.length,
-                  winner: flowsWin,
-                },
-                {
-                  label: 'Broadcast Campaigns',
-                  revenue: broadcastRevenue,
-                  rpr: broadcastRPR,
-                  count: campaigns.length,
-                  winner: !flowsWin,
-                },
-              ].map((s) => (
-                <div key={s.label} className={`px-5 py-4 ${s.winner ? 'bg-teal/20' : 'bg-white/5'}`}>
-                  <div className="flex items-center gap-1.5 mb-3">
-                    {s.winner && <span className="h-1.5 w-1.5 rounded-full bg-teal shrink-0" />}
-                    <p className="font-data text-xs text-white/50 uppercase tracking-wider">{s.label}</p>
-                  </div>
-                  <p className="font-display text-2xl font-semibold text-white mb-0.5">{usd(s.revenue)}</p>
-                  <p className={`font-data text-sm font-semibold mb-3 ${s.winner ? 'text-teal' : 'text-white/40'}`}>
-                    {usd(s.rpr)}<span className="font-normal text-xs"> / recipient</span>
-                  </p>
-                  {/* Revenue bar relative to larger */}
-                  <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all duration-700 ${s.winner ? 'bg-teal' : 'bg-white/30'}`}
-                      style={{ width: `${Math.min(100, (s.rpr / Math.max(broadcastRPR, flowRPR, 0.001)) * 100)}%` }}
-                    />
-                  </div>
+            {/* Channel breakdown — 4 columns when SMS data present, 2 otherwise */}
+            {(() => {
+              const cols = [
+                { label: 'Email Campaigns', revenue: emailCampaignRevenue, rpr: emailCampaignRPR, badge: 'Email', color: 'bg-teal-pale text-teal-deep', show: true },
+                { label: 'SMS Campaigns', revenue: smsCampaignRevenue, rpr: smsCampaignRPR, badge: 'SMS', color: 'bg-violet-100 text-violet-300', show: hasSmsData },
+                { label: 'Email Flows', revenue: emailFlowRevenue, rpr: emailFlowRPR, badge: 'Email', color: 'bg-teal-pale text-teal-deep', show: true },
+                { label: 'SMS Flows', revenue: smsFlowRevenue, rpr: smsFlowRPR, badge: 'SMS', color: 'bg-violet-100 text-violet-300', show: hasSmsData },
+              ].filter((c) => c.show)
+              const bestRPR = Math.max(...cols.map((c) => c.rpr))
+              return (
+                <div className={`grid gap-px bg-white/10 mx-6 mb-6 rounded-xl overflow-hidden ${cols.length === 4 ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-2'}`}>
+                  {cols.map((s) => {
+                    const isWinner = s.rpr > 0 && s.rpr === bestRPR
+                    return (
+                      <div key={s.label} className={`px-4 py-4 ${isWinner ? 'bg-teal/20' : 'bg-white/5'}`}>
+                        <div className="flex items-center gap-1.5 mb-3">
+                          {isWinner && <span className="h-1.5 w-1.5 rounded-full bg-teal shrink-0" />}
+                          <p className="font-data text-xs text-white/50 uppercase tracking-wider">{s.label}</p>
+                        </div>
+                        <p className="font-display text-xl font-semibold text-white mb-0.5">{usd(s.revenue)}</p>
+                        <p className={`font-data text-sm font-semibold mb-3 ${isWinner ? 'text-teal' : 'text-white/40'}`}>
+                          {usd(s.rpr)}<span className="font-normal text-xs"> / recipient</span>
+                        </p>
+                        <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all duration-700 ${isWinner ? 'bg-teal' : 'bg-white/30'}`}
+                            style={{ width: `${Math.min(100, (s.rpr / maxRPR) * 100)}%` }}
+                          />
+                        </div>
+                      </div>
+                    )
+                  })}
                 </div>
-              ))}
-            </div>
+              )
+            })()}
 
             <p className="px-6 pb-5 text-xs text-white/40 leading-relaxed">
               {flowsWin

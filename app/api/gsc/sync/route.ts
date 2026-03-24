@@ -61,12 +61,20 @@ export async function POST(req: NextRequest) {
   }
 
   // ── Resolve the correct siteUrl to query ─────────────────────────────────────
-  // Try candidates in priority order: stored value → with trailing slash → domain property
-  const base = (storedUrl ?? '').replace(/\/$/, '') // strip trailing slash for domain variant
+  // Try candidates in priority order: stored value → with trailing slash → www variant → domain property
+  const base = (storedUrl ?? '').replace(/\/$/, '') // strip trailing slash
+  const noProto = base.replace(/^https?:\/\//, '')  // e.g. lashboxla.com or www.lashboxla.com
+  const noWww = noProto.replace(/^www\./, '')        // strip www if present
+  const withWww = noProto.startsWith('www.') ? noProto : `www.${noProto}`
   const candidates = [
-    storedUrl,                       // exactly as stored
-    `${base}/`,                      // with trailing slash
-    `sc-domain:${base.replace(/^https?:\/\//, '')}`, // domain property
+    storedUrl,                        // exactly as stored
+    `${base}/`,                       // with trailing slash
+    `https://${withWww}/`,            // www variant with trailing slash
+    `https://${withWww}`,             // www variant without trailing slash
+    `https://${noWww}/`,              // non-www variant with trailing slash
+    `https://${noWww}`,               // non-www variant without trailing slash
+    `sc-domain:${noWww}`,             // domain property (non-www)
+    `sc-domain:${withWww}`,           // domain property (www)
   ].filter(Boolean) as string[]
 
   let siteUrl: string | null = null
@@ -86,6 +94,14 @@ export async function POST(req: NextRequest) {
   }
 
   results.resolvedSiteUrl = siteUrl
+
+  // Auto-save resolved URL so future syncs use the correct property directly
+  if (siteUrl && siteUrl !== storedUrl) {
+    await service
+      .from('stores')
+      .update({ gsc_property_url: siteUrl })
+      .eq('id', STORE_ID)
+  }
 
   if (!siteUrl) {
     return Response.json({
