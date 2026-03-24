@@ -11,6 +11,10 @@ interface Props {
   klaviyoAccountId: string | null
   gscConnected: boolean
   gscPropertyUrl: string | null
+  metaConnected: boolean
+  metaAdAccountId: string | null
+  googleAdsConnected: boolean
+  googleAdsCustomerId: string | null
 }
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
@@ -74,6 +78,178 @@ function IntegrationCard({ name, description, logo, status, meta, action }: Inte
         <p className="mt-1 text-xs text-ink-3 leading-relaxed">{description}</p>
         {meta && <p className="mt-1.5 font-data text-xs text-ink-3">{meta}</p>}
         {action && <div className="mt-3">{action}</div>}
+      </div>
+    </div>
+  )
+}
+
+// ── Meta Ads Connect Modal ────────────────────────────────────────────────────
+
+function MetaModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
+  const [token, setToken] = useState('')
+  const [accountId, setAccountId] = useState('')
+  const [showToken, setShowToken] = useState(false)
+  const [testState, setTestState] = useState<'idle' | 'testing' | 'ok' | 'fail'>('idle')
+  const [testMsg, setTestMsg] = useState('')
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'done'>('idle')
+
+  const inputCls = 'w-full rounded-lg border border-cream-3 bg-cream px-3 py-2 text-sm text-ink focus:border-teal focus:outline-none focus:ring-1 focus:ring-teal transition'
+
+  async function handleTest() {
+    if (!token.trim()) return
+    setTestState('testing')
+    setTestMsg('')
+    try {
+      const res = await fetch('/api/meta/test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accessToken: token }) })
+      const data = await res.json() as { ok?: boolean; accounts?: { id: string; name: string }[]; error?: string }
+      if (data.error) { setTestState('fail'); setTestMsg(data.error); return }
+      setTestState('ok')
+      const accts = data.accounts ?? []
+      setTestMsg(`Token valid — ${accts.length} ad account${accts.length !== 1 ? 's' : ''} found: ${accts.map((a) => `${a.name} (${a.id})`).join(', ')}`)
+      if (accts.length === 1 && !accountId) setAccountId(accts[0].id)
+    } catch { setTestState('fail'); setTestMsg('Network error') }
+  }
+
+  async function handleSave() {
+    if (!token.trim() || !accountId.trim()) return
+    setSaveState('saving')
+    try {
+      const res = await fetch('/api/meta/connect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accessToken: token, adAccountId: accountId }) })
+      const data = await res.json() as { ok?: boolean; error?: string }
+      if (data.error) { setSaveState('idle'); showToast(`Error: ${data.error}`); return }
+      setSaveState('done')
+      fetch('/api/meta/sync', { method: 'POST' }).catch(() => null)
+      onSuccess()
+    } catch { setSaveState('idle'); showToast('Network error') }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-charcoal/50 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative z-10 w-full max-w-md rounded-2xl bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b border-cream-2 px-6 py-5">
+          <div className="flex items-center gap-3">
+            <div className="h-8 w-8 rounded-lg bg-[#1877F2] flex items-center justify-center">
+              <svg className="h-5 w-5 text-white" viewBox="0 0 24 24" fill="currentColor"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
+            </div>
+            <h2 className="font-display text-lg font-semibold text-ink">Connect Meta Ads</h2>
+          </div>
+          <button onClick={onClose} className="rounded-lg p-1.5 hover:bg-cream-2 transition text-ink-3">
+            <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 0 1 1.414 0L10 8.586l4.293-4.293a1 1 0 1 1 1.414 1.414L11.414 10l4.293 4.293a1 1 0 0 1-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 0 1-1.414-1.414L8.586 10 4.293 5.707a1 1 0 0 1 0-1.414z" clipRule="evenodd"/></svg>
+          </button>
+        </div>
+
+        <div className="px-6 py-5 space-y-4">
+          <div className="rounded-xl bg-blue-50 border border-blue-100 px-4 py-3 text-xs text-blue-800 space-y-1">
+            <p className="font-semibold">How to get a long-lived access token:</p>
+            <p>1. Go to <strong>developers.facebook.com/tools/explorer</strong></p>
+            <p>2. Select your App → generate a User Token</p>
+            <p>3. Add permission: <code className="bg-blue-100 px-1 rounded">ads_read</code></p>
+            <p>4. Click &quot;Generate Access Token&quot; then extend to 60 days via the Token Debugger</p>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-ink-2 mb-1">Access Token *</label>
+            <div className="relative">
+              <input type={showToken ? 'text' : 'password'} value={token} onChange={(e) => setToken(e.target.value)} placeholder="EAAxxxxx..." className={inputCls + ' pr-10'} />
+              <button type="button" onClick={() => setShowToken((v) => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-3 hover:text-ink">
+                <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path d="M10 12a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"/><path fillRule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 1 1-8 0 4 4 0 0 1 8 0z" clipRule="evenodd"/></svg>
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-ink-2 mb-1">Ad Account ID *</label>
+            <input type="text" value={accountId} onChange={(e) => setAccountId(e.target.value)} placeholder="act_123456789" className={inputCls} />
+            <p className="mt-1 text-xs text-ink-3">Found in Ads Manager URL: <code>act_XXXXXXXXXX</code></p>
+          </div>
+
+          {testMsg && (
+            <div className={`rounded-lg px-3 py-2.5 text-xs ${testState === 'ok' ? 'bg-teal-pale text-teal-deep' : 'bg-red-50 text-red-700'}`}>
+              {testState === 'ok' ? '✓ ' : '✗ '}{testMsg}
+            </div>
+          )}
+
+          <div className="flex gap-2 pt-1">
+            <button onClick={handleTest} disabled={!token.trim() || testState === 'testing'} className="flex-1 rounded-lg border border-cream-3 px-4 py-2.5 text-sm font-medium text-ink-2 hover:bg-cream disabled:opacity-50 transition">
+              {testState === 'testing' ? <span className="flex items-center justify-center gap-2"><span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-cream-3 border-t-teal" />Testing…</span> : 'Test Connection'}
+            </button>
+            <button onClick={handleSave} disabled={!token.trim() || !accountId.trim() || saveState === 'saving' || saveState === 'done'} className="flex-1 rounded-lg bg-[#1877F2] px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50 transition">
+              {saveState === 'saving' ? <span className="flex items-center justify-center gap-2"><span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white/40 border-t-white" />Saving…</span> : saveState === 'done' ? '✓ Connected' : 'Save & Sync'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Google Ads Connect Modal ───────────────────────────────────────────────────
+
+function GoogleAdsModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
+  const [customerId, setCustomerId] = useState('')
+  const [devToken, setDevToken] = useState('')
+  const [showDevToken, setShowDevToken] = useState(false)
+  const [connecting, setConnecting] = useState(false)
+
+  const inputCls = 'w-full rounded-lg border border-cream-3 bg-cream px-3 py-2 text-sm text-ink focus:border-teal focus:outline-none focus:ring-1 focus:ring-teal transition'
+
+  function handleConnect() {
+    if (!customerId.trim() || !devToken.trim()) return
+    setConnecting(true)
+    const params = new URLSearchParams({ customer_id: customerId.trim(), developer_token: devToken.trim() })
+    window.location.href = `/api/google-ads/auth?${params}`
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-charcoal/50 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative z-10 w-full max-w-md rounded-2xl bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b border-cream-2 px-6 py-5">
+          <div className="flex items-center gap-3">
+            <div className="h-8 w-8 rounded-lg bg-white border border-cream-2 flex items-center justify-center">
+              <svg className="h-5 w-5" viewBox="0 0 48 48" fill="none">
+                <path d="M24 4L4 44h9.5l2.5-7h16l2.5 7H44L24 4z" fill="#4285F4"/>
+                <path d="M24 17l5 14H19l5-14z" fill="white"/>
+              </svg>
+            </div>
+            <h2 className="font-display text-lg font-semibold text-ink">Connect Google Ads</h2>
+          </div>
+          <button onClick={onClose} className="rounded-lg p-1.5 hover:bg-cream-2 transition text-ink-3">
+            <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 0 1 1.414 0L10 8.586l4.293-4.293a1 1 0 1 1 1.414 1.414L11.414 10l4.293 4.293a1 1 0 0 1-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 0 1-1.414-1.414L8.586 10 4.293 5.707a1 1 0 0 1 0-1.414z" clipRule="evenodd"/></svg>
+          </button>
+        </div>
+
+        <div className="px-6 py-5 space-y-4">
+          <div className="rounded-xl bg-cream border border-cream-2 px-4 py-3 text-xs text-ink-3 space-y-1">
+            <p className="font-medium text-ink-2">Before connecting:</p>
+            <p>1. <strong>Customer ID</strong>: 10-digit number in the top-right of Google Ads dashboard (e.g. 123-456-7890)</p>
+            <p>2. <strong>Developer Token</strong>: Google Ads API Center → Your API Center → copy Developer Token (Basic Access is free)</p>
+            <p>3. Your Google account must have admin access to the Google Ads customer</p>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-ink-2 mb-1">Customer ID *</label>
+            <input type="text" value={customerId} onChange={(e) => setCustomerId(e.target.value)} placeholder="123-456-7890" className={inputCls} />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-ink-2 mb-1">Developer Token *</label>
+            <div className="relative">
+              <input type={showDevToken ? 'text' : 'password'} value={devToken} onChange={(e) => setDevToken(e.target.value)} placeholder="••••••••••••••••" className={inputCls + ' pr-10'} />
+              <button type="button" onClick={() => setShowDevToken((v) => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-3 hover:text-ink">
+                <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path d="M10 12a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"/><path fillRule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 1 1-8 0 4 4 0 0 1 8 0z" clipRule="evenodd"/></svg>
+              </button>
+            </div>
+          </div>
+
+          <div className="flex gap-2 pt-1">
+            <button onClick={onClose} className="flex-1 rounded-lg border border-cream-3 px-4 py-2.5 text-sm font-medium text-ink-2 hover:bg-cream transition">Cancel</button>
+            <button onClick={handleConnect} disabled={!customerId.trim() || !devToken.trim() || connecting} className="flex-1 rounded-lg bg-[#4285F4] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#3367d6] disabled:opacity-50 transition">
+              {connecting ? 'Redirecting…' : 'Connect with Google'}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   )
@@ -344,15 +520,31 @@ export default function IntegrationsClient({
   klaviyoAccountId,
   gscConnected,
   gscPropertyUrl,
+  metaConnected,
+  metaAdAccountId,
+  googleAdsConnected,
+  googleAdsCustomerId,
 }: Props) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [showKlaviyoModal, setShowKlaviyoModal] = useState(false)
   const [showGscModal, setShowGscModal] = useState(false)
+  const [showMetaModal, setShowMetaModal] = useState(false)
+  const [showGoogleAdsModal, setShowGoogleAdsModal] = useState(false)
   const [disconnectingGsc, setDisconnectingGsc] = useState(false)
 
   // Handle OAuth callback toasts
   useEffect(() => {
+    if (searchParams.get('google_ads_connected')) {
+      showToast('Google Ads connected! Running first sync…')
+      fetch('/api/google-ads/sync', { method: 'POST' }).catch(() => null)
+      router.replace('/dashboard/integrations')
+    }
+    const gadsError = searchParams.get('google_ads_error')
+    if (gadsError) {
+      showToast(`Google Ads error: ${decodeURIComponent(gadsError)}`)
+      router.replace('/dashboard/integrations')
+    }
     if (searchParams.get('gsc_connected')) {
       showToast('Google Search Console connected! Running first sync…')
       fetch('/api/gsc/sync', { method: 'POST' }).catch(() => null)
@@ -383,12 +575,20 @@ export default function IntegrationsClient({
     router.refresh()
   }
 
+  function handleMetaSuccess() {
+    setShowMetaModal(false)
+    showToast('Meta Ads connected — initial sync started')
+    router.refresh()
+  }
+
   return (
     <>
       {showKlaviyoModal && (
         <KlaviyoModal onClose={() => setShowKlaviyoModal(false)} onSuccess={handleKlaviyoSuccess} />
       )}
       {showGscModal && <GscModal onClose={() => setShowGscModal(false)} />}
+      {showMetaModal && <MetaModal onClose={() => setShowMetaModal(false)} onSuccess={handleMetaSuccess} />}
+      {showGoogleAdsModal && <GoogleAdsModal onClose={() => setShowGoogleAdsModal(false)} onSuccess={() => { setShowGoogleAdsModal(false); router.refresh() }} />}
 
       <div className="space-y-8">
         {/* E-Commerce */}
@@ -542,6 +742,60 @@ export default function IntegrationsClient({
                 }
               />
             ))}
+          </div>
+        </section>
+
+        {/* Advertising */}
+        <section>
+          <h2 className="font-display text-base font-semibold text-ink mb-3">Advertising</h2>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <IntegrationCard
+              name="Meta Ads"
+              description="Track Facebook and Instagram ad performance — spend, ROAS, purchases, and campaign scoring. Unlocks Meta Ads in the Advertising section."
+              logo={
+                <div className="h-6 w-6 rounded bg-[#1877F2] flex items-center justify-center">
+                  <svg className="h-4 w-4 text-white" viewBox="0 0 24 24" fill="currentColor"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
+                </div>
+              }
+              status={metaConnected ? 'connected' : 'not_connected'}
+              meta={metaConnected ? `Account: ${metaAdAccountId ?? 'connected'}` : undefined}
+              action={
+                metaConnected ? (
+                  <div className="flex items-center gap-3">
+                    <a href="/dashboard/meta" className="text-xs text-teal hover:text-teal-dark font-medium transition">View dashboard →</a>
+                    <button onClick={() => setShowMetaModal(true)} className="text-xs text-ink-3 hover:text-ink transition">Update credentials</button>
+                  </div>
+                ) : (
+                  <button onClick={() => setShowMetaModal(true)} className="inline-flex items-center rounded-lg bg-[#1877F2] px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 transition">
+                    Connect Meta Ads
+                  </button>
+                )
+              }
+            />
+            <IntegrationCard
+              name="Google Ads"
+              description="Sync Google Ads campaign performance — spend, ROAS, conversions, and Shopping vs Search breakdown. Unlocks Google Ads in the Advertising section."
+              logo={
+                <svg className="h-6 w-6" viewBox="0 0 48 48" fill="none">
+                  <path d="M24 4L4 44h9.5l2.5-7h16l2.5 7H44L24 4z" fill="#4285F4"/>
+                  <path d="M24 17l5 14H19l5-14z" fill="white"/>
+                </svg>
+              }
+              status={googleAdsConnected ? 'connected' : 'not_connected'}
+              meta={googleAdsConnected ? `Customer ID: ${googleAdsCustomerId ?? 'connected'}` : undefined}
+              action={
+                googleAdsConnected ? (
+                  <div className="flex items-center gap-3">
+                    <a href="/dashboard/google-ads" className="text-xs text-teal hover:text-teal-dark font-medium transition">View dashboard →</a>
+                    <button onClick={() => setShowGoogleAdsModal(true)} className="text-xs text-ink-3 hover:text-ink transition">Re-connect</button>
+                  </div>
+                ) : (
+                  <button onClick={() => setShowGoogleAdsModal(true)} className="inline-flex items-center gap-1.5 rounded-lg bg-[#4285F4] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#3367d6] transition">
+                    Connect Google Ads
+                  </button>
+                )
+              }
+            />
           </div>
         </section>
 
