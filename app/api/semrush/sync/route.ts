@@ -140,7 +140,7 @@ export async function POST(_req: NextRequest) {
   try {
     backlinks = await getBacklinkOverview(apiKey, domain)
   } catch (e) {
-    backlinks = { totalBacklinks: 0, referringDomains: 0, referringUrls: 0, referringIps: 0 }
+    backlinks = { totalBacklinks: 0, referringDomains: 0, referringUrls: 0, referringIps: 0, authorityScore: 0 }
     console.error('Backlinks fetch error:', (e as Error).message)
   }
 
