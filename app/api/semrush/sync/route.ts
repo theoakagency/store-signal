@@ -197,11 +197,7 @@ export async function POST(_req: NextRequest) {
     competition_level: c.competitionLevel,
   }))
 
-  const trafficTrendForCache = trend.map((m) => ({
-    date: m.date,
-    organic_traffic: m.organicTraffic,
-    organic_keywords: m.organicKeywords,
-  }))
+  const trafficTrendForCache = trend
 
   const { error: cacheError } = await service.from('semrush_metrics_cache').upsert({
     tenant_id: TENANT_ID,
