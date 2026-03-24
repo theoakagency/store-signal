@@ -180,5 +180,10 @@ export async function POST(_req: NextRequest) {
       redemption_rate: Math.round(redemption_rate * 1000) / 10,
       points_liability_value: Math.round(points_liability_value * 100) / 100,
     },
+    // DEBUG: raw sample to verify field names
+    _debug: {
+      sample_customer: customers[0] ?? null,
+      sample_activity: activities[0] ?? null,
+    },
   })
 }
