@@ -1,6 +1,6 @@
 /**
  * GET /api/shopify/debug
- * Checks token scopes, DB order range, and tests specific date windows.
+ * Checks token scopes, oldest Shopify orders, and date-range tests.
  * Remove after debugging.
  */
 import { createSupabaseServiceClient } from '@/lib/supabase'
@@ -15,15 +15,8 @@ async function shopifyGet(url: string, token: string) {
   return { status: res.status, body: await res.json() }
 }
 
-function ordersUrl(params: Record<string, string>) {
-  const p = new URLSearchParams({ limit: '5', status: 'any', ...params })
-  return `https://${SHOPIFY_STORE}/admin/api/2024-10/orders.json?${p}`
-}
-
-function daysAgo(n: number) {
-  const d = new Date()
-  d.setDate(d.getDate() - n)
-  return d.toISOString()
+function base(path: string) {
+  return `https://${SHOPIFY_STORE}/admin/api/2024-10/${path}`
 }
 
 export async function GET() {
@@ -37,75 +30,85 @@ export async function GET() {
   const token = store?.shopify_access_token
   if (!token) return Response.json({ error: 'No token in DB' })
 
-  // 1. Check scopes — correct endpoint is NOT versioned
-  const scopesUrl = `https://${SHOPIFY_STORE}/admin/oauth/access_scopes.json`
-  const scopesResult = await shopifyGet(scopesUrl, token).catch((e: unknown) => ({
-    status: 0,
-    body: { error: String(e) },
-  }))
+  // 1. Scopes
+  const scopesRes = await shopifyGet(
+    `https://${SHOPIFY_STORE}/admin/oauth/access_scopes.json`,
+    token
+  ).catch(() => ({ status: 0, body: {} }))
+  const scopes = (scopesRes.body as { access_scopes?: { handle: string }[] }).access_scopes?.map(
+    (s: { handle: string }) => s.handle
+  ) ?? scopesRes.body
 
-  // 2. Orders already in DB
-  const { data: dbRange } = await supabase
-    .from('orders')
-    .select('processed_at')
-    .eq('store_id', STORE_ID)
-    .order('processed_at', { ascending: true })
-    .limit(1)
-  const { data: dbRangeMax } = await supabase
-    .from('orders')
-    .select('processed_at')
-    .eq('store_id', STORE_ID)
-    .order('processed_at', { ascending: false })
-    .limit(1)
+  // 2. Oldest 3 orders in the entire store (created_at ASC)
+  const oldestRes = await shopifyGet(
+    base('orders.json?limit=3&status=any&order=created_at+asc'),
+    token
+  )
+  const oldestOrders = (oldestRes.body as { orders?: { id: number; created_at: string; financial_status: string }[] }).orders?.map(
+    (o) => ({ id: o.id, created_at: o.created_at, financial_status: o.financial_status })
+  ) ?? []
+
+  // 3. Newest 3 orders
+  const newestRes = await shopifyGet(
+    base('orders.json?limit=3&status=any&order=created_at+desc'),
+    token
+  )
+  const newestOrders = (newestRes.body as { orders?: { id: number; created_at: string; financial_status: string }[] }).orders?.map(
+    (o) => ({ id: o.id, created_at: o.created_at, financial_status: o.financial_status })
+  ) ?? []
+
+  // 4. Total count (all time)
+  const countRes = await shopifyGet(base('orders/count.json?status=any'), token)
+
+  // 5. Count with explicit date range tests
+  const ranges: Record<string, string> = {
+    'last_30d':  `orders/count.json?status=any&created_at_min=${daysAgo(30)}`,
+    'last_60d':  `orders/count.json?status=any&created_at_min=${daysAgo(60)}`,
+    'last_90d':  `orders/count.json?status=any&created_at_min=${daysAgo(90)}`,
+    'last_180d': `orders/count.json?status=any&created_at_min=${daysAgo(180)}`,
+    'last_365d': `orders/count.json?status=any&created_at_min=${daysAgo(365)}`,
+    '2024_full': `orders/count.json?status=any&created_at_min=2024-01-01T00:00:00Z&created_at_max=2024-12-31T23:59:59Z`,
+    '2025_full': `orders/count.json?status=any&created_at_min=2025-01-01T00:00:00Z&created_at_max=2025-12-31T23:59:59Z`,
+    '2026_ytd':  `orders/count.json?status=any&created_at_min=2026-01-01T00:00:00Z`,
+  }
+
+  const rangeCounts: Record<string, number | string> = {}
+  for (const [label, path] of Object.entries(ranges)) {
+    const r = await shopifyGet(base(path), token)
+    rangeCounts[label] = (r.body as { count?: number }).count ?? `error: ${JSON.stringify(r.body)}`
+  }
+
+  // 6. DB summary
   const { count: dbTotal } = await supabase
     .from('orders')
     .select('*', { count: 'exact', head: true })
     .eq('store_id', STORE_ID)
-
-  // 3. Recent (last 7d) — baseline, should always work
-  const r7 = await shopifyGet(ordersUrl({ created_at_min: daysAgo(7) }), token)
-
-  // 4. 61–91 days ago — just past the 60d scope boundary
-  const r91 = await shopifyGet(
-    ordersUrl({ created_at_min: daysAgo(91), created_at_max: daysAgo(61) }),
-    token
-  )
-
-  // 5. 120–90 days ago
-  const r120 = await shopifyGet(
-    ordersUrl({ created_at_min: daysAgo(120), created_at_max: daysAgo(90) }),
-    token
-  )
-
-  // 6. 365–335 days ago
-  const r365 = await shopifyGet(
-    ordersUrl({ created_at_min: daysAgo(365), created_at_max: daysAgo(335) }),
-    token
-  )
-
-  // 7. All time — no date filter, just count
-  const rAll = await shopifyGet(
-    `https://${SHOPIFY_STORE}/admin/api/2024-10/orders/count.json?status=any`,
-    token
-  )
+  const { data: dbOldest } = await supabase
+    .from('orders')
+    .select('processed_at, created_at')
+    .eq('store_id', STORE_ID)
+    .order('processed_at', { ascending: true })
+    .limit(1)
 
   return Response.json({
     store: SHOPIFY_STORE,
-    store_env_had_trailing_newline: process.env.SHOPIFY_RETAIL_STORE !== SHOPIFY_STORE,
-    scopes: scopesResult.status === 200
-      ? (scopesResult.body as { access_scopes?: { handle: string }[] }).access_scopes?.map((s: { handle: string }) => s.handle)
-      : { error: scopesResult.body, status: scopesResult.status },
-    db_orders: {
-      total: dbTotal,
-      oldest_processed_at: dbRange?.[0]?.processed_at ?? null,
-      newest_processed_at: dbRangeMax?.[0]?.processed_at ?? null,
+    scopes,
+    has_read_all_orders: Array.isArray(scopes) && scopes.includes('read_all_orders'),
+    shopify: {
+      total_all_time: (countRes.body as { count?: number }).count,
+      oldest_orders: oldestOrders,
+      newest_orders: newestOrders,
+      counts_by_period: rangeCounts,
     },
-    shopify_total_orders: rAll.body,
-    tests: {
-      last_7d: { orders: r7.body.orders?.length, sample_date: r7.body.orders?.[0]?.created_at },
-      '91_to_61d_ago': { orders: r91.body.orders?.length, range: `${daysAgo(91)} → ${daysAgo(61)}` },
-      '120_to_90d_ago': { orders: r120.body.orders?.length, range: `${daysAgo(120)} → ${daysAgo(90)}` },
-      '365_to_335d_ago': { orders: r365.body.orders?.length, range: `${daysAgo(365)} → ${daysAgo(335)}` },
+    db: {
+      total: dbTotal,
+      oldest_processed_at: dbOldest?.[0]?.processed_at ?? null,
     },
   })
+}
+
+function daysAgo(n: number) {
+  const d = new Date()
+  d.setDate(d.getDate() - n)
+  return d.toISOString()
 }
