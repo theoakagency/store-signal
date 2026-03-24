@@ -103,12 +103,7 @@ export interface SemrushBacklinks {
   referringDomains: number
   referringUrls: number
   referringIps: number
-}
-
-export interface SemrushTrafficMonth {
-  date: string
-  organicKeywords: number
-  organicTraffic: number
+  authorityScore: number
 }
 
 // ── Column name helper ────────────────────────────────────────────────────────
@@ -159,10 +154,10 @@ export async function getOrganicKeywords(
     keyword: col(r, 'Keyword', 'Ph'),
     position: parseInt(col(r, 'Position', 'Po') || '0', 10) || 0,
     previousPosition: parseInt(col(r, 'Previous Position', 'Pp') || '0', 10) || 0,
-    positionChange: parseInt(col(r, 'Difference', 'Position Difference', 'Pd') || '0', 10) || 0,
+    positionChange: parseInt(col(r, 'Position Difference', 'Pd') || '0', 10) || 0,
     searchVolume: parseInt(col(r, 'Search Volume', 'Nq') || '0', 10) || 0,
     cpc: parseFloat(col(r, 'CPC', 'Cp') || '0') || 0,
-    url: col(r, 'URL', 'Ur'),
+    url: col(r, 'Url', 'URL', 'Ur'),
     trafficPercent: parseFloat(col(r, 'Traffic (%)', 'Traffic', 'Tr') || '0') || 0,
     competition: parseFloat(col(r, 'Competition', 'Co') || '0') || 0,
   })).filter((k) => k.keyword)
@@ -186,10 +181,10 @@ export async function getKeywordPositionChanges(
     keyword: col(r, 'Keyword', 'Ph'),
     position: parseInt(col(r, 'Position', 'Po') || '0', 10) || 0,
     previousPosition: parseInt(col(r, 'Previous Position', 'Pp') || '0', 10) || 0,
-    positionChange: parseInt(col(r, 'Difference', 'Position Difference', 'Pd') || '0', 10) || 0,
+    positionChange: parseInt(col(r, 'Position Difference', 'Pd') || '0', 10) || 0,
     searchVolume: parseInt(col(r, 'Search Volume', 'Nq') || '0', 10) || 0,
     cpc: parseFloat(col(r, 'CPC', 'Cp') || '0') || 0,
-    url: col(r, 'URL', 'Ur'),
+    url: col(r, 'Url', 'URL', 'Ur'),
     trafficPercent: parseFloat(col(r, 'Traffic (%)', 'Traffic', 'Tr') || '0') || 0,
     competition: parseFloat(col(r, 'Competition', 'Co') || '0') || 0,
   })).filter((k) => k.keyword)
@@ -205,7 +200,7 @@ export async function getCompetitors(apiKey: string, domain: string): Promise<Se
   })
   return rows.map((r) => ({
     domain: col(r, 'Domain', 'Dn'),
-    competitionLevel: parseFloat(col(r, 'Competition Level', 'Competitor Relevance', 'Cr') || '0') || 0,
+    competitionLevel: parseFloat(col(r, 'Competitor Relevance', 'Competition Level', 'Cr') || '0') || 0,
     commonKeywords: parseInt(col(r, 'Common Keywords', 'Np') || '0', 10) || 0,
     organicKeywords: parseInt(col(r, 'Organic Keywords', 'Or') || '0', 10) || 0,
     organicTraffic: parseInt(col(r, 'Organic Traffic', 'Ot') || '0', 10) || 0,
@@ -278,30 +273,16 @@ export async function getBacklinkOverview(apiKey: string, domain: string): Promi
     type: 'backlinks_overview',
     target: domain,
     target_type: 'root_domain',
-    export_columns: 'total,domains_num,urls_num,ips_num',
+    export_columns: 'ascore,total,domains_num,urls_num,ips_num',
   })
   const row = rows[0] ?? {}
   return {
+    authorityScore: parseInt(col(row, 'Authority Score', 'ascore') || '0', 10) || 0,
     totalBacklinks: parseInt(col(row, 'Total', 'Backlinks', 'total') || '0', 10) || 0,
     referringDomains: parseInt(col(row, 'Domains', 'Referring Domains', 'domains_num') || '0', 10) || 0,
     referringUrls: parseInt(col(row, 'URLs', 'Referring URLs', 'urls_num') || '0', 10) || 0,
     referringIps: parseInt(col(row, 'IPs', 'Referring IPs', 'ips_num') || '0', 10) || 0,
   }
-}
-
-export async function getTrafficTrend(apiKey: string, domain: string): Promise<SemrushTrafficMonth[]> {
-  const rows = await fetchSemrush(apiKey, {
-    type: 'domain_ranks_history',
-    export_columns: 'Dt,Or,Ot',
-    domain,
-    database: 'us',
-    display_limit: '12',
-  })
-  return rows.map((r) => ({
-    date: col(r, 'Date', 'Dt'),
-    organicKeywords: parseInt(col(r, 'Organic Keywords', 'Or') || '0', 10) || 0,
-    organicTraffic: parseInt(col(r, 'Organic Traffic', 'Ot') || '0', 10) || 0,
-  })).filter((m) => m.date).reverse() // oldest → newest
 }
 
 export async function testConnection(

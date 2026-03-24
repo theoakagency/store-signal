@@ -12,7 +12,6 @@ import {
   getCompetitors,
   getKeywordGap,
   getBacklinkOverview,
-  getTrafficTrend,
 } from '@/lib/semrush'
 
 export const maxDuration = 300
@@ -149,18 +148,26 @@ export async function POST(_req: NextRequest) {
     tenant_id: TENANT_ID,
     total_backlinks: backlinks.totalBacklinks,
     referring_domains: backlinks.referringDomains,
-    authority_score: null, // authority score comes from domain overview — not in backlinks endpoint
+    authority_score: backlinks.authorityScore || null,
     calculated_at: new Date().toISOString(),
   }, { onConflict: 'tenant_id' })
 
-  // ── Step 7: Traffic trend ────────────────────────────────────────────────────
-  let trend: Awaited<ReturnType<typeof getTrafficTrend>>
-  try {
-    trend = await getTrafficTrend(apiKey, domain)
-  } catch (e) {
-    trend = []
-    console.error('Traffic trend error:', (e as Error).message)
-  }
+  // ── Step 7: Build traffic trend incrementally ─────────────────────────────────
+  // SEMrush has no history endpoint — we accumulate one data point per sync run.
+  const { data: existingCache } = await service
+    .from('semrush_metrics_cache')
+    .select('traffic_trend')
+    .eq('tenant_id', TENANT_ID)
+    .maybeSingle()
+
+  const existingTrend = (existingCache?.traffic_trend as Array<{ date: string; organic_traffic: number; organic_keywords: number }> | null) ?? []
+  const currentMonth = new Date().toISOString().slice(0, 7) // YYYY-MM
+  const newPoint = { date: currentMonth, organic_traffic: overview.organicTraffic, organic_keywords: overview.organicKeywords }
+  // Upsert by month — replace same month if already present, then keep last 12
+  const trend = [
+    ...existingTrend.filter((m) => m.date !== currentMonth),
+    newPoint,
+  ].sort((a, b) => a.date.localeCompare(b.date)).slice(-12)
 
   // ── Compute cached metrics ────────────────────────────────────────────────────
 
@@ -200,7 +207,7 @@ export async function POST(_req: NextRequest) {
     tenant_id: TENANT_ID,
     organic_keywords_total: overview.organicKeywords,
     organic_traffic_estimate: overview.organicTraffic,
-    authority_score: null, // SEMrush authority score not in domain_ranks — set null
+    authority_score: backlinks.authorityScore || null,
     top_competitors: topCompsForCache,
     keyword_opportunities: quickWins,
     traffic_trend: trafficTrendForCache,
@@ -221,6 +228,7 @@ export async function POST(_req: NextRequest) {
       competitors: competitors.length,
       keyword_gaps: allGaps.length,
       traffic_months: trend.length,
+      authority_score: backlinks.authorityScore,
     },
     metrics: {
       organic_keywords_total: overview.organicKeywords,
