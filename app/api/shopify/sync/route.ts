@@ -3,8 +3,8 @@ import { createSupabaseServiceClient } from '@/lib/supabase'
 
 export const maxDuration = 300
 
-const SHOPIFY_STORE = process.env.SHOPIFY_RETAIL_STORE!
-const SYNC_MONTHS_BACK = parseInt(process.env.SHOPIFY_SYNC_MONTHS_BACK ?? '24', 10)
+const SHOPIFY_STORE = (process.env.SHOPIFY_RETAIL_STORE ?? '').trim()
+const SYNC_MONTHS_BACK = parseInt(process.env.SHOPIFY_SYNC_MONTHS_BACK ?? '12', 10)
 
 // Fixed IDs matching the seed data in the migration
 const TENANT_ID = '00000000-0000-0000-0000-000000000001'
