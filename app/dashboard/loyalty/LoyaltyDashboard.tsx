@@ -96,6 +96,8 @@ export default function LoyaltyDashboard({ connected, metrics, totalCustomers }:
   const [aiLoading, setAiLoading] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [syncError, setSyncError] = useState('')
+  const [auditing, setAuditing] = useState(false)
+  const [auditResult, setAuditResult] = useState<string>('')
 
   if (!connected) return <NotConnected />
 
@@ -114,6 +116,20 @@ export default function LoyaltyDashboard({ connected, metrics, totalCustomers }:
     } catch {
       setSyncError('Network error — check console')
       setSyncing(false)
+    }
+  }
+
+  async function runAudit() {
+    setAuditing(true)
+    setAuditResult('')
+    try {
+      const res = await fetch('/api/loyaltylion/audit', { method: 'POST' })
+      const data = await res.json()
+      setAuditResult(JSON.stringify(data, null, 2))
+    } catch {
+      setAuditResult('Network error — check console')
+    } finally {
+      setAuditing(false)
     }
   }
 
@@ -342,6 +358,26 @@ export default function LoyaltyDashboard({ connected, metrics, totalCustomers }:
               </div>
             </div>
           )}
+
+          {/* TEMPORARY: Cross-merchant audit */}
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h2 className="font-display text-base font-semibold text-amber-900">Data Scope Audit (Temporary)</h2>
+                <p className="mt-0.5 text-xs text-amber-700">Fetches all raw LoyaltyLion data and stores it for investigation. Check Supabase tables <code className="font-mono bg-amber-100 px-1 rounded">ll_audit_customers</code> and <code className="font-mono bg-amber-100 px-1 rounded">ll_audit_activities</code> after running.</p>
+              </div>
+              <button
+                onClick={runAudit}
+                disabled={auditing}
+                className="shrink-0 rounded-lg border border-amber-400 bg-white px-4 py-2 text-sm font-medium text-amber-900 hover:bg-amber-100 disabled:opacity-50 transition"
+              >
+                {auditing ? 'Running…' : 'Run Audit'}
+              </button>
+            </div>
+            {auditResult && (
+              <pre className="mt-2 overflow-x-auto rounded-lg bg-white border border-amber-200 p-3 text-xs text-amber-900 whitespace-pre-wrap">{auditResult}</pre>
+            )}
+          </div>
 
           {/* Section 6: AI Insights */}
           <div className="rounded-2xl border border-cream-3 bg-white p-6 shadow-sm">
