@@ -157,21 +157,6 @@ export async function POST(req: NextRequest) {
 
   const results = { orders: 0, errors: [] as string[] }
 
-  // Create sync log
-  const { data: syncLogRow } = await supabase
-    .from('sync_log')
-    .insert({
-      tenant_id: TENANT_ID,
-      store_id: STORE_ID,
-      sync_type: 'chunk',
-      status: 'running',
-      metadata: { chunk_start: createdAtMin, chunk_end: createdAtMax },
-    })
-    .select('id')
-    .single()
-
-  const syncLogId = syncLogRow?.id
-
   try {
     const orders = await fetchOrdersInWindow(token, createdAtMin, createdAtMax)
     const mapped = orders.map((order) => ({
@@ -217,26 +202,7 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     const msg = (err as Error).message
     results.errors.push(msg)
-    if (syncLogId) {
-      await supabase
-        .from('sync_log')
-        .update({ status: 'error', error_message: msg, completed_at: new Date().toISOString() })
-        .eq('id', syncLogId)
-    }
-    return Response.json({ ...results, next_chunk_start: createdAtMin }, { status: 207 })
-  }
-
-  // Update sync log
-  if (syncLogId) {
-    await supabase
-      .from('sync_log')
-      .update({
-        completed_at: new Date().toISOString(),
-        orders_synced: results.orders,
-        status: results.errors.length > 0 ? 'partial' : 'success',
-        error_message: results.errors.length > 0 ? results.errors.join('; ') : null,
-      })
-      .eq('id', syncLogId)
+      return Response.json({ ...results, next_chunk_start: createdAtMin }, { status: 207 })
   }
 
   // Update last_synced_at if this is the final chunk
