@@ -34,6 +34,7 @@ CREATE INDEX IF NOT EXISTS recharge_subscriptions_email_idx     ON public.rechar
 
 ALTER TABLE public.recharge_subscriptions ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "recharge_subscriptions: members can select" ON public.recharge_subscriptions;
 CREATE POLICY "recharge_subscriptions: members can select"
   ON public.recharge_subscriptions FOR SELECT
   USING (tenant_id IN (SELECT tenant_id FROM public.user_tenants WHERE user_id = auth.uid()));
@@ -58,6 +59,7 @@ CREATE INDEX IF NOT EXISTS recharge_charges_email_idx        ON public.recharge_
 
 ALTER TABLE public.recharge_charges ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "recharge_charges: members can select" ON public.recharge_charges;
 CREATE POLICY "recharge_charges: members can select"
   ON public.recharge_charges FOR SELECT
   USING (tenant_id IN (SELECT tenant_id FROM public.user_tenants WHERE user_id = auth.uid()));
@@ -82,6 +84,7 @@ CREATE TABLE IF NOT EXISTS public.recharge_metrics_cache (
 
 ALTER TABLE public.recharge_metrics_cache ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "recharge_metrics_cache: members can select" ON public.recharge_metrics_cache;
 CREATE POLICY "recharge_metrics_cache: members can select"
   ON public.recharge_metrics_cache FOR SELECT
   USING (tenant_id IN (SELECT tenant_id FROM public.user_tenants WHERE user_id = auth.uid()));
@@ -107,6 +110,7 @@ CREATE INDEX IF NOT EXISTS loyalty_customers_tier_idx      ON public.loyalty_cus
 
 ALTER TABLE public.loyalty_customers ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "loyalty_customers: members can select" ON public.loyalty_customers;
 CREATE POLICY "loyalty_customers: members can select"
   ON public.loyalty_customers FOR SELECT
   USING (tenant_id IN (SELECT tenant_id FROM public.user_tenants WHERE user_id = auth.uid()));
@@ -129,6 +133,7 @@ CREATE INDEX IF NOT EXISTS loyalty_activities_email_idx       ON public.loyalty_
 
 ALTER TABLE public.loyalty_activities ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "loyalty_activities: members can select" ON public.loyalty_activities;
 CREATE POLICY "loyalty_activities: members can select"
   ON public.loyalty_activities FOR SELECT
   USING (tenant_id IN (SELECT tenant_id FROM public.user_tenants WHERE user_id = auth.uid()));
@@ -152,6 +157,7 @@ CREATE TABLE IF NOT EXISTS public.loyalty_metrics_cache (
 
 ALTER TABLE public.loyalty_metrics_cache ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "loyalty_metrics_cache: members can select" ON public.loyalty_metrics_cache;
 CREATE POLICY "loyalty_metrics_cache: members can select"
   ON public.loyalty_metrics_cache FOR SELECT
   USING (tenant_id IN (SELECT tenant_id FROM public.user_tenants WHERE user_id = auth.uid()));
