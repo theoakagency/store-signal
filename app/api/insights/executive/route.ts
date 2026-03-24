@@ -51,6 +51,9 @@ export async function POST(_req: NextRequest) {
     { data: gscMonthly },
     { data: gscKeywords },
     { data: channelCache },
+    { data: ga4Metrics },
+    { data: ga4Sessions },
+    { data: ga4Monthly },
   ] = await Promise.all([
     service.from('metrics_cache').select('metric_name, metric_value').eq('store_id', STORE_ID),
     service.from('klaviyo_metrics_cache').select('metric_name, metric_value').eq('tenant_id', TENANT_ID),
@@ -59,6 +62,9 @@ export async function POST(_req: NextRequest) {
     service.from('gsc_monthly_clicks').select('month, clicks').eq('tenant_id', TENANT_ID).order('month', { ascending: true }),
     service.from('gsc_keywords').select('query, clicks, position').eq('tenant_id', TENANT_ID).order('clicks', { ascending: false }).limit(5),
     service.from('sales_channel_cache').select('channel_name, revenue, order_count').eq('tenant_id', TENANT_ID).eq('period', 'last_30d'),
+    service.from('analytics_metrics_cache').select('metric_name, metric_value').eq('tenant_id', TENANT_ID),
+    service.from('analytics_sessions').select('channel, sessions, conversions, revenue').eq('tenant_id', TENANT_ID).eq('date_range', '90d').order('sessions', { ascending: false }).limit(6),
+    service.from('analytics_monthly').select('month, sessions').eq('tenant_id', TENANT_ID).order('month', { ascending: true }),
   ])
 
   // Build lookup maps
@@ -70,6 +76,8 @@ export async function POST(_req: NextRequest) {
   for (const r of metaMetrics ?? []) meta[r.metric_name] = Number(r.metric_value)
   const google: Record<string, number> = {}
   for (const r of googleMetrics ?? []) google[r.metric_name] = Number(r.metric_value)
+  const ga4: Record<string, number> = {}
+  for (const r of ga4Metrics ?? []) ga4[r.metric_name] = Number(r.metric_value)
 
   // GSC trend
   const gscTotal90 = (gscMonthly ?? []).slice(-3).reduce((s, m) => s + m.clicks, 0)
@@ -127,13 +135,31 @@ ${channelCache.sort((a, b) => b.revenue - a.revenue).map((c) => `- ${c.channel_n
 - Top keywords: ${(gscKeywords ?? []).map((k) => `"${k.query}" (pos ${(k.position ?? 0).toFixed(1)}, ${k.clicks} clicks)`).join(', ')}`)
   }
 
+  // GA4 traffic intelligence
+  if (Object.keys(ga4).length > 0 || (ga4Sessions?.length ?? 0) > 0) {
+    const ga4Monthly2 = ga4Monthly ?? []
+    const last2Months = ga4Monthly2.slice(-2)
+    const momPct = last2Months.length === 2 && last2Months[0].sessions > 0
+      ? ((last2Months[1].sessions - last2Months[0].sessions) / last2Months[0].sessions) * 100
+      : null
+    const topChannels = (ga4Sessions ?? []).slice(0, 4)
+    const totalSessions = (ga4Sessions ?? []).reduce((s, r) => s + r.sessions, 0)
+
+    sections.push(`GOOGLE ANALYTICS 4 (90d):
+- Total sessions: ${(ga4['ga4_sessions_90d'] ?? totalSessions).toFixed(0)}
+- Ecommerce conversion rate: ${(ga4['ga4_conversion_rate_90d'] ?? 0).toFixed(2)}%
+- GA4 revenue: $${(ga4['ga4_revenue_90d'] ?? 0).toFixed(0)} (${(ga4['ga4_transactions_90d'] ?? 0).toFixed(0)} transactions)
+- Month-over-month sessions: ${momPct != null ? `${momPct >= 0 ? '+' : ''}${momPct.toFixed(1)}%` : 'insufficient data'}
+- Channel breakdown: ${topChannels.map((r) => `${r.channel} ${totalSessions > 0 ? Math.round((r.sessions / totalSessions) * 100) : 0}%`).join(', ')}`)
+  }
+
   if (sections.length === 0) {
     return Response.json({ error: 'No data available — sync at least one platform first' }, { status: 400 })
   }
 
   const dataStr = sections.join('\n\n')
 
-  const systemPrompt = `You are analyzing cross-platform business intelligence for LashBox LA (lashboxla.com), a professional eyelash extension supply store. You have data from Shopify, Klaviyo email, Meta Ads, Google Ads, and Google Search Console. Your job is to find insights that connect data ACROSS platforms — things you can only see by looking at all the data together. Do not repeat single-platform summaries. Focus on relationships, inefficiencies, and opportunities that cross platforms.`
+  const systemPrompt = `You are analyzing cross-platform business intelligence for LashBox LA (lashboxla.com), a professional eyelash extension supply store. You have data from Shopify, Klaviyo email, Meta Ads, Google Ads, Google Search Console, and Google Analytics 4. Your job is to find insights that connect data ACROSS platforms — things you can only see by looking at all the data together. Do not repeat single-platform summaries. Focus on relationships, inefficiencies, and opportunities that cross platforms. When GA4 data is available, use channel breakdown and conversion rate to identify traffic quality issues or channel mix opportunities.`
 
   const userPrompt = `${dataStr}
 
