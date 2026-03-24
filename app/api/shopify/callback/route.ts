@@ -71,7 +71,9 @@ export async function GET(req: NextRequest) {
     )
   }
 
-  const { access_token } = (await tokenRes.json()) as { access_token: string; scope: string }
+  const tokenData = (await tokenRes.json()) as { access_token: string; scope: string }
+  const { access_token } = tokenData
+  console.log('[shopify-callback] Granted scopes:', tokenData.scope)
 
   // 4. Persist the token
   const supabase = createSupabaseServiceClient()
