@@ -16,9 +16,14 @@ export async function POST(req: NextRequest) {
   }
 
   const service = createSupabaseServiceClient()
-  await service.from('stores').update({
+  const { error } = await service.from('stores').update({
     loyaltylion_token: token.trim(),
   }).eq('id', STORE_ID)
+
+  if (error) {
+    console.error('LoyaltyLion connect error:', error)
+    return Response.json({ error: error.message }, { status: 500 })
+  }
 
   return Response.json({ ok: true })
 }
