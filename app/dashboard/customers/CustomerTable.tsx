@@ -439,33 +439,53 @@ function DetailPanel({ customer, profile, onClose }: {
 // ── Build Profiles Button ──────────────────────────────────────────────────────
 
 function BuildProfilesButton() {
-  const [loading, setLoading] = useState(false)
-  const [done, setDone]       = useState(false)
-  const [error, setError]     = useState<string | null>(null)
+  const [status, setStatus]       = useState<'idle' | 'running' | 'done'>('idle')
+  const [progress, setProgress]   = useState<string | null>(null)
+  const [error, setError]         = useState<string | null>(null)
 
   async function build() {
-    setLoading(true)
+    setStatus('running')
     setError(null)
+    setProgress('Starting…')
+
     try {
-      const res  = await fetch('/api/customers/build-profiles', { method: 'POST' })
-      const data = await res.json()
-      if (data.error) { setError(data.error); return }
-      setDone(true)
+      // Batch 0 tells us how many total batches there are
+      let totalBatches = 1
+
+      for (let b = 0; b < totalBatches; b++) {
+        setProgress(`Processing batch ${b + 1} of ${totalBatches}…`)
+        const res  = await fetch(`/api/customers/build-profiles?batch=${b}`, { method: 'POST' })
+        const data = await res.json()
+        if (!res.ok || data.error) {
+          setError(data.error ?? 'Request failed')
+          setStatus('idle')
+          setProgress(null)
+          return
+        }
+        // After first response we know the total
+        totalBatches = data.totalBatches ?? 1
+      }
+
+      setProgress(null)
+      setStatus('done')
       setTimeout(() => window.location.reload(), 800)
-    } catch { setError('Network error') }
-    finally { setLoading(false) }
+    } catch {
+      setError('Network error')
+      setStatus('idle')
+      setProgress(null)
+    }
   }
 
   return (
     <div className="flex items-center gap-3">
       <button
         onClick={build}
-        disabled={loading || done}
+        disabled={status !== 'idle'}
         className="flex items-center gap-2 rounded-xl bg-ink px-4 py-2 text-sm font-semibold text-cream hover:bg-charcoal disabled:opacity-50 transition"
       >
-        {loading ? (
-          <><span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-cream/30 border-t-cream" />Building…</>
-        ) : done ? 'Done — reloading…' : (
+        {status === 'running' ? (
+          <><span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-cream/30 border-t-cream" />{progress ?? 'Building…'}</>
+        ) : status === 'done' ? 'Done — reloading…' : (
           <><svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M8 1v6l3-3M8 7l-3-3" strokeLinecap="round" strokeLinejoin="round" /><path d="M13.5 8A5.5 5.5 0 1 1 8 2.5" strokeLinecap="round" /></svg>Build Profiles</>
         )}
       </button>
