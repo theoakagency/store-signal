@@ -4,7 +4,7 @@ import crypto from 'crypto'
 const CLIENT_ID = process.env.SHOPIFY_RETAIL_CLIENT_ID!
 const STORE = process.env.SHOPIFY_RETAIL_STORE!
 
-const SCOPES = 'read_orders,read_customers'
+const SCOPES = 'read_orders,read_all_orders,read_customers'
 
 export async function GET(req: NextRequest) {
   if (!CLIENT_ID || !STORE) {

@@ -83,13 +83,20 @@ async function fetchOrdersInWindow(
     if (!isFirst) await sleep(500)
     isFirst = false
 
+    const fullUrl = `https://${SHOPIFY_STORE}/admin/api/2024-10/${url}`
+    console.log('[historical-sync] Fetching:', fullUrl)
+
     const res = await shopifyFetch(url, token)
+    console.log('[historical-sync] Response status:', res.status, res.statusText)
+
     if (!res.ok) {
       const text = await res.text()
       throw new Error(`Shopify orders fetch failed (${res.status}): ${text}`)
     }
     const data = await res.json()
-    orders.push(...(data.orders as ShopifyOrder[]))
+    const pageOrders = data.orders as ShopifyOrder[]
+    console.log('[historical-sync] Orders in page:', pageOrders.length)
+    orders.push(...pageOrders)
 
     const linkHeader = res.headers.get('Link')
     const nextMatch = linkHeader?.match(/<[^>]+\/(\S+)>; rel="next"/)
@@ -142,6 +149,8 @@ export async function POST(req: NextRequest) {
 
   const createdAtMin = chunkStart.toISOString()
   const createdAtMax = effectiveEnd.toISOString()
+
+  console.log('[historical-sync] Chunk:', { createdAtMin, createdAtMax, isLastChunk, SYNC_MONTHS_BACK })
 
   const results = { orders: 0, errors: [] as string[] }
 
