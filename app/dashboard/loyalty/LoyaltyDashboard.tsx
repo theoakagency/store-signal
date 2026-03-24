@@ -54,11 +54,11 @@ interface Props {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function fmt(n: number, d = 0) {
-  return n.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d })
+function fmt(n: number | null | undefined, d = 0) {
+  return (n ?? 0).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d })
 }
-function fmtUsd(n: number) { return '$' + fmt(n, n < 10 ? 2 : 0) }
-function fmtPct(n: number) { return (n * 100).toFixed(1) + '%' }
+function fmtUsd(n: number | null | undefined) { const v = n ?? 0; return '$' + fmt(v, v < 10 ? 2 : 0) }
+function fmtPct(n: number | null | undefined) { return ((n ?? 0) * 100).toFixed(1) + '%' }
 
 // ── Sub-components ─────────────────────────────────────────────────────────────
 
@@ -140,8 +140,8 @@ export default function LoyaltyDashboard({ connected, metrics, totalCustomers }:
   const promos = m?.promotion_response_rate ?? []
   const tiers = m?.tier_breakdown ?? []
   const redeemers = m?.top_redeemers ?? []
-  const enrollmentPct = totalCustomers > 0 && m ? m.enrolled_customers / totalCustomers : 0
-  const lowRedemption = m ? m.redemption_rate < 0.1 : false
+  const enrollmentPct = totalCustomers > 0 && m ? (m.enrolled_customers ?? 0) / totalCustomers : 0
+  const lowRedemption = m ? (m.redemption_rate ?? 0) < 0.1 : false
 
   return (
     <div className="space-y-8">
