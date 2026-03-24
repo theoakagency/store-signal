@@ -75,8 +75,10 @@ async function fetchAllPages<T>(
   let cursor: string | null = null
 
   do {
-    const query = new URLSearchParams({ limit: '250', ...params })
-    if (cursor) query.set('cursor', cursor)
+    // Recharge 422s if any param other than limit is sent alongside cursor
+    const query = cursor
+      ? new URLSearchParams({ limit: '250', cursor })
+      : new URLSearchParams({ limit: '250', ...params })
 
     const res = await fetch(`${BASE_URL}${path}?${query}`, { headers: headers(apiToken) })
     if (!res.ok) {
