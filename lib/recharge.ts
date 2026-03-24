@@ -20,7 +20,7 @@ export interface RechargeSubscription {
   id: string
   customer_id: string
   customer: { email: string } | null
-  status: 'ACTIVE' | 'CANCELLED' | 'EXPIRED'
+  status: 'active' | 'cancelled' | 'expired'
   product_title: string
   variant_title: string | null
   price: string
@@ -110,7 +110,7 @@ async function fetchAllPages<T>(
 
 export async function getSubscriptions(
   apiToken: string,
-  status?: 'ACTIVE' | 'CANCELLED' | 'EXPIRED'
+  status?: 'active' | 'cancelled' | 'expired'
 ): Promise<RechargeSubscription[]> {
   const params: Record<string, string> = {}
   if (status) params['status'] = status

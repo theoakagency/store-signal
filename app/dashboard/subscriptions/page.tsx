@@ -26,7 +26,7 @@ export default async function SubscriptionsPage() {
       .from('recharge_subscriptions')
       .select('customer_email, product_title, price, cancelled_at, charge_interval_frequency, order_interval_unit')
       .eq('tenant_id', TENANT_ID)
-      .eq('status', 'CANCELLED')
+      .eq('status', 'cancelled')
       .gte('cancelled_at', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString())
       .order('cancelled_at', { ascending: false })
       .limit(50),
@@ -34,7 +34,7 @@ export default async function SubscriptionsPage() {
       .from('recharge_subscriptions')
       .select('customer_email, product_title, price, charge_interval_frequency, order_interval_unit, status, next_charge_scheduled_at')
       .eq('tenant_id', TENANT_ID)
-      .eq('status', 'ACTIVE')
+      .eq('status', 'active')
       .order('price', { ascending: false })
       .limit(10),
   ])

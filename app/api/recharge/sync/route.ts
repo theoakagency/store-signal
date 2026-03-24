@@ -45,8 +45,8 @@ export async function POST(_req: NextRequest) {
 
   try {
     ;[active, cancelled] = await Promise.all([
-      getSubscriptions(apiToken, 'ACTIVE'),
-      getSubscriptions(apiToken, 'CANCELLED'),
+      getSubscriptions(apiToken, 'active'),
+      getSubscriptions(apiToken, 'cancelled'),
     ])
   } catch (e) {
     const msg = (e as Error).message
@@ -82,7 +82,7 @@ export async function POST(_req: NextRequest) {
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
 
   // Active subscribers
-  const activeSubscriptions = allSubscriptions.filter((s) => s.status === 'ACTIVE')
+  const activeSubscriptions = allSubscriptions.filter((s) => s.status === 'active')
   const activeSubscribers = activeSubscriptions.length
 
   // MRR
@@ -134,10 +134,10 @@ export async function POST(_req: NextRequest) {
 
   // Churn rate 30d
   const cancelledLast30d = allSubscriptions.filter(
-    (s) => s.status === 'CANCELLED' && s.cancelled_at && new Date(s.cancelled_at) >= thirtyDaysAgo
+    (s) => s.status === 'cancelled' && s.cancelled_at && new Date(s.cancelled_at) >= thirtyDaysAgo
   ).length
   const activeThirtyDaysAgo = allSubscriptions.filter(
-    (s) => s.created_at && new Date(s.created_at) <= thirtyDaysAgo && (s.status === 'ACTIVE' || (s.cancelled_at && new Date(s.cancelled_at) >= thirtyDaysAgo))
+    (s) => s.created_at && new Date(s.created_at) <= thirtyDaysAgo && (s.status === 'active' || (s.cancelled_at && new Date(s.cancelled_at) >= thirtyDaysAgo))
   ).length
   const churnRate30d = activeThirtyDaysAgo > 0 ? cancelledLast30d / activeThirtyDaysAgo : 0
 
