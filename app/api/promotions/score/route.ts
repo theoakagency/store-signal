@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
 
   // Fetch store context for the AI prompt
   const service = createSupabaseServiceClient()
-  const [{ data: statsRows }, { data: topCustomers }, { data: allCustomers }, { data: klaviyoMetrics }, { data: recentCampaigns }, { data: gscKeywords }, { data: gscMonthly }] = await Promise.all([
+  const [{ data: statsRows }, { data: topCustomers }, { data: allCustomers }, { data: klaviyoMetrics }, { data: recentCampaigns }, { data: gscKeywords }, { data: gscMonthly }, { data: semrushMetrics }] = await Promise.all([
     service
       .from('orders')
       .select('total_price, financial_status')
@@ -72,6 +72,11 @@ export async function POST(req: NextRequest) {
       .select('month, clicks')
       .eq('tenant_id', TENANT_ID)
       .order('month', { ascending: true }),
+    service
+      .from('semrush_metrics_cache')
+      .select('organic_keywords_total, organic_traffic_estimate, keyword_opportunities, top_competitors')
+      .eq('tenant_id', TENANT_ID)
+      .maybeSingle(),
   ])
 
   const totalRevenue = (statsRows ?? []).reduce((s, r) => s + Number(r.total_price), 0)
@@ -129,6 +134,27 @@ ORGANIC SEARCH (Google Search Console):
 - Top 10 keywords: ${(gscKeywords ?? []).map((k) => `"${k.query}" (pos ${(k.position ?? 0).toFixed(1)}, ${k.clicks} clicks)`).join(', ')}`.trim()
     : ''
 
+  // Build SEMrush context if available
+  const semrushData = semrushMetrics as {
+    organic_keywords_total: number | null
+    organic_traffic_estimate: number | null
+    keyword_opportunities: Array<{ keyword: string; position: number; search_volume: number }> | null
+    top_competitors: Array<{ domain: string; common_keywords: number }> | null
+  } | null
+
+  const hasSemrush = !!semrushData?.organic_keywords_total
+  const quickWinKeywords = (semrushData?.keyword_opportunities ?? []).slice(0, 5)
+  const topCompetitor = semrushData?.top_competitors?.[0]?.domain ?? null
+
+  const semrushContext = hasSemrush
+    ? `
+ORGANIC SEO (SEMrush):
+- Total ranking keywords: ${semrushData!.organic_keywords_total?.toLocaleString()}
+- Estimated monthly organic traffic: ${semrushData!.organic_traffic_estimate?.toLocaleString()}
+- Top competitor: ${topCompetitor ?? 'unknown'}
+- Quick-win keywords (positions 4-10): ${quickWinKeywords.map((k) => `"${k.keyword}" (pos ${k.position}, ${k.search_volume.toLocaleString()} monthly searches)`).join(', ') || 'none identified'}`.trim()
+    : ''
+
   const storeContext = `
 Store: LashBox LA (beauty/lash retail, 10+ years in business)
 Total paid orders (all time): ${orderCount}
@@ -138,7 +164,8 @@ Average LTV (top 20 customers): $${avgLTV.toFixed(2)}
 Total customers in CRM: ${totalCustomers}
 Lapsed customers (90+ days inactive): ${lapsedCount} (${totalCustomers > 0 ? Math.round((lapsedCount / totalCustomers) * 100) : 0}%)
 ${emailContext}
-${gscContext}`.trim()
+${gscContext}
+${semrushContext}`.trim()
 
   const emailInstruction = hasKlaviyo && avgOpenRate
     ? `This store's email campaigns average ${(avgOpenRate * 100).toFixed(1)}% open rate and ${avgCampaignRevenue != null ? '$' + avgCampaignRevenue.toFixed(0) : 'an unknown amount'} revenue per send. Their automated flows generate ${flowRevenueRatio != null ? flowRevenueRatio.toFixed(1) + '×' : 'more'} revenue per recipient than broadcast campaigns. Factor this into the audience fit and buying motivation scores when the channel involves email.`
@@ -148,7 +175,11 @@ ${gscContext}`.trim()
     ? ` This store's organic search traffic is ${gscTrend != null ? `${gscTrend >= 0 ? 'trending up' : 'trending down'} ${Math.abs(gscTrend).toFixed(1)}%` : 'trending'} vs the prior 90 days. Their top organic keywords are: ${(gscKeywords ?? []).slice(0, 5).map((k) => `"${k.query}"`).join(', ')}. Factor in whether this promotion could support or conflict with their SEO strategy — for example, whether it targets the same audience as their organic traffic or cannibalizes search intent.`
     : ''
 
-  const prompt = `You are a retail promotion strategist. A beauty brand (LashBox LA) wants to evaluate a promotion idea. Use the real store data below to give a grounded, honest assessment — validate or challenge the team's thinking.${emailInstruction ? ' ' + emailInstruction : ''}${gscInstruction}
+  const semrushInstruction = hasSemrush
+    ? ` According to SEMrush, this store ranks for ${semrushData!.organic_keywords_total?.toLocaleString()} organic keywords with ~${semrushData!.organic_traffic_estimate?.toLocaleString()} monthly visits. ${quickWinKeywords.length > 0 ? `Their highest-opportunity keywords in positions 4-10 include: ${quickWinKeywords.map((k) => `"${k.keyword}"`).join(', ')}. A promotion targeting these product categories would amplify SEO intent rather than rely entirely on paid/email reach.` : ''} ${topCompetitor ? `Their top competitor by keyword overlap is ${topCompetitor}.` : ''} Consider whether this promotion targets a category with strong organic presence (less incremental value from promotion) or a category with weak organic reach (higher value from promotion).`
+    : ''
+
+  const prompt = `You are a retail promotion strategist. A beauty brand (LashBox LA) wants to evaluate a promotion idea. Use the real store data below to give a grounded, honest assessment — validate or challenge the team's thinking.${emailInstruction ? ' ' + emailInstruction : ''}${gscInstruction}${semrushInstruction}
 
 STORE DATA:
 ${storeContext}

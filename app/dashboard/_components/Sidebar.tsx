@@ -7,6 +7,9 @@ export default function Sidebar({
   ga4Connected,
   metaConnected,
   googleAdsConnected,
+  rechargeConnected,
+  loyaltylionConnected,
+  semrushConnected,
 }: {
   onNavigate?: () => void
   klaviyoConnected?: boolean
@@ -14,6 +17,9 @@ export default function Sidebar({
   ga4Connected?: boolean
   metaConnected?: boolean
   googleAdsConnected?: boolean
+  rechargeConnected?: boolean
+  loyaltylionConnected?: boolean
+  semrushConnected?: boolean
 }) {
   return (
     <div className="flex h-full flex-col">
@@ -26,7 +32,7 @@ export default function Sidebar({
 
       {/* Nav */}
       <div className="flex-1 overflow-y-auto py-4">
-        <NavLinks onNavigate={onNavigate} klaviyoConnected={klaviyoConnected} gscConnected={gscConnected} ga4Connected={ga4Connected} metaConnected={metaConnected} googleAdsConnected={googleAdsConnected} />
+        <NavLinks onNavigate={onNavigate} klaviyoConnected={klaviyoConnected} gscConnected={gscConnected} ga4Connected={ga4Connected} metaConnected={metaConnected} googleAdsConnected={googleAdsConnected} rechargeConnected={rechargeConnected} loyaltylionConnected={loyaltylionConnected} semrushConnected={semrushConnected} />
       </div>
 
       {/* Footer */}

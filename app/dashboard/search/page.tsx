@@ -1,4 +1,4 @@
-import { createSupabaseServerClient } from '@/lib/supabase'
+import { createSupabaseServerClient, createSupabaseServiceClient } from '@/lib/supabase'
 import SearchDashboard, { type GscInsight } from './SearchDashboard'
 
 export const metadata = { title: 'Search Intelligence — Store Signal' }
@@ -8,6 +8,7 @@ const STORE_ID = '00000000-0000-0000-0000-000000000002'
 
 export default async function SearchPage() {
   const supabase = await createSupabaseServerClient()
+  const service = createSupabaseServiceClient()
 
   const [
     { data: store },
@@ -15,10 +16,11 @@ export default async function SearchPage() {
     { data: pages },
     { data: monthlyClicks },
     { data: insightsCache },
+    { data: semrushKeywords },
   ] = await Promise.all([
     supabase
       .from('stores')
-      .select('gsc_refresh_token, gsc_property_url')
+      .select('gsc_refresh_token, gsc_property_url, semrush_api_key')
       .eq('id', STORE_ID)
       .single(),
     supabase
@@ -43,7 +45,23 @@ export default async function SearchPage() {
       .select('insights, calculated_at')
       .eq('tenant_id', TENANT_ID)
       .maybeSingle(),
+    service
+      .from('semrush_keywords')
+      .select('keyword, search_volume, position, position_change')
+      .eq('tenant_id', TENANT_ID),
   ])
+
+  // Build a lookup map: lowercase keyword → {volume, difficulty, semrushPosition}
+  const semrushMap: Record<string, { volume: number; semrushPosition: number; change: number }> = {}
+  for (const sk of semrushKeywords ?? []) {
+    if (sk.keyword) {
+      semrushMap[sk.keyword.toLowerCase()] = {
+        volume: sk.search_volume ?? 0,
+        semrushPosition: sk.position ?? 0,
+        change: sk.position_change ?? 0,
+      }
+    }
+  }
 
   return (
     <SearchDashboard
@@ -54,6 +72,7 @@ export default async function SearchPage() {
       monthlyClicks={monthlyClicks ?? []}
       cachedInsights={(insightsCache?.insights as GscInsight[] | null) ?? null}
       insightsCalculatedAt={insightsCache?.calculated_at ?? null}
+      semrushData={!!store?.semrush_api_key ? semrushMap : null}
     />
   )
 }

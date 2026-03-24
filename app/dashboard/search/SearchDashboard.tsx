@@ -37,6 +37,12 @@ export interface GscInsight {
   impact: 'Low' | 'Medium' | 'High'
 }
 
+interface SemrushEntry {
+  volume: number
+  semrushPosition: number
+  change: number
+}
+
 interface Props {
   connected: boolean
   propertyUrl: string | null
@@ -45,6 +51,7 @@ interface Props {
   monthlyClicks: MonthlyClick[]
   cachedInsights: GscInsight[] | null
   insightsCalculatedAt: string | null
+  semrushData: Record<string, SemrushEntry> | null
 }
 
 // ── Formatters ────────────────────────────────────────────────────────────────
@@ -268,10 +275,11 @@ function NotConnected() {
 
 export default function SearchDashboard({
   connected, propertyUrl, keywords, pages, monthlyClicks,
-  cachedInsights, insightsCalculatedAt,
+  cachedInsights, insightsCalculatedAt, semrushData,
 }: Props) {
   const router = useRouter()
   const [syncing, setSyncing] = useState(false)
+  const [showSemrush, setShowSemrush] = useState(false)
   const [activeTab, setActiveTab] = useState<'keywords' | 'opportunities' | 'pages'>('keywords')
   const [insights, setInsights] = useState<GscInsight[]>(cachedInsights ?? [])
   const [insightsState, setInsightsState] = useState<'idle' | 'loading' | 'done' | 'error'>(
@@ -545,35 +553,72 @@ export default function SearchDashboard({
 
         {/* Keywords tab */}
         {activeTab === 'keywords' && (
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
-              <thead>
-                <tr className="border-b border-cream-2 text-xs font-medium text-ink-3">
-                  <th className="px-5 py-2.5 text-left">Query</th>
-                  <th className="px-5 py-2.5 text-right">Clicks</th>
-                  <th className="px-5 py-2.5 text-right">Impressions</th>
-                  <th className="px-5 py-2.5 text-right">CTR</th>
-                  <th className="px-5 py-2.5 text-right">Position</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-cream-2">
-                {keywords.map((k) => (
-                  <tr key={k.query} className="hover:bg-cream transition-colors">
-                    <td className="px-5 py-3 font-medium text-ink max-w-[300px]">
-                      <span className="truncate block">{k.query}</span>
-                    </td>
-                    <td className="px-5 py-3 font-data text-xs text-right font-medium text-ink">{k.clicks.toLocaleString()}</td>
-                    <td className="px-5 py-3 font-data text-xs text-right text-ink-2">{k.impressions.toLocaleString()}</td>
-                    <td className="px-5 py-3 font-data text-xs text-right text-ink-2">{pct(k.ctr)}</td>
-                    <td className="px-5 py-3 font-data text-xs text-right">
-                      <span className={`font-semibold ${(k.position ?? 99) <= 10 ? 'text-teal-deep' : (k.position ?? 99) <= 20 ? 'text-amber-600' : 'text-ink-3'}`}>
-                        {pos(k.position)}
-                      </span>
-                    </td>
+          <div>
+            {semrushData && (
+              <div className="flex items-center justify-end gap-2 px-5 py-2 border-b border-cream-2 bg-cream/50">
+                <span className="text-xs text-ink-3">SEMrush data</span>
+                <button
+                  onClick={() => setShowSemrush((v) => !v)}
+                  className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${showSemrush ? 'bg-[#FF642D]' : 'bg-cream-3'}`}
+                >
+                  <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform ${showSemrush ? 'translate-x-4' : 'translate-x-1'}`} />
+                </button>
+                {showSemrush && (
+                  <Link href="/dashboard/semrush" className="text-xs text-[#FF642D] hover:underline ml-1">
+                    View SEO Intelligence →
+                  </Link>
+                )}
+              </div>
+            )}
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="border-b border-cream-2 text-xs font-medium text-ink-3">
+                    <th className="px-5 py-2.5 text-left">Query</th>
+                    <th className="px-5 py-2.5 text-right">Clicks</th>
+                    <th className="px-5 py-2.5 text-right">Impressions</th>
+                    <th className="px-5 py-2.5 text-right">CTR</th>
+                    <th className="px-5 py-2.5 text-right">GSC Pos</th>
+                    {showSemrush && semrushData && (
+                      <>
+                        <th className="px-4 py-2.5 text-right text-[#FF642D]">Monthly Vol</th>
+                        <th className="px-4 py-2.5 text-right text-[#FF642D]">SEM Pos</th>
+                      </>
+                    )}
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-cream-2">
+                  {keywords.map((k) => {
+                    const semEntry = semrushData?.[k.query.toLowerCase()]
+                    return (
+                      <tr key={k.query} className="hover:bg-cream transition-colors">
+                        <td className="px-5 py-3 font-medium text-ink max-w-[300px]">
+                          <span className="truncate block">{k.query}</span>
+                        </td>
+                        <td className="px-5 py-3 font-data text-xs text-right font-medium text-ink">{k.clicks.toLocaleString()}</td>
+                        <td className="px-5 py-3 font-data text-xs text-right text-ink-2">{k.impressions.toLocaleString()}</td>
+                        <td className="px-5 py-3 font-data text-xs text-right text-ink-2">{pct(k.ctr)}</td>
+                        <td className="px-5 py-3 font-data text-xs text-right">
+                          <span className={`font-semibold ${(k.position ?? 99) <= 10 ? 'text-teal-deep' : (k.position ?? 99) <= 20 ? 'text-amber-600' : 'text-ink-3'}`}>
+                            {pos(k.position)}
+                          </span>
+                        </td>
+                        {showSemrush && semrushData && (
+                          <>
+                            <td className="px-4 py-3 font-data text-xs text-right text-ink-2">
+                              {semEntry ? semEntry.volume >= 1000 ? `${(semEntry.volume / 1000).toFixed(0)}K` : String(semEntry.volume) : '—'}
+                            </td>
+                            <td className="px-4 py-3 font-data text-xs text-right text-ink-2">
+                              {semEntry?.semrushPosition ? `#${semEntry.semrushPosition}` : '—'}
+                            </td>
+                          </>
+                        )}
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
 

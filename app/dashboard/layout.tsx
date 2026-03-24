@@ -17,7 +17,7 @@ export default async function DashboardLayout({
 
   const { data: store } = await supabase
     .from('stores')
-    .select('last_synced_at, klaviyo_api_key, gsc_refresh_token, ga4_refresh_token, meta_access_token, google_ads_refresh_token, recharge_api_token, loyaltylion_token')
+    .select('last_synced_at, klaviyo_api_key, gsc_refresh_token, ga4_refresh_token, meta_access_token, google_ads_refresh_token, recharge_api_token, loyaltylion_token, semrush_api_key')
     .eq('id', '00000000-0000-0000-0000-000000000002')
     .single()
 
@@ -32,6 +32,7 @@ export default async function DashboardLayout({
       googleAdsConnected={!!store?.google_ads_refresh_token}
       rechargeConnected={!!store?.recharge_api_token}
       loyaltylionConnected={!!store?.loyaltylion_token}
+      semrushConnected={!!store?.semrush_api_key}
     >
       {children}
     </DashboardShell>

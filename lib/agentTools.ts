@@ -893,6 +893,94 @@ const getLoyaltyData: AgentTool = {
   },
 }
 
+// ── Tool 15: get_seo_intelligence ─────────────────────────────────────────────
+
+const getSeoIntelligence: AgentTool = {
+  schema: {
+    name: 'get_seo_intelligence',
+    description: 'Get SEMrush SEO data including keyword rankings, competitor analysis, traffic trends, keyword gaps, and lost rankings.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        type: {
+          type: 'string',
+          enum: ['overview', 'keywords', 'competitors', 'gaps', 'lost_rankings'],
+          description: 'What SEO data to retrieve',
+        },
+      },
+      required: ['type'],
+    },
+  },
+  async execute(input, supabase, tenantId) {
+    const type = (input.type as string) ?? 'overview'
+
+    const { data: cache } = await supabase
+      .from('semrush_metrics_cache')
+      .select('*')
+      .eq('tenant_id', tenantId)
+      .maybeSingle()
+
+    if (!cache) {
+      return { error: 'SEMrush not connected or not yet synced', connected: false }
+    }
+
+    if (type === 'overview') {
+      return {
+        connected: true,
+        organic_keywords_total: cache.organic_keywords_total,
+        organic_traffic_estimate: cache.organic_traffic_estimate,
+        authority_score: cache.authority_score,
+        lost_keywords_30d: cache.lost_keywords_30d,
+        gained_keywords_30d: cache.gained_keywords_30d,
+        traffic_trend: cache.traffic_trend,
+        calculated_at: cache.calculated_at,
+      }
+    }
+
+    if (type === 'keywords') {
+      const { data } = await supabase
+        .from('semrush_keywords')
+        .select('keyword, position, previous_position, position_change, search_volume, traffic_percent, url')
+        .eq('tenant_id', tenantId)
+        .order('traffic_percent', { ascending: false })
+        .limit(20)
+      return { top_keywords: data ?? [], keyword_opportunities: cache.keyword_opportunities }
+    }
+
+    if (type === 'competitors') {
+      const { data } = await supabase
+        .from('semrush_competitors')
+        .select('domain, common_keywords, organic_keywords, organic_traffic, competition_level')
+        .eq('tenant_id', tenantId)
+        .order('common_keywords', { ascending: false })
+      return { competitors: data ?? [], top_competitors_summary: cache.top_competitors }
+    }
+
+    if (type === 'gaps') {
+      const { data } = await supabase
+        .from('semrush_keyword_gaps')
+        .select('keyword, competitor_domain, competitor_position, our_position, search_volume, opportunity_score')
+        .eq('tenant_id', tenantId)
+        .order('search_volume', { ascending: false })
+        .limit(20)
+      return { keyword_gaps: data ?? [] }
+    }
+
+    if (type === 'lost_rankings') {
+      const { data } = await supabase
+        .from('semrush_keywords')
+        .select('keyword, position, previous_position, position_change, search_volume')
+        .eq('tenant_id', tenantId)
+        .gt('position_change', 5)
+        .order('search_volume', { ascending: false })
+        .limit(20)
+      return { lost_rankings: data ?? [], lost_keywords_30d: cache.lost_keywords_30d }
+    }
+
+    return { error: 'Unknown type' }
+  },
+}
+
 // ── Exported tools list ───────────────────────────────────────────────────────
 
 export const agentTools: AgentTool[] = [
@@ -910,6 +998,7 @@ export const agentTools: AgentTool[] = [
   getBusinessHealthScore,
   getSubscriptionData,
   getLoyaltyData,
+  getSeoIntelligence,
 ]
 
 export const toolSchemas = agentTools.map((t) => t.schema)

@@ -16,6 +16,7 @@ interface DashboardShellProps {
   googleAdsConnected: boolean
   rechargeConnected: boolean
   loyaltylionConnected: boolean
+  semrushConnected: boolean
 }
 
 export default function DashboardShell({
@@ -29,10 +30,11 @@ export default function DashboardShell({
   googleAdsConnected,
   rechargeConnected,
   loyaltylionConnected,
+  semrushConnected,
 }: DashboardShellProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
-  const navProps = { klaviyoConnected, gscConnected, ga4Connected, metaConnected, googleAdsConnected, rechargeConnected, loyaltylionConnected }
+  const navProps = { klaviyoConnected, gscConnected, ga4Connected, metaConnected, googleAdsConnected, rechargeConnected, loyaltylionConnected, semrushConnected }
 
   return (
     <div className="flex h-full">

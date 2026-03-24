@@ -19,6 +19,8 @@ interface Props {
   googleAdsCustomerId: string | null
   rechargeConnected: boolean
   loyaltylionConnected: boolean
+  semrushConnected: boolean
+  semrushDomain: string | null
 }
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
@@ -789,6 +791,96 @@ function LoyaltyLionModal({ onClose, onSuccess }: { onClose: () => void; onSucce
   )
 }
 
+// ── SEMrush Connect Modal ─────────────────────────────────────────────────────
+
+function SemrushModal({ onClose, onSuccess, shopifyDomain }: { onClose: () => void; onSuccess: () => void; shopifyDomain: string | null }) {
+  const [apiKey, setApiKey] = useState('')
+  const [domain, setDomain] = useState(shopifyDomain?.replace('.myshopify.com', '') ?? '')
+  const [showKey, setShowKey] = useState(false)
+  const [testState, setTestState] = useState<'idle' | 'testing' | 'ok' | 'fail'>('idle')
+  const [testMsg, setTestMsg] = useState('')
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'done'>('idle')
+
+  const inputCls = 'w-full rounded-lg border border-cream-3 bg-cream px-3 py-2 text-sm text-ink focus:border-teal focus:outline-none focus:ring-1 focus:ring-teal transition'
+
+  async function handleTest() {
+    if (!apiKey.trim() || !domain.trim()) return
+    setTestState('testing'); setTestMsg('')
+    try {
+      const res = await fetch('/api/semrush/test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ apiKey, domain }) })
+      const data = await res.json() as { ok?: boolean; message?: string }
+      if (data.ok) { setTestState('ok'); setTestMsg(data.message ?? 'Connection successful') }
+      else { setTestState('fail'); setTestMsg(data.message ?? 'Connection failed') }
+    } catch { setTestState('fail'); setTestMsg('Network error') }
+  }
+
+  async function handleSave() {
+    if (!apiKey.trim() || !domain.trim()) return
+    setSaveState('saving')
+    try {
+      const res = await fetch('/api/semrush/connect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ apiKey, domain }) })
+      const data = await res.json() as { ok?: boolean; error?: string }
+      if (data.error) { setSaveState('idle'); showToast(`Error: ${data.error}`); return }
+      setSaveState('done')
+      fetch('/api/semrush/sync', { method: 'POST' }).catch(() => null)
+      onSuccess()
+    } catch { setSaveState('idle'); showToast('Network error') }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-charcoal/50 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative z-10 w-full max-w-md rounded-2xl bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b border-cream-2 px-6 py-5">
+          <div className="flex items-center gap-3">
+            <div className="h-8 w-8 rounded-lg bg-[#FF642D] flex items-center justify-center">
+              <span className="text-xs font-bold text-white">S</span>
+            </div>
+            <h2 className="font-display text-lg font-semibold text-ink">Connect SEMrush</h2>
+          </div>
+          <button onClick={onClose} className="rounded-lg p-1.5 hover:bg-cream-2 transition text-ink-3">
+            <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 0 1 1.414 0L10 8.586l4.293-4.293a1 1 0 1 1 1.414 1.414L11.414 10l4.293 4.293a1 1 0 0 1-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 0 1-1.414-1.414L8.586 10 4.293 5.707a1 1 0 0 1 0-1.414z" clipRule="evenodd"/></svg>
+          </button>
+        </div>
+        <div className="px-6 py-5 space-y-4">
+          <div className="rounded-xl bg-orange-50 border border-orange-100 px-4 py-3 text-xs text-orange-900 space-y-1">
+            <p className="font-semibold">How to find your API key:</p>
+            <p>Go to <strong>semrush.com/accounts/profile/api</strong> to find your API key.</p>
+            <p>Each sync consumes ~50–150 API units. Sync when you need fresh data.</p>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-ink-2 mb-1">API Key *</label>
+            <div className="relative">
+              <input type={showKey ? 'text' : 'password'} value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" className={inputCls + ' pr-10'} />
+              <button type="button" onClick={() => setShowKey((v) => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-3 hover:text-ink">
+                <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path d="M10 12a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"/><path fillRule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 1 1-8 0 4 4 0 0 1 8 0z" clipRule="evenodd"/></svg>
+              </button>
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-ink-2 mb-1">Domain to analyze *</label>
+            <input type="text" value={domain} onChange={(e) => setDomain(e.target.value)} placeholder="yourdomain.com" className={inputCls} />
+            <p className="mt-1 text-xs text-ink-3">Your root domain without www or https (e.g. lashboxla.com)</p>
+          </div>
+          {testMsg && (
+            <div className={`rounded-lg px-3 py-2.5 text-xs ${testState === 'ok' ? 'bg-teal-pale text-teal-deep' : 'bg-red-50 text-red-700'}`}>
+              {testState === 'ok' ? '✓ ' : '✗ '}{testMsg}
+            </div>
+          )}
+          <div className="flex gap-2 pt-1">
+            <button onClick={handleTest} disabled={!apiKey.trim() || !domain.trim() || testState === 'testing'} className="flex-1 rounded-lg border border-cream-3 px-4 py-2.5 text-sm font-medium text-ink-2 hover:bg-cream disabled:opacity-50 transition">
+              {testState === 'testing' ? <span className="flex items-center justify-center gap-2"><span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-cream-3 border-t-teal" />Testing…</span> : 'Test Connection'}
+            </button>
+            <button onClick={handleSave} disabled={!apiKey.trim() || !domain.trim() || saveState === 'saving' || saveState === 'done'} className="flex-1 rounded-lg bg-[#FF642D] px-4 py-2.5 text-sm font-semibold text-white hover:bg-orange-700 disabled:opacity-50 transition">
+              {saveState === 'saving' ? <span className="flex items-center justify-center gap-2"><span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white/40 border-t-white" />Saving…</span> : saveState === 'done' ? '✓ Connected' : 'Save & Sync'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function IntegrationsClient({
@@ -807,6 +899,8 @@ export default function IntegrationsClient({
   googleAdsCustomerId,
   rechargeConnected,
   loyaltylionConnected,
+  semrushConnected,
+  semrushDomain,
 }: Props) {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -817,6 +911,7 @@ export default function IntegrationsClient({
   const [showGoogleAdsModal, setShowGoogleAdsModal] = useState(false)
   const [showRechargeModal, setShowRechargeModal] = useState(false)
   const [showLoyaltyLionModal, setShowLoyaltyLionModal] = useState(false)
+  const [showSemrushModal, setShowSemrushModal] = useState(false)
   const [disconnectingGsc, setDisconnectingGsc] = useState(false)
 
   // Handle OAuth callback toasts
@@ -888,6 +983,7 @@ export default function IntegrationsClient({
       {showGoogleAdsModal && <GoogleAdsModal onClose={() => setShowGoogleAdsModal(false)} onSuccess={() => { setShowGoogleAdsModal(false); router.refresh() }} />}
       {showRechargeModal && <RechargeModal onClose={() => setShowRechargeModal(false)} onSuccess={() => { setShowRechargeModal(false); showToast('Recharge connected — syncing now…'); router.refresh() }} />}
       {showLoyaltyLionModal && <LoyaltyLionModal onClose={() => setShowLoyaltyLionModal(false)} onSuccess={() => { setShowLoyaltyLionModal(false); showToast('LoyaltyLion connected — syncing now…'); router.refresh() }} />}
+      {showSemrushModal && <SemrushModal onClose={() => setShowSemrushModal(false)} onSuccess={() => { setShowSemrushModal(false); showToast('SEMrush connected — initial sync started'); router.refresh() }} shopifyDomain={shopifyDomain} />}
 
       <div className="space-y-8">
         {/* E-Commerce */}
@@ -1058,6 +1154,29 @@ export default function IntegrationsClient({
                 <button onClick={() => showToast('Triple Whale integration coming soon')} className="text-xs text-teal hover:text-teal-dark font-medium transition">
                   Join waitlist
                 </button>
+              }
+            />
+            <IntegrationCard
+              name="SEMrush"
+              description="Track organic keyword rankings, competitor analysis, keyword gap opportunities, lost rankings, and backlink authority. Unlocks SEO Intelligence in the sidebar."
+              logo={
+                <div className="h-6 w-6 rounded-lg bg-[#FF642D] flex items-center justify-center">
+                  <span className="text-xs font-bold text-white">S</span>
+                </div>
+              }
+              status={semrushConnected ? 'connected' : 'not_connected'}
+              meta={semrushConnected ? `Tracking: ${semrushDomain ?? 'domain connected'}` : undefined}
+              action={
+                semrushConnected ? (
+                  <div className="flex items-center gap-3">
+                    <a href="/dashboard/semrush" className="text-xs text-teal hover:text-teal-dark font-medium transition">View dashboard →</a>
+                    <button onClick={() => setShowSemrushModal(true)} className="text-xs text-ink-3 hover:text-ink transition">Update key</button>
+                  </div>
+                ) : (
+                  <button onClick={() => setShowSemrushModal(true)} className="inline-flex items-center rounded-lg bg-[#FF642D] px-3 py-1.5 text-xs font-semibold text-white hover:bg-orange-700 transition">
+                    Connect SEMrush
+                  </button>
+                )
               }
             />
           </div>

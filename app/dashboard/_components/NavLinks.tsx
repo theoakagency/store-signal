@@ -75,6 +75,7 @@ export default function NavLinks({
   googleAdsConnected,
   rechargeConnected,
   loyaltylionConnected,
+  semrushConnected,
 }: {
   onNavigate?: () => void
   klaviyoConnected?: boolean
@@ -84,6 +85,7 @@ export default function NavLinks({
   googleAdsConnected?: boolean
   rechargeConnected?: boolean
   loyaltylionConnected?: boolean
+  semrushConnected?: boolean
 }) {
   const pathname = usePathname()
 
@@ -140,6 +142,20 @@ export default function NavLinks({
       <div className="mt-4 mb-1 px-3">
         <p className="text-[10px] font-data uppercase tracking-widest text-cream/25">Analytics</p>
       </div>
+
+      <Link
+        href="/dashboard/semrush"
+        onClick={onNavigate}
+        className={`nav-link ${pathname.startsWith('/dashboard/semrush') ? 'active' : ''}`}
+      >
+        <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+          <circle cx="6.5" cy="6.5" r="4" />
+          <path d="M10 10l3.5 3.5" strokeLinecap="round" />
+          <path d="M4.5 6.5h4M6.5 4.5v4" strokeLinecap="round" />
+        </svg>
+        SEO Intelligence
+        <span className={`ml-auto h-1.5 w-1.5 rounded-full ${semrushConnected ? 'bg-teal' : 'bg-cream/20'}`} />
+      </Link>
 
       <Link
         href="/dashboard/analytics"

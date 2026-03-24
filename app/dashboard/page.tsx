@@ -99,6 +99,7 @@ export default async function DashboardPage() {
     { data: channelRows },
     { data: execInsightsCache },
     { data: metricsCache },
+    { data: semrushCache },
   ] = await Promise.all([
     supabase
       .from('orders')
@@ -123,7 +124,7 @@ export default async function DashboardPage() {
       .limit(10),
     supabase
       .from('stores')
-      .select('klaviyo_api_key')
+      .select('klaviyo_api_key, semrush_api_key')
       .eq('id', '00000000-0000-0000-0000-000000000002')
       .single(),
     supabase
@@ -158,12 +159,27 @@ export default async function DashboardPage() {
       .select('metric_name, metric_value, metric_metadata')
       .eq('store_id', STORE_ID)
       .in('metric_name', ['revenue_by_month', 'customer_count']),
+    service
+      .from('semrush_metrics_cache')
+      .select('organic_keywords_total, organic_traffic_estimate, authority_score, top_competitors, calculated_at')
+      .eq('tenant_id', TENANT_ID)
+      .maybeSingle(),
   ])
 
   const curr = currentRows ?? []
   const prior = priorRows ?? []
   const orders = (recentOrders ?? []) as Order[]
   const customers = (topCustomers ?? []) as Customer[]
+
+  // SEMrush derived data
+  const semrushConnected = !!storeRow?.semrush_api_key
+  const semrushData = semrushCache as {
+    organic_keywords_total: number | null
+    organic_traffic_estimate: number | null
+    authority_score: number | null
+    top_competitors: Array<{ domain: string; common_keywords: number }> | null
+    calculated_at: string | null
+  } | null
 
   // Klaviyo derived data
   const klaviyoConnected = !!storeRow?.klaviyo_api_key
@@ -329,6 +345,71 @@ export default async function DashboardPage() {
           </div>
         )}
       </section>
+
+      {/* SEO Intelligence card */}
+      {semrushConnected && semrushData && (
+        <section className="rounded-2xl border border-cream-3 bg-white p-6 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <h2 className="font-display text-base font-semibold text-ink">SEO Intelligence</h2>
+              <span className="inline-flex items-center rounded-full bg-[#FF642D]/10 px-2 py-0.5 text-xs font-medium text-[#FF642D]">SEMrush</span>
+            </div>
+            <Link href="/dashboard/semrush" className="font-data text-xs text-teal-deep hover:underline">
+              View full report →
+            </Link>
+          </div>
+          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div className="rounded-xl border border-cream-2 bg-cream px-4 py-3">
+              <p className="font-data text-xs uppercase tracking-wider text-ink-3">Organic Keywords</p>
+              <p className="mt-1 font-display text-xl font-semibold text-ink">
+                {(semrushData.organic_keywords_total ?? 0).toLocaleString()}
+              </p>
+            </div>
+            <div className="rounded-xl border border-cream-2 bg-cream px-4 py-3">
+              <p className="font-data text-xs uppercase tracking-wider text-ink-3">Est. Monthly Traffic</p>
+              <p className="mt-1 font-display text-xl font-semibold text-ink">
+                {semrushData.organic_traffic_estimate != null
+                  ? semrushData.organic_traffic_estimate >= 1000
+                    ? `${(semrushData.organic_traffic_estimate / 1000).toFixed(0)}K`
+                    : String(semrushData.organic_traffic_estimate)
+                  : '—'}
+              </p>
+            </div>
+            <div className="rounded-xl border border-cream-2 bg-cream px-4 py-3">
+              <p className="font-data text-xs uppercase tracking-wider text-ink-3">Authority Score</p>
+              <p className="mt-1 font-display text-xl font-semibold text-ink">
+                {semrushData.authority_score ?? '—'}
+              </p>
+            </div>
+            <div className="rounded-xl border border-cream-2 bg-cream px-4 py-3">
+              <p className="font-data text-xs uppercase tracking-wider text-ink-3">Top Competitor</p>
+              <p className="mt-1 text-sm font-medium text-ink truncate">
+                {semrushData.top_competitors?.[0]?.domain ?? '—'}
+              </p>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {!semrushConnected && (
+        <section className="rounded-2xl border border-cream-3 bg-white p-6 shadow-sm">
+          <div className="flex items-center justify-between">
+            <h2 className="font-display text-base font-semibold text-ink">SEO Intelligence</h2>
+          </div>
+          <div className="mt-4 flex items-center gap-3 rounded-xl border border-dashed border-cream-3 bg-cream px-5 py-4">
+            <svg className="h-5 w-5 shrink-0 text-ink-3" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <circle cx="9" cy="9" r="6" /><path d="m15 15 3 3" strokeLinecap="round" />
+            </svg>
+            <div>
+              <p className="text-sm font-medium text-ink">Connect SEMrush to unlock SEO insights</p>
+              <p className="text-xs text-ink-3 mt-0.5">
+                Track keyword rankings, competitors, and organic traffic trends.{' '}
+                <Link href="/dashboard/integrations" className="text-teal-deep hover:underline">Set up integration →</Link>
+              </p>
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Top customers + recent orders */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
