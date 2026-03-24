@@ -6,7 +6,6 @@ import { NextRequest } from 'next/server'
 import { createSupabaseServerClient, createSupabaseServiceClient } from '@/lib/supabase'
 import {
   getSubscriptions,
-  getCharges,
   toMonthlyRevenue,
   type RechargeSubscription,
 } from '@/lib/recharge'
@@ -40,17 +39,14 @@ export async function POST(_req: NextRequest) {
   const apiToken = (store as { recharge_api_token: string | null } | null)?.recharge_api_token
   if (!apiToken) return Response.json({ error: 'Recharge not connected' }, { status: 400 })
 
-  // ── Fetch subscriptions ──────────────────────────────────────────────────────
+  // ── Fetch subscriptions (active + cancelled only — expired unused in metrics) ─
   let active: Awaited<ReturnType<typeof getSubscriptions>>
   let cancelled: Awaited<ReturnType<typeof getSubscriptions>>
-  let expired: Awaited<ReturnType<typeof getSubscriptions>>
-  let charges: Awaited<ReturnType<typeof getCharges>>
 
   try {
-    ;[active, cancelled, expired] = await Promise.all([
+    ;[active, cancelled] = await Promise.all([
       getSubscriptions(apiToken, 'ACTIVE'),
       getSubscriptions(apiToken, 'CANCELLED'),
-      getSubscriptions(apiToken, 'EXPIRED'),
     ])
   } catch (e) {
     const msg = (e as Error).message
@@ -58,19 +54,7 @@ export async function POST(_req: NextRequest) {
     return Response.json({ error: `Subscription fetch failed: ${msg}` }, { status: 502 })
   }
 
-  const allSubscriptions = [...active, ...cancelled, ...expired]
-
-  // ── Fetch last 12 months of charges ─────────────────────────────────────────
-  const twelveMonthsAgo = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString()
-  const now = new Date().toISOString()
-
-  try {
-    charges = await getCharges(apiToken, { from: twelveMonthsAgo, to: now })
-  } catch (e) {
-    const msg = (e as Error).message
-    console.error('Recharge charges fetch error:', msg)
-    return Response.json({ error: `Charges fetch failed: ${msg}` }, { status: 502 })
-  }
+  const allSubscriptions = [...active, ...cancelled]
 
   // ── Upsert subscriptions ─────────────────────────────────────────────────────
   if (allSubscriptions.length > 0) {
@@ -91,21 +75,6 @@ export async function POST(_req: NextRequest) {
       next_charge_scheduled_at: s.next_charge_scheduled_at ?? null,
     }))
     await service.from('recharge_subscriptions').upsert(rows, { onConflict: 'id' })
-  }
-
-  // ── Upsert charges ───────────────────────────────────────────────────────────
-  if (charges.length > 0) {
-    const chargeRows = charges.map((c) => ({
-      id: String(c.id),
-      tenant_id: TENANT_ID,
-      subscription_id: c.subscription_id ? String(c.subscription_id) : null,
-      customer_email: c.customer?.email ?? null,
-      status: c.status,
-      total_price: parseFloat(c.total_price),
-      scheduled_at: c.scheduled_at,
-      processed_at: c.processed_at ?? null,
-    }))
-    await service.from('recharge_charges').upsert(chargeRows, { onConflict: 'id' })
   }
 
   // ── Compute metrics ──────────────────────────────────────────────────────────
@@ -289,7 +258,6 @@ export async function POST(_req: NextRequest) {
     ok: true,
     synced: {
       subscriptions: allSubscriptions.length,
-      charges: charges.length,
     },
     metrics: {
       active_subscribers: activeSubscribers,
@@ -299,7 +267,6 @@ export async function POST(_req: NextRequest) {
     },
     _debug: {
       sample_subscription: allSubscriptions[0] ?? null,
-      sample_charge: charges[0] ?? null,
     },
   })
 }
