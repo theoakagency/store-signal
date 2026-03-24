@@ -111,6 +111,17 @@ export interface SemrushTrafficMonth {
   organicTraffic: number
 }
 
+// ── Column name helper ────────────────────────────────────────────────────────
+// SEMrush returns full human-readable column names regardless of the short codes
+// used in export_columns. This helper tries each candidate name in order.
+
+function col(row: Record<string, string>, ...names: string[]): string {
+  for (const name of names) {
+    if (row[name] !== undefined && row[name] !== '') return row[name]
+  }
+  return ''
+}
+
 // ── Public API functions ──────────────────────────────────────────────────────
 
 export async function getDomainOverview(apiKey: string, domain: string): Promise<SemrushDomainOverview> {
@@ -122,12 +133,12 @@ export async function getDomainOverview(apiKey: string, domain: string): Promise
   })
   const row = rows[0] ?? {}
   return {
-    organicKeywords: parseInt(row['Or'] ?? '0', 10) || 0,
-    organicTraffic: parseInt(row['Ot'] ?? '0', 10) || 0,
-    organicCost: parseFloat(row['Oc'] ?? '0') || 0,
-    paidKeywords: parseInt(row['Ad'] ?? '0', 10) || 0,
-    paidTraffic: parseInt(row['At'] ?? '0', 10) || 0,
-    rank: parseInt(row['Rk'] ?? '0', 10) || 0,
+    organicKeywords: parseInt(col(row, 'Organic Keywords', 'Or') || '0', 10) || 0,
+    organicTraffic: parseInt(col(row, 'Organic Traffic', 'Ot') || '0', 10) || 0,
+    organicCost: parseFloat(col(row, 'Organic Cost', 'Oc') || '0') || 0,
+    paidKeywords: parseInt(col(row, 'Adwords Keywords', 'Ad') || '0', 10) || 0,
+    paidTraffic: parseInt(col(row, 'Adwords Traffic', 'At') || '0', 10) || 0,
+    rank: parseInt(col(row, 'Rank', 'Rk') || '0', 10) || 0,
   }
 }
 
@@ -145,15 +156,15 @@ export async function getOrganicKeywords(
     display_sort: 'tr_desc',
   })
   return rows.map((r) => ({
-    keyword: r['Ph'] ?? '',
-    position: parseInt(r['Po'] ?? '0', 10) || 0,
-    previousPosition: parseInt(r['Pp'] ?? '0', 10) || 0,
-    positionChange: parseInt(r['Pd'] ?? '0', 10) || 0,
-    searchVolume: parseInt(r['Nq'] ?? '0', 10) || 0,
-    cpc: parseFloat(r['Cp'] ?? '0') || 0,
-    url: r['Ur'] ?? '',
-    trafficPercent: parseFloat(r['Tr'] ?? '0') || 0,
-    competition: parseFloat(r['Co'] ?? '0') || 0,
+    keyword: col(r, 'Keyword', 'Ph'),
+    position: parseInt(col(r, 'Position', 'Po') || '0', 10) || 0,
+    previousPosition: parseInt(col(r, 'Previous Position', 'Pp') || '0', 10) || 0,
+    positionChange: parseInt(col(r, 'Difference', 'Position Difference', 'Pd') || '0', 10) || 0,
+    searchVolume: parseInt(col(r, 'Search Volume', 'Nq') || '0', 10) || 0,
+    cpc: parseFloat(col(r, 'CPC', 'Cp') || '0') || 0,
+    url: col(r, 'URL', 'Ur'),
+    trafficPercent: parseFloat(col(r, 'Traffic (%)', 'Traffic', 'Tr') || '0') || 0,
+    competition: parseFloat(col(r, 'Competition', 'Co') || '0') || 0,
   })).filter((k) => k.keyword)
 }
 
@@ -172,15 +183,15 @@ export async function getKeywordPositionChanges(
     display_filter: '%2B%7CPd%7CLt%7C0', // Pd < 0 (position increased in number = lost ranking)
   })
   return rows.map((r) => ({
-    keyword: r['Ph'] ?? '',
-    position: parseInt(r['Po'] ?? '0', 10) || 0,
-    previousPosition: parseInt(r['Pp'] ?? '0', 10) || 0,
-    positionChange: parseInt(r['Pd'] ?? '0', 10) || 0,
-    searchVolume: parseInt(r['Nq'] ?? '0', 10) || 0,
-    cpc: parseFloat(r['Cp'] ?? '0') || 0,
-    url: r['Ur'] ?? '',
-    trafficPercent: parseFloat(r['Tr'] ?? '0') || 0,
-    competition: parseFloat(r['Co'] ?? '0') || 0,
+    keyword: col(r, 'Keyword', 'Ph'),
+    position: parseInt(col(r, 'Position', 'Po') || '0', 10) || 0,
+    previousPosition: parseInt(col(r, 'Previous Position', 'Pp') || '0', 10) || 0,
+    positionChange: parseInt(col(r, 'Difference', 'Position Difference', 'Pd') || '0', 10) || 0,
+    searchVolume: parseInt(col(r, 'Search Volume', 'Nq') || '0', 10) || 0,
+    cpc: parseFloat(col(r, 'CPC', 'Cp') || '0') || 0,
+    url: col(r, 'URL', 'Ur'),
+    trafficPercent: parseFloat(col(r, 'Traffic (%)', 'Traffic', 'Tr') || '0') || 0,
+    competition: parseFloat(col(r, 'Competition', 'Co') || '0') || 0,
   })).filter((k) => k.keyword)
 }
 
@@ -193,12 +204,12 @@ export async function getCompetitors(apiKey: string, domain: string): Promise<Se
     display_limit: '10',
   })
   return rows.map((r) => ({
-    domain: r['Dn'] ?? '',
-    competitionLevel: parseFloat(r['Cr'] ?? '0') || 0,
-    commonKeywords: parseInt(r['Np'] ?? '0', 10) || 0,
-    organicKeywords: parseInt(r['Or'] ?? '0', 10) || 0,
-    organicTraffic: parseInt(r['Ot'] ?? '0', 10) || 0,
-    organicCost: parseFloat(r['Oc'] ?? '0') || 0,
+    domain: col(r, 'Domain', 'Dn'),
+    competitionLevel: parseFloat(col(r, 'Competition Level', 'Competitor Relevance', 'Cr') || '0') || 0,
+    commonKeywords: parseInt(col(r, 'Common Keywords', 'Np') || '0', 10) || 0,
+    organicKeywords: parseInt(col(r, 'Organic Keywords', 'Or') || '0', 10) || 0,
+    organicTraffic: parseInt(col(r, 'Organic Traffic', 'Ot') || '0', 10) || 0,
+    organicCost: parseFloat(col(r, 'Organic Cost', 'Oc') || '0') || 0,
   })).filter((c) => c.domain)
 }
 
@@ -231,16 +242,16 @@ export async function getKeywordGap(
 
   const ourPositions = new Map<string, number>()
   for (const r of ourRows) {
-    const kw = r['Ph'] ?? ''
-    if (kw) ourPositions.set(kw.toLowerCase(), parseInt(r['Po'] ?? '100', 10) || 100)
+    const kw = col(r, 'Keyword', 'Ph')
+    if (kw) ourPositions.set(kw.toLowerCase(), parseInt(col(r, 'Position', 'Po') || '100', 10) || 100)
   }
 
   const gaps: SemrushKeywordGap[] = []
   for (const r of competitorRows) {
-    const keyword = r['Ph'] ?? ''
+    const keyword = col(r, 'Keyword', 'Ph')
     if (!keyword) continue
-    const compPos = parseInt(r['Po'] ?? '0', 10) || 0
-    const volume = parseInt(r['Nq'] ?? '0', 10) || 0
+    const compPos = parseInt(col(r, 'Position', 'Po') || '0', 10) || 0
+    const volume = parseInt(col(r, 'Search Volume', 'Nq') || '0', 10) || 0
     const ourPos = ourPositions.get(keyword.toLowerCase()) ?? null
 
     // Gap: competitor in 1-10, we're outside top 20 or not ranking
@@ -271,10 +282,10 @@ export async function getBacklinkOverview(apiKey: string, domain: string): Promi
   })
   const row = rows[0] ?? {}
   return {
-    totalBacklinks: parseInt(row['total'] ?? '0', 10) || 0,
-    referringDomains: parseInt(row['domains_num'] ?? '0', 10) || 0,
-    referringUrls: parseInt(row['urls_num'] ?? '0', 10) || 0,
-    referringIps: parseInt(row['ips_num'] ?? '0', 10) || 0,
+    totalBacklinks: parseInt(col(row, 'Total', 'Backlinks', 'total') || '0', 10) || 0,
+    referringDomains: parseInt(col(row, 'Domains', 'Referring Domains', 'domains_num') || '0', 10) || 0,
+    referringUrls: parseInt(col(row, 'URLs', 'Referring URLs', 'urls_num') || '0', 10) || 0,
+    referringIps: parseInt(col(row, 'IPs', 'Referring IPs', 'ips_num') || '0', 10) || 0,
   }
 }
 
@@ -287,9 +298,9 @@ export async function getTrafficTrend(apiKey: string, domain: string): Promise<S
     display_limit: '12',
   })
   return rows.map((r) => ({
-    date: r['Dt'] ?? '',
-    organicKeywords: parseInt(r['Or'] ?? '0', 10) || 0,
-    organicTraffic: parseInt(r['Ot'] ?? '0', 10) || 0,
+    date: col(r, 'Date', 'Dt'),
+    organicKeywords: parseInt(col(r, 'Organic Keywords', 'Or') || '0', 10) || 0,
+    organicTraffic: parseInt(col(r, 'Organic Traffic', 'Ot') || '0', 10) || 0,
   })).filter((m) => m.date).reverse() // oldest → newest
 }
 
