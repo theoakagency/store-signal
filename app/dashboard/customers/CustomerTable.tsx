@@ -55,6 +55,18 @@ interface Props {
   overlapData: OverlapData | null
   ltvCounts: Record<string, { count: number; totalRevenue: number }>
   totalRevenueAll: number
+  activeSegment: string
+  activeVenn: string | null
+}
+
+const VENN_LABELS: Record<string, string> = {
+  subscribers_only: 'Subscribers Only',
+  loyalty_only:     'Loyalty Only',
+  vip_only:         'VIP Only',
+  sub_loyalty:      'Subscribers + Loyalty',
+  sub_vip:          'Subscribers + VIP',
+  loyalty_vip:      'Loyalty + VIP',
+  all_three:        'All Three Platforms',
 }
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -90,69 +102,151 @@ function fmt(n: number) {
 
 // ── Venn Diagram ───────────────────────────────────────────────────────────────
 
-function VennDiagram({ data, onSelectAll }: { data: OverlapData; onSelectAll: () => void }) {
+function VennDiagram({
+  data,
+  activeVenn,
+  onVennClick,
+}: {
+  data: OverlapData
+  activeVenn: string | null
+  onVennClick: (key: string) => void
+}) {
   const fmtN = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n)
+
+  // Which circles are involved in the current selection
+  const subInvolved  = !activeVenn || ['subscribers_only', 'sub_loyalty', 'sub_vip', 'all_three'].includes(activeVenn)
+  const loyInvolved  = !activeVenn || ['loyalty_only', 'sub_loyalty', 'loyalty_vip', 'all_three'].includes(activeVenn)
+  const vipInvolved  = !activeVenn || ['vip_only', 'sub_vip', 'loyalty_vip', 'all_three'].includes(activeVenn)
+  const hasSelection = !!activeVenn
+
+  // Circle visual state
+  const subFillOp   = subInvolved ? 0.18 : 0.04
+  const loyFillOp   = loyInvolved ? 0.18 : 0.04
+  const vipFillOp   = vipInvolved ? 0.14 : 0.03
+  const subStrokeOp = subInvolved ? (hasSelection ? 0.8 : 0.4) : 0.15
+  const loyStrokeOp = loyInvolved ? (hasSelection ? 0.8 : 0.4) : 0.15
+  const vipStrokeOp = vipInvolved ? (hasSelection ? 0.7 : 0.35) : 0.12
+  const subSW       = subInvolved && hasSelection ? 2.5 : 1.5
+  const loySW       = loyInvolved && hasSelection ? 2.5 : 1.5
+  const vipSW       = vipInvolved && hasSelection ? 2.5 : 1.5
+
+  function sectionTextColor(key: string, defaultColor: string) {
+    return activeVenn === key ? '#0D9B8A' : defaultColor
+  }
+  function sectionFW(key: string): string {
+    return activeVenn === key ? '700' : '500'
+  }
 
   return (
     <div className="rounded-2xl border border-cream-3 bg-white p-6 shadow-sm">
       <div className="flex items-start justify-between mb-4 flex-wrap gap-3">
         <div>
           <h2 className="font-display text-base font-semibold text-ink">Customer Overlap</h2>
-          <p className="text-xs text-ink-3 mt-0.5">Cross-platform membership across {data.total_customers.toLocaleString()} unique buyers</p>
+          <p className="text-xs text-ink-3 mt-0.5">Click any section to filter the table · {data.total_customers.toLocaleString()} unique buyers</p>
         </div>
-        {data.all_three > 0 && (
-          <button
-            onClick={onSelectAll}
-            className="text-xs font-medium text-[#FF642D] hover:underline"
-          >
-            View all-three segment →
-          </button>
-        )}
       </div>
 
       <div className="flex flex-col lg:flex-row gap-6 items-center">
-        {/* SVG Venn */}
+        {/* Interactive SVG Venn */}
         <div className="shrink-0">
-          <svg viewBox="0 0 320 270" width="320" height="270" className="overflow-visible">
-            <circle cx="130" cy="120" r="90" fill="#0D9B8A" fillOpacity="0.15" stroke="#0D9B8A" strokeWidth="1.5" strokeOpacity="0.4" />
-            <circle cx="210" cy="120" r="90" fill="#F59E0B" fillOpacity="0.15" stroke="#F59E0B" strokeWidth="1.5" strokeOpacity="0.4" />
-            <circle cx="170" cy="185" r="90" fill="#2C2C2C" fillOpacity="0.12" stroke="#2C2C2C" strokeWidth="1.5" strokeOpacity="0.35" />
+          <svg viewBox="0 0 320 280" width="320" height="280" className="overflow-visible">
+            {/* Base circles */}
+            <circle cx="130" cy="120" r="90" fill="#0D9B8A" fillOpacity={subFillOp} stroke="#0D9B8A" strokeWidth={subSW} strokeOpacity={subStrokeOp} />
+            <circle cx="210" cy="120" r="90" fill="#F59E0B" fillOpacity={loyFillOp} stroke="#F59E0B" strokeWidth={loySW} strokeOpacity={loyStrokeOp} />
+            <circle cx="170" cy="185" r="90" fill="#2C2C2C" fillOpacity={vipFillOp} stroke="#2C2C2C" strokeWidth={vipSW} strokeOpacity={vipStrokeOp} />
 
-            <text x="75"  y="100" textAnchor="middle" fontSize="11" fill="#0D9B8A" fontWeight="600">{fmtN(data.subscribers_only)}</text>
-            <text x="75"  y="115" textAnchor="middle" fontSize="9"  fill="#0D9B8A" opacity="0.8">only</text>
-            <text x="265" y="100" textAnchor="middle" fontSize="11" fill="#B45309" fontWeight="600">{fmtN(data.loyalty_only)}</text>
-            <text x="265" y="115" textAnchor="middle" fontSize="9"  fill="#B45309" opacity="0.8">only</text>
-            <text x="170" y="255" textAnchor="middle" fontSize="11" fill="#2C2C2C" fontWeight="600">{fmtN(data.vip_only)}</text>
-            <text x="170" y="270" textAnchor="middle" fontSize="9"  fill="#2C2C2C" opacity="0.8">only</text>
-            <text x="170" y="90"  textAnchor="middle" fontSize="10" fill="#374151" fontWeight="500">{fmtN(data.subscriber_and_loyalty)}</text>
-            <text x="110" y="185" textAnchor="middle" fontSize="10" fill="#374151" fontWeight="500">{fmtN(data.subscriber_and_vip)}</text>
-            <text x="230" y="185" textAnchor="middle" fontSize="10" fill="#374151" fontWeight="500">{fmtN(data.loyalty_and_vip)}</text>
-            <text x="170" y="148" textAnchor="middle" fontSize="14" fill="#1a1a1a" fontWeight="700">{fmtN(data.all_three)}</text>
+            {/* subscribers_only */}
+            <g onClick={() => onVennClick('subscribers_only')} style={{ cursor: 'pointer' }}>
+              {activeVenn === 'subscribers_only' && <rect x="40" y="92" width="70" height="30" rx="4" fill="#0D9B8A" fillOpacity="0.18" />}
+              <text x="75" y="104" textAnchor="middle" fontSize="12" fill="#0D9B8A" fontWeight={activeVenn === 'subscribers_only' ? '700' : '600'}>{fmtN(data.subscribers_only)}</text>
+              <text x="75" y="117" textAnchor="middle" fontSize="9"  fill="#0D9B8A" opacity="0.8">only</text>
+            </g>
 
-            <text x="65"  y="38"  textAnchor="middle" fontSize="10" fill="#0D9B8A" fontWeight="600">Subscribers</text>
-            <text x="275" y="38"  textAnchor="middle" fontSize="10" fill="#B45309" fontWeight="600">Loyalty</text>
-            <text x="170" y="12"  textAnchor="middle" fontSize="10" fill="#2C2C2C" fontWeight="600">VIP Spenders</text>
+            {/* loyalty_only */}
+            <g onClick={() => onVennClick('loyalty_only')} style={{ cursor: 'pointer' }}>
+              {activeVenn === 'loyalty_only' && <rect x="230" y="92" width="70" height="30" rx="4" fill="#F59E0B" fillOpacity="0.18" />}
+              <text x="265" y="104" textAnchor="middle" fontSize="12" fill="#B45309" fontWeight={activeVenn === 'loyalty_only' ? '700' : '600'}>{fmtN(data.loyalty_only)}</text>
+              <text x="265" y="117" textAnchor="middle" fontSize="9"  fill="#B45309" opacity="0.8">only</text>
+            </g>
+
+            {/* vip_only */}
+            <g onClick={() => onVennClick('vip_only')} style={{ cursor: 'pointer' }}>
+              {activeVenn === 'vip_only' && <rect x="135" y="249" width="70" height="28" rx="4" fill="#2C2C2C" fillOpacity="0.1" />}
+              <text x="170" y="260" textAnchor="middle" fontSize="12" fill="#2C2C2C" fontWeight={activeVenn === 'vip_only' ? '700' : '600'}>{fmtN(data.vip_only)}</text>
+              <text x="170" y="273" textAnchor="middle" fontSize="9"  fill="#2C2C2C" opacity="0.8">only</text>
+            </g>
+
+            {/* sub_loyalty */}
+            <g onClick={() => onVennClick('sub_loyalty')} style={{ cursor: 'pointer' }}>
+              {activeVenn === 'sub_loyalty' && <rect x="142" y="81" width="56" height="18" rx="3" fill="#374151" fillOpacity="0.12" />}
+              <text x="170" y="93" textAnchor="middle" fontSize="10" fill={sectionTextColor('sub_loyalty', '#374151')} fontWeight={sectionFW('sub_loyalty')}>{fmtN(data.subscriber_and_loyalty)}</text>
+            </g>
+
+            {/* sub_vip */}
+            <g onClick={() => onVennClick('sub_vip')} style={{ cursor: 'pointer' }}>
+              {activeVenn === 'sub_vip' && <rect x="80" y="177" width="60" height="18" rx="3" fill="#0D9B8A" fillOpacity="0.2" />}
+              <text x="110" y="189" textAnchor="middle" fontSize="10" fill={sectionTextColor('sub_vip', '#374151')} fontWeight={sectionFW('sub_vip')}>{fmtN(data.subscriber_and_vip)}</text>
+            </g>
+
+            {/* loyalty_vip */}
+            <g onClick={() => onVennClick('loyalty_vip')} style={{ cursor: 'pointer' }}>
+              {activeVenn === 'loyalty_vip' && <rect x="200" y="177" width="60" height="18" rx="3" fill="#F59E0B" fillOpacity="0.18" />}
+              <text x="230" y="189" textAnchor="middle" fontSize="10" fill={sectionTextColor('loyalty_vip', '#374151')} fontWeight={sectionFW('loyalty_vip')}>{fmtN(data.loyalty_and_vip)}</text>
+            </g>
+
+            {/* all_three */}
+            <g onClick={() => onVennClick('all_three')} style={{ cursor: 'pointer' }}>
+              {activeVenn === 'all_three' && <rect x="148" y="137" width="45" height="20" rx="3" fill="#1a1a1a" fillOpacity="0.1" />}
+              <text x="170" y="151" textAnchor="middle" fontSize="14" fill={activeVenn === 'all_three' ? '#0D9B8A' : '#1a1a1a'} fontWeight="700">{fmtN(data.all_three)}</text>
+            </g>
+
+            {/* Circle labels */}
+            <text x="65"  y="38" textAnchor="middle" fontSize="10" fill="#0D9B8A" fontWeight="600">Subscribers</text>
+            <text x="275" y="38" textAnchor="middle" fontSize="10" fill="#B45309" fontWeight="600">Loyalty</text>
+            <text x="170" y="12" textAnchor="middle" fontSize="10" fill="#2C2C2C" fontWeight="600">VIP Spenders</text>
           </svg>
         </div>
 
-        {/* Legend */}
-        <div className="flex-1 space-y-3 min-w-0">
-          <div className="rounded-xl bg-teal-pale border border-teal/20 px-4 py-3">
-            <p className="text-xs font-medium text-teal-deep">Most Valuable Segment</p>
+        {/* Clickable legend cards */}
+        <div className="flex-1 space-y-2 min-w-0">
+          <p className="text-[10px] font-data uppercase tracking-widest text-ink-3 mb-3">Click to filter table</p>
+
+          {/* All three — featured card */}
+          <button
+            onClick={() => onVennClick('all_three')}
+            className={`w-full text-left rounded-xl px-4 py-3 border transition ${
+              activeVenn === 'all_three'
+                ? 'bg-teal-pale border-teal/40 ring-2 ring-teal/30'
+                : 'bg-teal-pale border-teal/20 hover:border-teal/40'
+            }`}
+          >
+            <p className="text-xs font-medium text-teal-deep">All Three Platforms</p>
             <p className="mt-0.5 font-display text-2xl font-bold text-teal-deep">{data.all_three.toLocaleString()}</p>
-            <p className="text-xs text-teal-deep/70 mt-0.5">subscribers, loyalty members AND top spenders</p>
-          </div>
+            <p className="text-xs text-teal-deep/70 mt-0.5">subscribers + loyalty + top spenders</p>
+          </button>
+
+          {/* Pair + single cards */}
           <div className="grid grid-cols-2 gap-2 text-xs">
             {[
-              { label: 'Sub + Loyalty', value: data.subscriber_and_loyalty, color: 'text-teal-deep' },
-              { label: 'Sub + VIP',     value: data.subscriber_and_vip,     color: 'text-teal-deep' },
-              { label: 'Loyalty + VIP', value: data.loyalty_and_vip,        color: 'text-yellow-700' },
-              { label: 'Single only',   value: data.subscribers_only + data.loyalty_only + data.vip_only, color: 'text-ink-3' },
-            ].map(({ label, value, color }) => (
-              <div key={label} className="rounded-lg bg-cream px-3 py-2">
+              { key: 'sub_vip',          label: 'Sub + VIP',     value: data.subscriber_and_vip,     color: 'text-teal-deep'   },
+              { key: 'sub_loyalty',      label: 'Sub + Loyalty', value: data.subscriber_and_loyalty, color: 'text-teal-deep'   },
+              { key: 'loyalty_vip',      label: 'Loyalty + VIP', value: data.loyalty_and_vip,        color: 'text-yellow-700'  },
+              { key: 'subscribers_only', label: 'Sub Only',      value: data.subscribers_only,       color: 'text-ink-2'       },
+              { key: 'loyalty_only',     label: 'Loyalty Only',  value: data.loyalty_only,           color: 'text-ink-2'       },
+              { key: 'vip_only',         label: 'VIP Only',      value: data.vip_only,               color: 'text-ink-2'       },
+            ].map(({ key, label, value, color }) => (
+              <button
+                key={key}
+                onClick={() => onVennClick(key)}
+                className={`rounded-lg px-3 py-2 text-left border transition ${
+                  activeVenn === key
+                    ? 'bg-cream-2 border-ink/20 ring-1 ring-ink/10'
+                    : 'bg-cream border-transparent hover:bg-cream-2'
+                }`}
+              >
                 <p className="text-ink-3">{label}</p>
                 <p className={`font-semibold ${color}`}>{value.toLocaleString()}</p>
-              </div>
+              </button>
             ))}
           </div>
         </div>
@@ -513,22 +607,43 @@ export default function CustomerTable({
   overlapData,
   ltvCounts,
   totalRevenueAll,
+  activeSegment,
+  activeVenn,
 }: Props) {
   const router                  = useRouter()
   const [selected, setSelected] = useState<BuyerProfile | null>(null)
-  const [activeSegment, setActiveSegment] = useState('all')
 
   const totalProfiled = Object.values(ltvCounts).reduce((s, v) => s + v.count, 0)
 
-  const segmentFiltered = activeSegment === 'all'
-    ? buyers
-    : buyers.filter((b) => b.segment === activeSegment)
-
+  // Data is already filtered server-side — sort client-side within the page
   const { sortedData: filtered, sortColumn, sortDirection, handleSort } = useSortableTable(
-    segmentFiltered as unknown as Record<string, unknown>[],
+    buyers as unknown as Record<string, unknown>[],
     'total_revenue',
     'desc',
   )
+
+  // Build the current filter query-string (used for pagination links)
+  const filterQS = activeVenn
+    ? `venn=${activeVenn}`
+    : activeSegment !== 'all'
+      ? `segment=${activeSegment}`
+      : 'venn=all'
+
+  function navigateSegment(seg: string) {
+    if (seg === 'all') {
+      router.push('/dashboard/customers?venn=all&page=1')
+    } else {
+      router.push(`/dashboard/customers?segment=${seg}&page=1`)
+    }
+  }
+
+  function navigateVenn(key: string) {
+    router.push(`/dashboard/customers?venn=${key}&page=1`)
+  }
+
+  function clearFilter() {
+    router.push('/dashboard/customers?venn=all&page=1')
+  }
 
   const today = new Date()
 
@@ -551,7 +666,7 @@ export default function CustomerTable({
 
       {/* Overlap Venn */}
       {overlapData && (
-        <VennDiagram data={overlapData} onSelectAll={() => setActiveSegment('vip')} />
+        <VennDiagram data={overlapData} activeVenn={activeVenn} onVennClick={navigateVenn} />
       )}
 
       {/* LTV Segments */}
@@ -560,26 +675,27 @@ export default function CustomerTable({
       {/* Segment tabs */}
       <div className="flex flex-wrap items-center gap-2">
         {SEGMENTS.map((seg) => {
-          const meta  = seg === 'all' ? null : SEGMENT_META[seg]
-          const count = seg === 'all' ? totalCount : (segmentCounts[seg] ?? 0)
+          const meta    = seg === 'all' ? null : SEGMENT_META[seg]
+          const count   = seg === 'all' ? totalCount : (segmentCounts[seg] ?? 0)
+          const isActive = activeSegment === seg && !activeVenn
           return (
             <button
               key={seg}
-              onClick={() => setActiveSegment(seg)}
+              onClick={() => navigateSegment(seg)}
               className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition ${
-                activeSegment === seg ? 'bg-charcoal text-cream' : 'bg-white border border-cream-3 text-ink-2 hover:bg-cream'
+                isActive ? 'bg-charcoal text-cream' : 'bg-white border border-cream-3 text-ink-2 hover:bg-cream'
               }`}
             >
               {meta && <span className={`inline-block h-1.5 w-1.5 rounded-full ${meta.bg}`} />}
               {meta ? meta.label : 'All'}
-              <span className={`font-data ${activeSegment === seg ? 'text-cream/60' : 'text-ink-3'}`}>{count.toLocaleString()}</span>
+              <span className={`font-data ${isActive ? 'text-cream/60' : 'text-ink-3'}`}>{count.toLocaleString()}</span>
             </button>
           )
         })}
       </div>
 
       {/* Ask AI about segment */}
-      {activeSegment !== 'all' && SEGMENT_AI_PROMPTS[activeSegment] && (
+      {activeSegment !== 'all' && !activeVenn && SEGMENT_AI_PROMPTS[activeSegment] && (
         <div className="flex items-center gap-2">
           <span className="font-data text-[10px] uppercase tracking-widest text-ink-3">Ask AI</span>
           <button
@@ -590,6 +706,28 @@ export default function CustomerTable({
               <path d="M6 1l1.2 3.8H11l-3 2.2 1.2 3.8L6 8.5l-3.2 2.3L4 7 1 4.8h3.8L6 1z" />
             </svg>
             Ask AI about this segment
+          </button>
+        </div>
+      )}
+
+      {/* Active filter label */}
+      {(activeVenn || activeSegment !== 'all') && (
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 rounded-full bg-ink/5 border border-ink/10 px-3 py-1.5">
+            <span className="text-[10px] font-data uppercase tracking-widest text-ink-3">Showing</span>
+            <span className="text-xs font-semibold text-ink">
+              {activeVenn
+                ? VENN_LABELS[activeVenn] ?? activeVenn
+                : (SEGMENT_META[activeSegment]?.label ?? activeSegment)}
+            </span>
+            <span className="text-xs text-ink-3">·</span>
+            <span className="font-data text-xs font-medium text-teal-deep">{totalCount.toLocaleString()} buyers</span>
+          </div>
+          <button
+            onClick={clearFilter}
+            className="text-xs font-medium text-ink-3 hover:text-ink transition"
+          >
+            Clear filter ×
           </button>
         </div>
       )}
@@ -671,8 +809,8 @@ export default function CustomerTable({
           <div className="flex items-center justify-between border-t border-cream-2 px-5 py-3">
             <span className="font-data text-xs text-ink-3">Page {page} of {totalPages} — {totalCount.toLocaleString()} unique buyers</span>
             <div className="flex gap-2">
-              <Link href={`/dashboard/customers?page=${page - 1}`} className={`rounded-lg border border-cream-3 px-3 py-1.5 text-xs font-medium text-ink-2 hover:bg-cream transition ${page <= 1 ? 'pointer-events-none opacity-40' : ''}`}>Previous</Link>
-              <Link href={`/dashboard/customers?page=${page + 1}`} className={`rounded-lg border border-cream-3 px-3 py-1.5 text-xs font-medium text-ink-2 hover:bg-cream transition ${page >= totalPages ? 'pointer-events-none opacity-40' : ''}`}>Next</Link>
+              <Link href={`/dashboard/customers?${filterQS}&page=${page - 1}`} className={`rounded-lg border border-cream-3 px-3 py-1.5 text-xs font-medium text-ink-2 hover:bg-cream transition ${page <= 1 ? 'pointer-events-none opacity-40' : ''}`}>Previous</Link>
+              <Link href={`/dashboard/customers?${filterQS}&page=${page + 1}`} className={`rounded-lg border border-cream-3 px-3 py-1.5 text-xs font-medium text-ink-2 hover:bg-cream transition ${page >= totalPages ? 'pointer-events-none opacity-40' : ''}`}>Next</Link>
             </div>
           </div>
         )}
