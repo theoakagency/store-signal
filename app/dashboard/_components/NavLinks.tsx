@@ -187,6 +187,19 @@ export default function NavLinks({
       <SectionLabel>Analytics</SectionLabel>
 
       <Link
+        href="/dashboard/analytics-overview"
+        onClick={onNavigate}
+        className={`nav-link ${isActive('/dashboard/analytics-overview') ? 'active' : ''}`}
+      >
+        <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+          <rect x="1" y="9" width="4" height="5" rx="0.5"/>
+          <rect x="6" y="5" width="4" height="9" rx="0.5"/>
+          <rect x="11" y="1" width="4" height="13" rx="0.5"/>
+        </svg>
+        Overview
+      </Link>
+
+      <Link
         href="/dashboard/semrush"
         onClick={onNavigate}
         className={`nav-link ${isActive('/dashboard/semrush') ? 'active' : ''}`}
