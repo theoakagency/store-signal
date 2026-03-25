@@ -24,16 +24,26 @@ interface PromotionResult {
 export async function runLoyaltySync(token: string, secret: string | null) {
   const service = createSupabaseServiceClient()
 
-  const twelveMonthsAgo = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString()
+  const thirtyDaysAgoISO = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
+  const twelveMonthsAgoISO = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString()
   const now = new Date().toISOString()
 
-  // ── Fetch all LL data in parallel ────────────────────────────────────────────
-  const [customers, activities, rewards, campaigns] = await Promise.all([
+  // ── Step 1: Fetch customers, rewards, campaigns in parallel (fast) ────────────
+  const [customers, rewards, campaigns] = await Promise.all([
     getCustomers(token, secret),
-    getActivities(token, { from: twelveMonthsAgo, to: now }, secret),
     getRewards(token, secret).catch(() => []),
     getCampaigns(token, secret).catch(() => []),
   ])
+
+  // ── Step 2: Fetch activities — 30d for metrics, 12mo only if needed ───────────
+  // The activities endpoint may return cross-merchant data, which causes excessive
+  // pagination when fetching 12 months. Only go back 12 months if there are
+  // completed campaigns that need lift analysis.
+  const completedCampaigns = campaigns.filter(
+    (c) => c.started_at && c.ended_at && new Date(c.ended_at) < new Date()
+  )
+  const activityFrom = completedCampaigns.length > 0 ? twelveMonthsAgoISO : thirtyDaysAgoISO
+  const activities = await getActivities(token, { from: activityFrom, to: now }, secret)
 
   // ── Upsert loyalty_customers ─────────────────────────────────────────────────
   if (customers.length > 0) {
@@ -55,6 +65,13 @@ export async function runLoyaltySync(token: string, secret: string | null) {
   }
 
   // ── Upsert loyalty_activities (approved only) ────────────────────────────────
+  // Only store approved activities; pending purchase activities are excluded from DB
+  // but included in metrics via customer balance fields below.
+  const enrolledEmails = new Set(
+    customers
+      .map((c) => (c.email ?? '').toLowerCase().trim())
+      .filter(Boolean)
+  )
   const approvedActivities = activities.filter((a) => a.state === 'approved')
   if (approvedActivities.length > 0) {
     const CHUNK = 500
@@ -73,24 +90,28 @@ export async function runLoyaltySync(token: string, secret: string | null) {
   }
 
   // ── Compute core metrics ──────────────────────────────────────────────────────
+  // Filter to only our enrolled customers' emails to avoid cross-merchant activity noise.
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
 
-  const recentActivities = approvedActivities.filter(
-    (a) => new Date(a.created_at) >= thirtyDaysAgo
-  )
+  const ownActivities30d = activities.filter((a) => {
+    const email = a.customer?.email?.toLowerCase().trim()
+    return email && enrolledEmails.has(email) && new Date(a.created_at) >= thirtyDaysAgo
+  })
 
-  const points_issued_30d = recentActivities
+  // Include all states (approved + pending) so purchase points count toward issued.
+  // Pending purchase activities (state = "pending") represent real points in-flight.
+  const points_issued_30d = ownActivities30d
     .filter((a) => a.value > 0)
     .reduce((s, a) => s + a.value, 0)
 
-  const points_redeemed_30d = recentActivities
+  const points_redeemed_30d = ownActivities30d
     .filter((a) => a.value < 0)
     .reduce((s, a) => s + Math.abs(a.value), 0)
 
   const redemption_rate = points_issued_30d > 0 ? points_redeemed_30d / points_issued_30d : 0
 
   const redeemerEmails30d = new Set(
-    recentActivities.filter((a) => a.value < 0).map((a) => a.customer?.email)
+    ownActivities30d.filter((a) => a.value < 0).map((a) => a.customer?.email?.toLowerCase().trim())
   )
   const active_redeemers_30d = redeemerEmails30d.size
 
@@ -151,10 +172,7 @@ export async function runLoyaltySync(token: string, secret: string | null) {
   }))
 
   // ── Promotion response analysis (lift per points-multiplier campaign) ─────────
-  // For each completed campaign: count orders for participants during vs 14d before.
-  const completedCampaigns = campaigns.filter(
-    (c) => c.started_at && c.ended_at && new Date(c.ended_at) < new Date()
-  )
+  // completedCampaigns already computed above when deciding activity date range.
 
   const promotion_response_rate: PromotionResult[] = []
 
@@ -241,7 +259,7 @@ export async function runLoyaltySync(token: string, secret: string | null) {
   }
 
   // ── Write loyalty_metrics_cache ───────────────────────────────────────────────
-  await service.from('loyalty_metrics_cache').upsert({
+  const { error: cacheError } = await service.from('loyalty_metrics_cache').upsert({
     tenant_id: TENANT_ID,
     enrolled_customers: customers.length,
     active_redeemers_30d,
@@ -256,6 +274,8 @@ export async function runLoyaltySync(token: string, secret: string | null) {
     rewards_catalog,
     calculated_at: new Date().toISOString(),
   }, { onConflict: 'tenant_id' })
+
+  if (cacheError) throw new Error(`Failed to write loyalty_metrics_cache: ${cacheError.message}`)
 
   return {
     ok: true,
