@@ -1,9 +1,10 @@
 // GET /api/cron/sync-analytics
-// Schedule: every 6 hours — cron: "0 * /6 * * *" (remove the space)
+// Schedule: every 6 hours — cron: "0 */6 * * *"
 // Syncs GA4 analytics data.
 import { NextRequest } from 'next/server'
 import { createSupabaseServiceClient } from '@/lib/supabase'
-import { verifyCronAuth, getBaseUrl, cronAuthHeaders } from '@/lib/cronAuth'
+import { verifyCronAuth } from '@/lib/cronAuth'
+import { runAnalyticsSync } from '@/lib/syncAnalytics'
 
 export const maxDuration = 300
 
@@ -21,7 +22,7 @@ export async function GET(request: NextRequest) {
     .eq('id', '00000000-0000-0000-0000-000000000002')
     .single()
 
-  if (!store?.ga4_refresh_token) {
+  if (!store?.ga4_refresh_token || !store?.ga4_property_id) {
     return Response.json({ ok: false, reason: 'Google Analytics not connected' })
   }
 
@@ -36,17 +37,8 @@ export async function GET(request: NextRequest) {
   let recordsSynced = 0
 
   try {
-    const base = getBaseUrl(request)
-    const res = await fetch(`${base}/api/analytics/sync`, {
-      method: 'POST',
-      headers: cronAuthHeaders(),
-    })
-    const data = await res.json() as { channels?: number; pages?: number; error?: string }
-    if (!res.ok || data.error) {
-      errors.push(data.error ?? `HTTP ${res.status}`)
-    } else {
-      recordsSynced = (data.channels ?? 0) + (data.pages ?? 0)
-    }
+    const result = await runAnalyticsSync(store.ga4_refresh_token, store.ga4_property_id)
+    recordsSynced = (result.channels ?? 0) + (result.pages ?? 0)
   } catch (err) {
     errors.push(String(err))
   }

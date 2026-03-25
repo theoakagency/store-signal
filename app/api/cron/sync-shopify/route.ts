@@ -1,9 +1,10 @@
 // GET /api/cron/sync-shopify
-// Schedule: every 2 hours — cron: "0 * /2 * * *" (remove the space)
+// Schedule: every 2 hours — cron: "0 */2 * * *"
 // Cost protection: skip if last sync was < 4h ago AND < 100 new orders.
 import { NextRequest } from 'next/server'
 import { createSupabaseServiceClient } from '@/lib/supabase'
-import { verifyCronAuth, getBaseUrl, cronAuthHeaders } from '@/lib/cronAuth'
+import { verifyCronAuth } from '@/lib/cronAuth'
+import { runShopifySync } from '@/lib/syncShopify'
 
 export const maxDuration = 300
 
@@ -54,16 +55,14 @@ export async function GET(request: NextRequest) {
   let recordsSynced = 0
 
   try {
-    const base = getBaseUrl(request)
-    const res = await fetch(`${base}/api/shopify/sync`, {
-      method: 'POST',
-      headers: cronAuthHeaders(),
-    })
-    const data = await res.json() as { orders?: number; customers?: number; error?: string }
-    if (!res.ok || data.error) {
-      errors.push(data.error ?? `HTTP ${res.status}`)
-    } else {
-      recordsSynced = (data.orders ?? 0) + (data.customers ?? 0)
+    const result = await runShopifySync(
+      store.shopify_access_token,
+      'incremental',
+      store.last_synced_at ?? undefined,
+    )
+    recordsSynced = (result.orders ?? 0) + (result.customers ?? 0)
+    if (result.errors?.length) {
+      errors.push(...result.errors)
     }
   } catch (err) {
     errors.push(String(err))

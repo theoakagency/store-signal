@@ -1,8 +1,9 @@
 // GET /api/cron/sync-klaviyo
-// Schedule: every 6 hours — cron: "0 * /6 * * *" (remove the space)
+// Schedule: every 6 hours — cron: "0 */6 * * *"
 import { NextRequest } from 'next/server'
 import { createSupabaseServiceClient } from '@/lib/supabase'
-import { verifyCronAuth, getBaseUrl, cronAuthHeaders } from '@/lib/cronAuth'
+import { verifyCronAuth } from '@/lib/cronAuth'
+import { runKlaviyoSync } from '@/lib/syncKlaviyo'
 
 export const maxDuration = 300
 
@@ -35,16 +36,10 @@ export async function GET(request: NextRequest) {
   let recordsSynced = 0
 
   try {
-    const base = getBaseUrl(request)
-    const res = await fetch(`${base}/api/klaviyo/sync`, {
-      method: 'POST',
-      headers: cronAuthHeaders(),
-    })
-    const data = await res.json() as { campaigns?: number; flows?: number; error?: string }
-    if (!res.ok || data.error) {
-      errors.push(data.error ?? `HTTP ${res.status}`)
-    } else {
-      recordsSynced = (data.campaigns ?? 0) + (data.flows ?? 0)
+    const result = await runKlaviyoSync(store.klaviyo_api_key)
+    recordsSynced = (result.campaigns ?? 0) + (result.flows ?? 0)
+    if (result.errors?.length) {
+      errors.push(...result.errors)
     }
   } catch (err) {
     errors.push(String(err))

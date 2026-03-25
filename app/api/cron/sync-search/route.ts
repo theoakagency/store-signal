@@ -2,12 +2,13 @@
  * GET /api/cron/sync-search
  * Schedule: daily at 4am (0 4 * * *)
  *
- * Cost protection: SEMrush consumes ~50–150 API units per run.
+ * Cost protection: SEMrush consumes ~50-150 API units per run.
  * Skip if last SEMrush sync was < 20 hours ago.
  */
 import { NextRequest } from 'next/server'
 import { createSupabaseServiceClient } from '@/lib/supabase'
-import { verifyCronAuth, getBaseUrl, cronAuthHeaders } from '@/lib/cronAuth'
+import { verifyCronAuth } from '@/lib/cronAuth'
+import { runSEMrushSync } from '@/lib/syncSEMrush'
 
 export const maxDuration = 300
 
@@ -23,11 +24,13 @@ export async function GET(request: NextRequest) {
 
   const { data: store } = await service
     .from('stores')
-    .select('semrush_api_key')
+    .select('semrush_api_key, semrush_domain')
     .eq('id', '00000000-0000-0000-0000-000000000002')
     .single()
 
-  if (!store?.semrush_api_key) {
+  const storeTyped = store as { semrush_api_key: string | null; semrush_domain: string | null } | null
+
+  if (!storeTyped?.semrush_api_key || !storeTyped?.semrush_domain) {
     return Response.json({ ok: false, reason: 'SEMrush not connected' })
   }
 
@@ -62,15 +65,7 @@ export async function GET(request: NextRequest) {
   const errors: string[] = []
 
   try {
-    const base = getBaseUrl(request)
-    const res = await fetch(`${base}/api/semrush/sync`, {
-      method: 'POST',
-      headers: cronAuthHeaders(),
-    })
-    const data = await res.json() as { ok?: boolean; error?: string }
-    if (!res.ok || data.error) {
-      errors.push(data.error ?? `HTTP ${res.status}`)
-    }
+    await runSEMrushSync(storeTyped.semrush_api_key, storeTyped.semrush_domain)
   } catch (err) {
     errors.push(String(err))
   }

@@ -1,9 +1,11 @@
 // GET /api/cron/sync-ads
-// Schedule: every 6 hours offset by 30m — cron: "30 * /6 * * *" (remove the space)
+// Schedule: every 6 hours offset by 30m — cron: "30 */6 * * *"
 // Syncs Meta Ads + Google Ads in parallel, each in isolated try/catch.
 import { NextRequest } from 'next/server'
 import { createSupabaseServiceClient } from '@/lib/supabase'
-import { verifyCronAuth, getBaseUrl, cronAuthHeaders } from '@/lib/cronAuth'
+import { verifyCronAuth } from '@/lib/cronAuth'
+import { runMetaSync } from '@/lib/syncMeta'
+import { runGoogleAdsSync } from '@/lib/syncGoogleAds'
 
 export const maxDuration = 300
 
@@ -17,9 +19,13 @@ export async function GET(request: NextRequest) {
 
   const { data: store } = await service
     .from('stores')
-    .select('meta_access_token, google_ads_refresh_token')
+    .select('meta_access_token, meta_ad_account_id, google_ads_refresh_token, google_ads_developer_token, ga4_refresh_token, ga4_property_id')
     .eq('id', '00000000-0000-0000-0000-000000000002')
     .single()
+
+  if (!store?.meta_access_token && !store?.google_ads_refresh_token) {
+    return Response.json({ ok: true, skipped: true, reason: 'No ads integrations connected' })
+  }
 
   // ── Log start ───────────────────────────────────────────────────────────────
   const { data: log } = await service
@@ -30,19 +36,12 @@ export async function GET(request: NextRequest) {
 
   const errors: string[] = []
   let recordsSynced = 0
-  const base = getBaseUrl(request)
-  const headers = cronAuthHeaders()
 
   // ── Meta Ads (per-tenant isolation) ────────────────────────────────────────
-  if (store?.meta_access_token) {
+  if (store?.meta_access_token && store?.meta_ad_account_id) {
     try {
-      const res = await fetch(`${base}/api/meta/sync`, { method: 'POST', headers })
-      const data = await res.json() as { campaigns?: number; error?: string }
-      if (!res.ok || data.error) {
-        errors.push(`Meta: ${data.error ?? `HTTP ${res.status}`}`)
-      } else {
-        recordsSynced += data.campaigns ?? 0
-      }
+      const result = await runMetaSync(store.meta_access_token, store.meta_ad_account_id)
+      recordsSynced += result.synced ?? 0
     } catch (err) {
       errors.push(`Meta: ${String(err)}`)
     }
@@ -51,23 +50,16 @@ export async function GET(request: NextRequest) {
   // ── Google Ads (per-tenant isolation) ──────────────────────────────────────
   if (store?.google_ads_refresh_token) {
     try {
-      const res = await fetch(`${base}/api/google-ads/sync`, { method: 'POST', headers })
-      const data = await res.json() as { campaigns?: number; error?: string }
-      if (!res.ok || data.error) {
-        errors.push(`Google Ads: ${data.error ?? `HTTP ${res.status}`}`)
-      } else {
-        recordsSynced += data.campaigns ?? 0
-      }
+      const result = await runGoogleAdsSync({
+        google_ads_refresh_token: store.google_ads_refresh_token,
+        google_ads_developer_token: store.google_ads_developer_token ?? '',
+        ga4_refresh_token: store.ga4_refresh_token ?? null,
+        ga4_property_id: store.ga4_property_id ?? null,
+      })
+      recordsSynced += result.synced ?? 0
     } catch (err) {
       errors.push(`Google Ads: ${String(err)}`)
     }
-  }
-
-  if (!store?.meta_access_token && !store?.google_ads_refresh_token) {
-    if (log?.id) {
-      await service.from('cron_logs').update({ status: 'completed', completed_at: new Date().toISOString(), metadata: { skipped: 'no ads integrations connected' } }).eq('id', log.id)
-    }
-    return Response.json({ ok: true, skipped: true, reason: 'No ads integrations connected' })
   }
 
   // ── Log complete ────────────────────────────────────────────────────────────
