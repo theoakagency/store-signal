@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 
 interface Props {
@@ -904,6 +904,68 @@ export default function IntegrationsClient({
 }: Props) {
   const router = useRouter()
   const searchParams = useSearchParams()
+
+  // ── Sync history state ───────────────────────────────────────────────────────
+  interface CronRun {
+    id: string
+    cron_name: string
+    started_at: string
+    completed_at: string | null
+    status: string
+    records_synced: number
+    errors: string[]
+  }
+  interface SyncStatus {
+    syncEnabled: boolean
+    recentRuns: CronRun[]
+    integrations: Record<string, boolean>
+  }
+  const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null)
+  const [manualSyncing, setManualSyncing] = useState<Record<string, boolean>>({})
+
+  const fetchSyncStatus = useCallback(async () => {
+    try {
+      const res = await fetch('/api/sync/status')
+      if (res.ok) setSyncStatus(await res.json() as SyncStatus)
+    } catch { /* ignore */ }
+  }, [])
+
+  useEffect(() => { fetchSyncStatus() }, [fetchSyncStatus])
+
+  const MANUAL_SYNC_ROUTES: Record<string, string> = {
+    'sync-shopify':   '/api/shopify/sync',
+    'sync-klaviyo':   '/api/klaviyo/sync',
+    'sync-ads':       '/api/meta/sync',
+    'sync-analytics': '/api/analytics/sync',
+    'sync-search':    '/api/semrush/sync',
+  }
+
+  const CRON_LABELS: Record<string, string> = {
+    'sync-shopify':   'Shopify',
+    'sync-klaviyo':   'Klaviyo',
+    'sync-ads':       'Ads (Meta + Google)',
+    'sync-analytics': 'Analytics (GA4)',
+    'sync-search':    'SEMrush',
+    'daily-rebuild':  'Profile rebuild',
+  }
+
+  async function triggerManualSync(cronName: string) {
+    const route = MANUAL_SYNC_ROUTES[cronName]
+    if (!route) return
+    setManualSyncing((s) => ({ ...s, [cronName]: true }))
+    try {
+      await fetch(route, { method: 'POST' })
+      await fetchSyncStatus()
+    } finally {
+      setManualSyncing((s) => ({ ...s, [cronName]: false }))
+    }
+  }
+
+  function fmtTime(iso: string | null): string {
+    if (!iso) return '—'
+    return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(iso))
+  }
+
   const [showKlaviyoModal, setShowKlaviyoModal] = useState(false)
   const [showGscModal, setShowGscModal] = useState(false)
   const [showGa4Modal, setShowGa4Modal] = useState(false)
@@ -1310,6 +1372,132 @@ export default function IntegrationsClient({
                 }
               />
             ))}
+          </div>
+        </section>
+
+        {/* Sync History */}
+        <section>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="font-display text-base font-semibold text-ink">Automated Sync History</h2>
+            <button
+              onClick={fetchSyncStatus}
+              className="text-xs font-medium text-teal hover:text-teal-dark transition"
+            >
+              Refresh
+            </button>
+          </div>
+
+          {/* SYNC_ENABLED=false banner */}
+          {syncStatus && !syncStatus.syncEnabled && (
+            <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 flex items-start gap-3">
+              <svg className="h-4 w-4 shrink-0 text-amber-600 mt-0.5" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 10 5zm0 9a1 1 0 1 0 0-2 1 1 0 0 0 0 2z" clipRule="evenodd"/>
+              </svg>
+              <div>
+                <p className="text-xs font-semibold text-amber-800">Automated syncing is paused</p>
+                <p className="text-xs text-amber-700 mt-0.5">
+                  <code className="bg-amber-100 px-1 rounded">SYNC_ENABLED=false</code> is set in your environment variables. Remove this variable or set it to <code className="bg-amber-100 px-1 rounded">true</code> to resume automated cron jobs.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Manual trigger buttons */}
+          <div className="mb-4 flex flex-wrap gap-2">
+            {Object.entries(MANUAL_SYNC_ROUTES).map(([cronName, route]) => {
+              const intKey = cronName === 'sync-ads' ? 'meta' : cronName === 'sync-analytics' ? 'ga4' : cronName === 'sync-klaviyo' ? 'klaviyo' : cronName === 'sync-search' ? 'semrush' : 'shopify'
+              const connected = syncStatus?.integrations[intKey] ?? false
+              if (!connected) return null
+              return (
+                <button
+                  key={cronName}
+                  onClick={() => triggerManualSync(cronName)}
+                  disabled={manualSyncing[cronName]}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-cream-3 bg-white px-3 py-1.5 text-xs font-medium text-ink-2 hover:bg-cream-2 disabled:opacity-50 transition"
+                >
+                  {manualSyncing[cronName] ? (
+                    <span className="inline-block h-2.5 w-2.5 animate-spin rounded-full border-2 border-cream-3 border-t-teal" />
+                  ) : (
+                    <svg className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 0 1-9.201 2.466l-.312-.311h2.433a.75.75 0 0 0 0-1.5H3.989a.75.75 0 0 0-.75.75v4.242a.75.75 0 0 0 1.5 0v-2.43l.31.31a7 7 0 0 0 11.712-3.138.75.75 0 0 0-1.449-.39zm1.23-3.723a.75.75 0 0 0 .219-.53V2.929a.75.75 0 0 0-1.5 0V5.36l-.31-.31A7 7 0 0 0 3.239 8.188a.75.75 0 1 0 1.448.389A5.5 5.5 0 0 1 13.89 6.11l.311.31h-2.432a.75.75 0 0 0 0 1.5h4.243a.75.75 0 0 0 .53-.219z" clipRule="evenodd" />
+                    </svg>
+                  )}
+                  Sync {CRON_LABELS[cronName]}
+                </button>
+              )
+            })}
+          </div>
+
+          {/* Failure alerts */}
+          {syncStatus?.recentRuns.filter((r) => r.status === 'failed').slice(0, 3).map((run) => (
+            <div key={run.id} className="mb-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
+              <p className="text-xs font-semibold text-red-800">
+                {CRON_LABELS[run.cron_name] ?? run.cron_name} failed — {fmtTime(run.started_at)}
+              </p>
+              {run.errors.length > 0 && (
+                <p className="mt-0.5 text-xs text-red-700">{run.errors[0]}</p>
+              )}
+            </div>
+          ))}
+
+          {/* Recent runs table */}
+          <div className="rounded-2xl border border-cream-3 bg-white shadow-sm overflow-hidden">
+            {!syncStatus ? (
+              <div className="flex items-center justify-center py-10 text-xs text-ink-3">Loading sync history…</div>
+            ) : syncStatus.recentRuns.length === 0 ? (
+              <div className="flex items-center justify-center py-10 text-xs text-ink-3">No cron runs yet — crons will start after deployment to Vercel.</div>
+            ) : (
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-cream-2 bg-cream-2/50">
+                    <th className="px-4 py-2.5 text-left font-semibold text-ink-2">Job</th>
+                    <th className="px-4 py-2.5 text-left font-semibold text-ink-2">Started</th>
+                    <th className="px-4 py-2.5 text-left font-semibold text-ink-2">Duration</th>
+                    <th className="px-4 py-2.5 text-left font-semibold text-ink-2">Records</th>
+                    <th className="px-4 py-2.5 text-left font-semibold text-ink-2">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-cream-2">
+                  {syncStatus.recentRuns.map((run) => {
+                    const durationMs = run.completed_at
+                      ? new Date(run.completed_at).getTime() - new Date(run.started_at).getTime()
+                      : null
+                    const durationStr = durationMs !== null
+                      ? durationMs < 1000 ? '<1s' : durationMs < 60000 ? `${Math.round(durationMs / 1000)}s` : `${Math.round(durationMs / 60000)}m`
+                      : '—'
+
+                    return (
+                      <tr key={run.id} className="hover:bg-cream-2/30 transition">
+                        <td className="px-4 py-2.5 font-medium text-ink">{CRON_LABELS[run.cron_name] ?? run.cron_name}</td>
+                        <td className="px-4 py-2.5 font-data text-ink-2">{fmtTime(run.started_at)}</td>
+                        <td className="px-4 py-2.5 font-data text-ink-3">{durationStr}</td>
+                        <td className="px-4 py-2.5 font-data text-ink-2">{run.records_synced > 0 ? run.records_synced.toLocaleString() : '—'}</td>
+                        <td className="px-4 py-2.5">
+                          {run.status === 'completed' && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-teal-pale px-2 py-0.5 text-[10px] font-semibold text-teal-deep">
+                              <span className="h-1.5 w-1.5 rounded-full bg-teal" />
+                              Done
+                            </span>
+                          )}
+                          {run.status === 'failed' && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-semibold text-red-700">
+                              <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
+                              Failed
+                            </span>
+                          )}
+                          {run.status === 'running' && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+                              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-400" />
+                              Running
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            )}
           </div>
         </section>
       </div>
