@@ -1,7 +1,10 @@
 -- Migration 020: Cron job execution logs
 -- Tracks every automated background sync run for observability and debugging.
 
-create type if not exists cron_status as enum ('running', 'completed', 'failed');
+do $$ begin
+  create type cron_status as enum ('running', 'completed', 'failed');
+exception when duplicate_object then null;
+end $$;
 
 create table if not exists cron_logs (
   id                 uuid        primary key default gen_random_uuid(),
