@@ -1,121 +1,66 @@
 import { createSupabaseServerClient, createSupabaseServiceClient } from '@/lib/supabase'
-import CustomerTable, { type CustomerProfile, type OverlapData } from './CustomerTable'
+import CustomerTable, { type BuyerProfile, type OverlapData } from './CustomerTable'
 
 export const metadata = { title: 'Customer Intelligence — Store Signal' }
 
-const STORE_ID  = '00000000-0000-0000-0000-000000000002'
 const TENANT_ID = '00000000-0000-0000-0000-000000000001'
 
 export default async function CustomersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string; segment?: string }>
+  searchParams: Promise<{ page?: string }>
 }) {
   const { page: pageStr } = await searchParams
   const page     = Math.max(1, parseInt(pageStr ?? '1', 10))
   const pageSize = 50
   const offset   = (page - 1) * pageSize
 
-  const supabase = await createSupabaseServerClient()
-  const service  = createSupabaseServiceClient()
+  // Need server client for auth cookie handling (middleware pattern)
+  await createSupabaseServerClient()
+  const service = createSupabaseServiceClient()
 
-  // ── Paginate storeStats (all rows needed for avgSpent + segmentCounts) ────────
-  const storeStats: { total_spent: string; orders_count: number; updated_at: string }[] = []
-  {
-    let from = 0
-    while (true) {
-      const { data } = await supabase
-        .from('customers')
-        .select('total_spent, orders_count, updated_at')
-        .eq('store_id', STORE_ID)
-        .range(from, from + 999)
-      if (!data || data.length === 0) break
-      storeStats.push(...(data as typeof storeStats))
-      if (data.length < 1000) break
-      from += 1000
-    }
-  }
-
-  // ── Paginate customer_profiles (all rows needed for profileMap + ltvCounts) ──
-  type ProfileRow = {
-    email: string | null
-    ltv_segment: string | null
-    total_revenue: number | null
-    total_orders: number | null
-    engagement_score: number | null
-    is_subscriber: boolean | null
-    is_loyalty_member: boolean | null
-    predicted_next_order_date: string | null
-    subscription_interval: string | null
-    subscription_mrr: number | null
-    loyalty_tier: string | null
-    loyalty_points_balance: number | null
-    avg_days_between_orders: number | null
-    days_since_last_order: number | null
-    first_product_bought: string | null
-    most_recent_product: string | null
-    top_products: string[] | null
-  }
-  const profileRows: ProfileRow[] = []
+  // ── Paginate all profiles for segmentCounts + ltvCounts ───────────────────────
+  // Lightweight fetch — only 3 fields across all rows
+  const allCounts: { segment: string; ltv_segment: string | null; total_revenue: number | null }[] = []
   {
     let from = 0
     while (true) {
       const { data } = await service
         .from('customer_profiles')
-        .select('email, ltv_segment, total_revenue, total_orders, engagement_score, is_subscriber, is_loyalty_member, predicted_next_order_date, subscription_interval, subscription_mrr, loyalty_tier, loyalty_points_balance, avg_days_between_orders, days_since_last_order, first_product_bought, most_recent_product, top_products')
+        .select('segment, ltv_segment, total_revenue')
         .eq('tenant_id', TENANT_ID)
         .range(from, from + 999)
       if (!data || data.length === 0) break
-      profileRows.push(...(data as ProfileRow[]))
+      allCounts.push(...(data as typeof allCounts))
       if (data.length < 1000) break
       from += 1000
     }
   }
 
-  // ── Current page of customers + overlap cache in parallel ─────────────────────
+  // ── Current page of buyers + overlap cache in parallel ────────────────────────
   const [
-    { data: customers, count },
+    { data: pageRows, count },
     { data: overlapRaw },
   ] = await Promise.all([
-    supabase.from('customers').select('*', { count: 'exact' }).eq('store_id', STORE_ID)
-      .order('total_spent', { ascending: false })
+    service
+      .from('customer_profiles')
+      .select(
+        'email, total_orders, total_revenue, avg_order_value, segment, ltv_segment, engagement_score, is_subscriber, is_loyalty_member, predicted_next_order_date, subscription_interval, subscription_mrr, loyalty_tier, loyalty_points_balance, avg_days_between_orders, days_since_last_order, first_product_bought, most_recent_product, top_products, first_order_at, last_order_at',
+        { count: 'exact' },
+      )
+      .eq('tenant_id', TENANT_ID)
+      .order('total_revenue', { ascending: false })
       .range(offset, offset + pageSize - 1),
     service.from('customer_overlap_cache').select('*').eq('tenant_id', TENANT_ID).maybeSingle(),
   ])
 
-  const now          = Date.now()
-  const avgSpent     = storeStats.length > 0 ? storeStats.reduce((s, c) => s + Number(c.total_spent), 0) / storeStats.length : 0
-  const vipThreshold = avgSpent * 2.5
-
-  function classify(c: { total_spent: number; orders_count: number; updated_at: string }) {
-    const days = (now - new Date(c.updated_at).getTime()) / 86400000
-    if (c.orders_count === 0)                    return 'new'
-    if (Number(c.total_spent) >= vipThreshold)   return 'vip'
-    if (days < 90)  return 'active'
-    if (days < 180) return 'at_risk'
-    return 'lapsed'
-  }
-
-  const classified = (customers ?? []).map((c) => ({ ...c, segment: classify(c) }))
-
-  const segmentCounts = storeStats.reduce((acc, c) => {
-    const days = (now - new Date(c.updated_at).getTime()) / 86400000
-    let seg = 'lapsed'
-    if (c.orders_count === 0)                    seg = 'new'
-    else if (Number(c.total_spent) >= vipThreshold) seg = 'vip'
-    else if (days < 90)  seg = 'active'
-    else if (days < 180) seg = 'at_risk'
-    acc[seg] = (acc[seg] ?? 0) + 1
+  // Segment counts from all profiles
+  const segmentCounts = allCounts.reduce((acc, p) => {
+    acc[p.segment] = (acc[p.segment] ?? 0) + 1
     return acc
   }, {} as Record<string, number>)
 
-  // Build profile map keyed by email
-  const profileMap: Record<string, CustomerProfile> = {}
-  for (const p of profileRows) {
-    if (p.email) profileMap[p.email.toLowerCase()] = p as CustomerProfile
-  }
-
-  // LTV segment counts (derived from the same profileRows fetch)
+  // LTV counts from all profiles
   const ltvCounts: Record<string, { count: number; totalRevenue: number }> = {
     Diamond: { count: 0, totalRevenue: 0 },
     Gold:    { count: 0, totalRevenue: 0 },
@@ -123,7 +68,7 @@ export default async function CustomersPage({
     Bronze:  { count: 0, totalRevenue: 0 },
   }
   let totalRevenueAll = 0
-  for (const r of profileRows) {
+  for (const r of allCounts) {
     const seg = r.ltv_segment as string
     if (ltvCounts[seg]) {
       ltvCounts[seg].count++
@@ -146,12 +91,11 @@ export default async function CustomersPage({
 
   return (
     <CustomerTable
-      customers={classified}
+      buyers={(pageRows ?? []) as BuyerProfile[]}
       page={page}
       totalPages={Math.ceil((count ?? 0) / pageSize)}
       totalCount={count ?? 0}
       segmentCounts={segmentCounts}
-      profileMap={profileMap}
       overlapData={overlapData}
       ltvCounts={ltvCounts}
       totalRevenueAll={totalRevenueAll}

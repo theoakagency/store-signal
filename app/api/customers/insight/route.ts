@@ -2,49 +2,55 @@ import { NextRequest } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createSupabaseServerClient, createSupabaseServiceClient } from '@/lib/supabase'
 
-const STORE_ID = '00000000-0000-0000-0000-000000000002'
+const STORE_ID  = '00000000-0000-0000-0000-000000000002'
+const TENANT_ID = '00000000-0000-0000-0000-000000000001'
 
 export async function POST(req: NextRequest) {
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
-  const supabase = await createSupabaseServerClient()
+  const supabase  = await createSupabaseServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { shopify_customer_id } = await req.json()
-  if (!shopify_customer_id) return Response.json({ error: 'Missing customer id' }, { status: 400 })
+  const { email } = await req.json()
+  if (!email) return Response.json({ error: 'Missing email' }, { status: 400 })
 
   const service = createSupabaseServiceClient()
 
-  const [{ data: customer }, { data: recentOrders }] = await Promise.all([
+  const [{ data: profile }, { data: recentOrders }] = await Promise.all([
     service
-      .from('customers')
-      .select('*')
-      .eq('store_id', STORE_ID)
-      .eq('shopify_customer_id', shopify_customer_id)
+      .from('customer_profiles')
+      .select('total_revenue, total_orders, avg_order_value, segment, ltv_segment, is_subscriber, is_loyalty_member, loyalty_tier, avg_days_between_orders, days_since_last_order, subscription_interval')
+      .eq('tenant_id', TENANT_ID)
+      .eq('email', email.toLowerCase())
       .single(),
     service
       .from('orders')
-      .select('order_number, total_price, financial_status, fulfillment_status, processed_at, line_items')
+      .select('order_number, total_price, financial_status, processed_at')
       .eq('store_id', STORE_ID)
-      .eq('customer_id', shopify_customer_id)
+      .ilike('email', email.toLowerCase())
       .order('processed_at', { ascending: false })
       .limit(10),
   ])
 
-  if (!customer) return Response.json({ error: 'Customer not found' }, { status: 404 })
+  if (!profile) return Response.json({ error: 'Customer not found' }, { status: 404 })
 
   const orderSummary = (recentOrders ?? [])
     .map((o) => `- Order ${o.order_number}: $${o.total_price} (${o.financial_status}, ${o.processed_at?.split('T')[0]})`)
     .join('\n')
 
-  const prompt = `You are a customer insights AI for a beauty retail brand (LashBox LA).
+  const prompt = `You are a customer insights AI for a beauty retail brand.
 
 CUSTOMER PROFILE:
-- Name: ${customer.first_name ?? ''} ${customer.last_name ?? ''}
-- Email: ${customer.email ?? 'unknown'}
-- Total orders: ${customer.orders_count}
-- Total spent: $${customer.total_spent}
-- Tags: ${(customer.tags ?? []).join(', ') || 'none'}
+- Email: ${email}
+- Segment: ${profile.segment ?? 'unknown'}
+- LTV tier: ${profile.ltv_segment ?? 'unknown'}
+- Total orders: ${profile.total_orders}
+- Total revenue: $${Number(profile.total_revenue).toFixed(2)}
+- Avg order value: $${Number(profile.avg_order_value).toFixed(2)}
+- Avg reorder interval: ${profile.avg_days_between_orders ? `${Math.round(Number(profile.avg_days_between_orders))} days` : 'N/A'}
+- Days since last order: ${profile.days_since_last_order ?? 'N/A'}
+- Subscriber: ${profile.is_subscriber ? `Yes (${profile.subscription_interval ?? ''})` : 'No'}
+- Loyalty member: ${profile.is_loyalty_member ? `Yes — ${profile.loyalty_tier ?? ''} tier` : 'No'}
 
 RECENT ORDERS:
 ${orderSummary || 'No recent orders on record'}

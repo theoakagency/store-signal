@@ -7,8 +7,12 @@ import { useSortableTable, SortIcon, thCls } from '@/hooks/useSortableTable'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
-export interface CustomerProfile {
+export interface BuyerProfile {
   email: string
+  total_orders: number
+  total_revenue: number
+  avg_order_value: number
+  segment: string
   ltv_segment: string | null
   engagement_score: number | null
   is_subscriber: boolean
@@ -23,7 +27,12 @@ export interface CustomerProfile {
   first_product_bought: string | null
   most_recent_product: string | null
   top_products: Array<{ title: string; count: number; revenue: number }> | null
+  first_order_at: string | null
+  last_order_at: string | null
 }
+
+// Alias kept for any existing imports
+export type CustomerProfile = BuyerProfile
 
 export interface OverlapData {
   total_customers: number
@@ -37,27 +46,12 @@ export interface OverlapData {
   calculated_at: string
 }
 
-interface Customer {
-  id: string
-  shopify_customer_id: number
-  email: string | null
-  first_name: string | null
-  last_name: string | null
-  phone: string | null
-  orders_count: number
-  total_spent: number
-  tags: string[]
-  updated_at: string
-  segment: string
-}
-
 interface Props {
-  customers: Customer[]
+  buyers: BuyerProfile[]
   page: number
   totalPages: number
   totalCount: number
   segmentCounts: Record<string, number>
-  profileMap: Record<string, CustomerProfile>
   overlapData: OverlapData | null
   ltvCounts: Record<string, { count: number; totalRevenue: number }>
   totalRevenueAll: number
@@ -104,7 +98,7 @@ function VennDiagram({ data, onSelectAll }: { data: OverlapData; onSelectAll: ()
       <div className="flex items-start justify-between mb-4 flex-wrap gap-3">
         <div>
           <h2 className="font-display text-base font-semibold text-ink">Customer Overlap</h2>
-          <p className="text-xs text-ink-3 mt-0.5">Cross-platform membership across {data.total_customers.toLocaleString()} customers</p>
+          <p className="text-xs text-ink-3 mt-0.5">Cross-platform membership across {data.total_customers.toLocaleString()} unique buyers</p>
         </div>
         {data.all_three > 0 && (
           <button
@@ -120,33 +114,21 @@ function VennDiagram({ data, onSelectAll }: { data: OverlapData; onSelectAll: ()
         {/* SVG Venn */}
         <div className="shrink-0">
           <svg viewBox="0 0 320 270" width="320" height="270" className="overflow-visible">
-            {/* Circle 1: Subscribers (teal, top-left) */}
             <circle cx="130" cy="120" r="90" fill="#0D9B8A" fillOpacity="0.15" stroke="#0D9B8A" strokeWidth="1.5" strokeOpacity="0.4" />
-            {/* Circle 2: Loyalty (amber, top-right) */}
             <circle cx="210" cy="120" r="90" fill="#F59E0B" fillOpacity="0.15" stroke="#F59E0B" strokeWidth="1.5" strokeOpacity="0.4" />
-            {/* Circle 3: VIP (charcoal, bottom-center) */}
             <circle cx="170" cy="185" r="90" fill="#2C2C2C" fillOpacity="0.12" stroke="#2C2C2C" strokeWidth="1.5" strokeOpacity="0.35" />
 
-            {/* Labels */}
-            {/* Subscribers only */}
             <text x="75"  y="100" textAnchor="middle" fontSize="11" fill="#0D9B8A" fontWeight="600">{fmtN(data.subscribers_only)}</text>
             <text x="75"  y="115" textAnchor="middle" fontSize="9"  fill="#0D9B8A" opacity="0.8">only</text>
-            {/* Loyalty only */}
             <text x="265" y="100" textAnchor="middle" fontSize="11" fill="#B45309" fontWeight="600">{fmtN(data.loyalty_only)}</text>
             <text x="265" y="115" textAnchor="middle" fontSize="9"  fill="#B45309" opacity="0.8">only</text>
-            {/* VIP only */}
             <text x="170" y="255" textAnchor="middle" fontSize="11" fill="#2C2C2C" fontWeight="600">{fmtN(data.vip_only)}</text>
             <text x="170" y="270" textAnchor="middle" fontSize="9"  fill="#2C2C2C" opacity="0.8">only</text>
-            {/* Sub ∩ Loyalty */}
             <text x="170" y="90"  textAnchor="middle" fontSize="10" fill="#374151" fontWeight="500">{fmtN(data.subscriber_and_loyalty)}</text>
-            {/* Sub ∩ VIP */}
             <text x="110" y="185" textAnchor="middle" fontSize="10" fill="#374151" fontWeight="500">{fmtN(data.subscriber_and_vip)}</text>
-            {/* Loyalty ∩ VIP */}
             <text x="230" y="185" textAnchor="middle" fontSize="10" fill="#374151" fontWeight="500">{fmtN(data.loyalty_and_vip)}</text>
-            {/* All three */}
             <text x="170" y="148" textAnchor="middle" fontSize="14" fill="#1a1a1a" fontWeight="700">{fmtN(data.all_three)}</text>
 
-            {/* Circle labels outside */}
             <text x="65"  y="38"  textAnchor="middle" fontSize="10" fill="#0D9B8A" fontWeight="600">Subscribers</text>
             <text x="275" y="38"  textAnchor="middle" fontSize="10" fill="#B45309" fontWeight="600">Loyalty</text>
             <text x="170" y="12"  textAnchor="middle" fontSize="10" fill="#2C2C2C" fontWeight="600">VIP Spenders</text>
@@ -219,7 +201,7 @@ function LtvSegments({
       </div>
       {totalCustomers > 0 && (
         <p className="mt-2 text-xs text-ink-3">
-          Based on {totalCustomers.toLocaleString()} profiled customers ·{' '}
+          Based on {totalCustomers.toLocaleString()} profiled buyers ·{' '}
           <span className="text-ink-2">Run "Build Profiles" to update</span>
         </p>
       )}
@@ -243,19 +225,18 @@ function EngagementBar({ score }: { score: number }) {
 
 // ── Detail Panel ───────────────────────────────────────────────────────────────
 
-function DetailPanel({ customer, profile, onClose }: {
-  customer: Customer
-  profile: CustomerProfile | null
+function DetailPanel({ buyer, onClose }: {
+  buyer: BuyerProfile
   onClose: () => void
 }) {
-  const [insight, setInsight]   = useState('')
-  const [loading, setLoading]   = useState(false)
-  const fullName = [customer.first_name, customer.last_name].filter(Boolean).join(' ') || 'Guest'
-  const seg      = SEGMENT_META[customer.segment] ?? SEGMENT_META.active
+  const [insight, setInsight] = useState('')
+  const [loading, setLoading] = useState(false)
+
+  const seg = SEGMENT_META[buyer.segment] ?? SEGMENT_META.active
 
   const today = new Date()
-  const isOverdue = profile?.predicted_next_order_date
-    ? new Date(profile.predicted_next_order_date) < today
+  const isOverdue = buyer.predicted_next_order_date
+    ? new Date(buyer.predicted_next_order_date) < today
     : false
 
   async function loadInsight() {
@@ -265,7 +246,7 @@ function DetailPanel({ customer, profile, onClose }: {
       const res  = await fetch('/api/customers/insight', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ shopify_customer_id: customer.shopify_customer_id }),
+        body: JSON.stringify({ email: buyer.email }),
       })
       const data = await res.json()
       setInsight(data.insight ?? data.error ?? 'Unable to load insight.')
@@ -278,10 +259,12 @@ function DetailPanel({ customer, profile, onClose }: {
       <aside className="relative z-50 w-full max-w-md bg-white shadow-2xl animate-slide-in-right overflow-y-auto">
         <div className="flex items-start justify-between border-b border-cream-2 px-6 py-5">
           <div>
-            <h3 className="font-display text-xl font-semibold text-ink">{fullName}</h3>
-            <p className="text-sm text-ink-3 mt-0.5">{customer.email ?? 'No email'}</p>
+            <h3 className="font-display text-base font-semibold text-ink break-all">{buyer.email}</h3>
+            <p className="text-xs text-ink-3 mt-0.5">
+              {buyer.first_order_at ? `First order ${new Date(buyer.first_order_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}` : 'No order history'}
+            </p>
           </div>
-          <button onClick={onClose} className="rounded-lg p-1.5 hover:bg-cream-2 transition text-ink-3">
+          <button onClick={onClose} className="rounded-lg p-1.5 hover:bg-cream-2 transition text-ink-3 shrink-0 ml-3">
             <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
               <path fillRule="evenodd" d="M4.293 4.293a1 1 0 0 1 1.414 0L10 8.586l4.293-4.293a1 1 0 1 1 1.414 1.414L11.414 10l4.293 4.293a1 1 0 0 1-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 0 1-1.414-1.414L8.586 10 4.293 5.707a1 1 0 0 1 0-1.414z" clipRule="evenodd" />
             </svg>
@@ -294,15 +277,15 @@ function DetailPanel({ customer, profile, onClose }: {
             <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${seg.bg} ${seg.text}`}>
               {seg.label}
             </span>
-            {profile?.ltv_segment && (
-              <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${LTV_META[profile.ltv_segment]?.bg ?? 'bg-cream-2'} ${LTV_META[profile.ltv_segment]?.text ?? 'text-ink-3'}`}>
-                {profile.ltv_segment}
+            {buyer.ltv_segment && (
+              <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${LTV_META[buyer.ltv_segment]?.bg ?? 'bg-cream-2'} ${LTV_META[buyer.ltv_segment]?.text ?? 'text-ink-3'}`}>
+                {buyer.ltv_segment}
               </span>
             )}
-            {profile?.is_subscriber && (
+            {buyer.is_subscriber && (
               <span className="inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold bg-teal-pale text-teal-deep">Subscriber</span>
             )}
-            {profile?.is_loyalty_member && (
+            {buyer.is_loyalty_member && (
               <span className="inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold bg-yellow-50 text-yellow-700">Loyalty Member</span>
             )}
           </div>
@@ -310,7 +293,7 @@ function DetailPanel({ customer, profile, onClose }: {
           {/* Overdue warning */}
           {isOverdue && (
             <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-              Overdue for reorder — predicted {new Date(profile!.predicted_next_order_date!).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+              Overdue for reorder — predicted {new Date(buyer.predicted_next_order_date!).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
             </div>
           )}
 
@@ -318,94 +301,76 @@ function DetailPanel({ customer, profile, onClose }: {
           <div className="grid grid-cols-2 gap-3">
             <div className="rounded-xl bg-cream px-4 py-3">
               <p className="font-data text-xs text-ink-3 mb-1">Lifetime Value</p>
-              <p className="font-display text-2xl font-semibold text-ink">{fmt(Number(customer.total_spent))}</p>
+              <p className="font-display text-2xl font-semibold text-ink">{fmt(Number(buyer.total_revenue))}</p>
             </div>
             <div className="rounded-xl bg-cream px-4 py-3">
               <p className="font-data text-xs text-ink-3 mb-1">Total Orders</p>
-              <p className="font-display text-2xl font-semibold text-ink">{customer.orders_count}</p>
+              <p className="font-display text-2xl font-semibold text-ink">{buyer.total_orders}</p>
             </div>
-            {profile?.engagement_score != null && (
+            {buyer.engagement_score != null && (
               <div className="rounded-xl bg-cream px-4 py-3">
                 <p className="font-data text-xs text-ink-3 mb-1">Engagement Score</p>
-                <EngagementBar score={profile.engagement_score} />
+                <EngagementBar score={buyer.engagement_score} />
               </div>
             )}
-            {profile?.avg_days_between_orders != null && profile.avg_days_between_orders > 0 && (
+            {buyer.avg_days_between_orders != null && buyer.avg_days_between_orders > 0 && (
               <div className="rounded-xl bg-cream px-4 py-3">
                 <p className="font-data text-xs text-ink-3 mb-1">Avg Reorder Interval</p>
-                <p className="text-sm font-semibold text-ink">{Math.round(Number(profile.avg_days_between_orders))} days</p>
+                <p className="text-sm font-semibold text-ink">{Math.round(Number(buyer.avg_days_between_orders))} days</p>
               </div>
             )}
           </div>
 
           {/* Subscription details */}
-          {profile?.is_subscriber && profile.subscription_interval && (
+          {buyer.is_subscriber && buyer.subscription_interval && (
             <div className="rounded-xl bg-teal-pale/50 border border-teal/20 px-4 py-3">
               <p className="font-data text-xs text-teal-deep mb-1">Subscription</p>
-              <p className="text-sm font-medium text-ink">{profile.subscription_interval}</p>
-              {profile.subscription_mrr != null && profile.subscription_mrr > 0 && (
-                <p className="text-xs text-ink-3 mt-0.5">{fmt(Number(profile.subscription_mrr))} MRR contribution</p>
+              <p className="text-sm font-medium text-ink">{buyer.subscription_interval}</p>
+              {buyer.subscription_mrr != null && buyer.subscription_mrr > 0 && (
+                <p className="text-xs text-ink-3 mt-0.5">{fmt(Number(buyer.subscription_mrr))} MRR contribution</p>
               )}
             </div>
           )}
 
           {/* Loyalty details */}
-          {profile?.is_loyalty_member && (
+          {buyer.is_loyalty_member && (
             <div className="rounded-xl bg-yellow-50 border border-yellow-200 px-4 py-3">
               <p className="font-data text-xs text-yellow-700 mb-1">Loyalty Program</p>
-              {profile.loyalty_tier && <p className="text-sm font-medium text-ink">{profile.loyalty_tier} tier</p>}
-              {profile.loyalty_points_balance != null && (
-                <p className="text-xs text-ink-3 mt-0.5">{profile.loyalty_points_balance.toLocaleString()} points balance</p>
+              {buyer.loyalty_tier && <p className="text-sm font-medium text-ink">{buyer.loyalty_tier} tier</p>}
+              {buyer.loyalty_points_balance != null && (
+                <p className="text-xs text-ink-3 mt-0.5">{buyer.loyalty_points_balance.toLocaleString()} points balance</p>
               )}
             </div>
           )}
 
           {/* Predicted next order */}
-          {profile?.predicted_next_order_date && (
+          {buyer.predicted_next_order_date && (
             <div>
               <p className="font-data text-xs text-ink-3 mb-1">Predicted Next Order</p>
               <p className={`text-sm font-medium ${isOverdue ? 'text-red-600' : 'text-ink'}`}>
-                {new Date(profile.predicted_next_order_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+                {new Date(buyer.predicted_next_order_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
                 {isOverdue && ' (overdue)'}
               </p>
             </div>
           )}
 
           {/* Product journey */}
-          {(profile?.first_product_bought || profile?.most_recent_product) && (
+          {(buyer.first_product_bought || buyer.most_recent_product) && (
             <div>
               <p className="font-data text-xs text-ink-3 mb-2">Product Journey</p>
               <div className="space-y-1.5">
-                {profile.first_product_bought && (
+                {buyer.first_product_bought && (
                   <div className="flex gap-2 items-start">
                     <span className="text-[10px] text-ink-3 bg-cream-2 rounded px-1.5 py-0.5 shrink-0">First</span>
-                    <p className="text-xs text-ink">{profile.first_product_bought}</p>
+                    <p className="text-xs text-ink">{buyer.first_product_bought}</p>
                   </div>
                 )}
-                {profile.most_recent_product && profile.most_recent_product !== profile.first_product_bought && (
+                {buyer.most_recent_product && buyer.most_recent_product !== buyer.first_product_bought && (
                   <div className="flex gap-2 items-start">
                     <span className="text-[10px] text-ink-3 bg-cream-2 rounded px-1.5 py-0.5 shrink-0">Recent</span>
-                    <p className="text-xs text-ink">{profile.most_recent_product}</p>
+                    <p className="text-xs text-ink">{buyer.most_recent_product}</p>
                   </div>
                 )}
-              </div>
-            </div>
-          )}
-
-          {customer.phone && (
-            <div>
-              <p className="font-data text-xs text-ink-3 mb-1">Phone</p>
-              <p className="text-sm text-ink">{customer.phone}</p>
-            </div>
-          )}
-
-          {customer.tags.length > 0 && (
-            <div>
-              <p className="font-data text-xs text-ink-3 mb-2">Tags</p>
-              <div className="flex flex-wrap gap-1.5">
-                {customer.tags.map((t) => (
-                  <span key={t} className="rounded-full bg-cream-2 px-2 py-0.5 text-xs text-ink-2">{t}</span>
-                ))}
               </div>
             </div>
           )}
@@ -440,9 +405,9 @@ function DetailPanel({ customer, profile, onClose }: {
 // ── Build Profiles Button ──────────────────────────────────────────────────────
 
 function BuildProfilesButton() {
-  const [status, setStatus]       = useState<'idle' | 'running' | 'done'>('idle')
-  const [progress, setProgress]   = useState<string | null>(null)
-  const [error, setError]         = useState<string | null>(null)
+  const [status, setStatus]     = useState<'idle' | 'running' | 'done'>('idle')
+  const [progress, setProgress] = useState<string | null>(null)
+  const [error, setError]       = useState<string | null>(null)
 
   async function build() {
     setStatus('running')
@@ -450,9 +415,7 @@ function BuildProfilesButton() {
     setProgress('Starting…')
 
     try {
-      // Batch 0 tells us how many total batches there are
       let totalBatches = 1
-
       for (let b = 0; b < totalBatches; b++) {
         setProgress(`Processing batch ${b + 1} of ${totalBatches}…`)
         const res  = await fetch(`/api/customers/build-profiles?batch=${b}`, { method: 'POST' })
@@ -463,10 +426,8 @@ function BuildProfilesButton() {
           setProgress(null)
           return
         }
-        // After first response we know the total
         totalBatches = data.totalBatches ?? 1
       }
-
       setProgress(null)
       setStatus('done')
       setTimeout(() => window.location.reload(), 800)
@@ -498,30 +459,28 @@ function BuildProfilesButton() {
 // ── Main Component ─────────────────────────────────────────────────────────────
 
 export default function CustomerTable({
-  customers,
+  buyers,
   page,
   totalPages,
   totalCount,
   segmentCounts,
-  profileMap,
   overlapData,
   ltvCounts,
   totalRevenueAll,
 }: Props) {
   const router                  = useRouter()
-  const [selected, setSelected] = useState<Customer | null>(null)
+  const [selected, setSelected] = useState<BuyerProfile | null>(null)
   const [activeSegment, setActiveSegment] = useState('all')
 
-  const hasProfiles = Object.keys(profileMap).length > 0
   const totalProfiled = Object.values(ltvCounts).reduce((s, v) => s + v.count, 0)
 
   const segmentFiltered = activeSegment === 'all'
-    ? customers
-    : customers.filter((c) => c.segment === activeSegment)
+    ? buyers
+    : buyers.filter((b) => b.segment === activeSegment)
 
   const { sortedData: filtered, sortColumn, sortDirection, handleSort } = useSortableTable(
     segmentFiltered as unknown as Record<string, unknown>[],
-    'total_spent',
+    'total_revenue',
     'desc',
   )
 
@@ -533,7 +492,10 @@ export default function CustomerTable({
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="font-display text-xl font-semibold text-ink">Customer Intelligence</h1>
-          <p className="text-sm text-ink-3 mt-0.5">{totalCount.toLocaleString()} customers</p>
+          <p className="text-sm text-ink-3 mt-0.5">
+            {totalCount.toLocaleString()} unique buyers
+            <span className="ml-1.5 text-ink-3/60">· includes guest checkouts and all historical orders</span>
+          </p>
         </div>
         <BuildProfilesButton />
       </div>
@@ -544,9 +506,7 @@ export default function CustomerTable({
       )}
 
       {/* LTV Segments */}
-      {hasProfiles && (
-        <LtvSegments ltvCounts={ltvCounts} totalRevenueAll={totalRevenueAll} totalCustomers={totalProfiled} />
-      )}
+      <LtvSegments ltvCounts={ltvCounts} totalRevenueAll={totalRevenueAll} totalCustomers={totalProfiled} />
 
       {/* Segment tabs */}
       <div className="flex flex-wrap items-center gap-2">
@@ -563,7 +523,7 @@ export default function CustomerTable({
             >
               {meta && <span className={`inline-block h-1.5 w-1.5 rounded-full ${meta.bg}`} />}
               {meta ? meta.label : 'All'}
-              <span className={`font-data ${activeSegment === seg ? 'text-cream/60' : 'text-ink-3'}`}>{count}</span>
+              <span className={`font-data ${activeSegment === seg ? 'text-cream/60' : 'text-ink-3'}`}>{count.toLocaleString()}</span>
             </button>
           )
         })}
@@ -591,73 +551,64 @@ export default function CustomerTable({
           <table className="min-w-full text-sm">
             <thead>
               <tr className="border-b border-cream-2 bg-cream/40 text-xs font-medium text-ink-3">
-                <th className="px-5 py-3 text-left">Customer</th>
+                <th className="px-5 py-3 text-left">Buyer</th>
                 <th className="px-4 py-3 text-left">Segment</th>
-                {hasProfiles && <th className="px-4 py-3 text-left hidden md:table-cell">LTV Tier</th>}
-                {hasProfiles && <th className="px-4 py-3 text-left hidden lg:table-cell">Platforms</th>}
-                <th className={`px-4 py-3 text-right ${thCls('orders_count', sortColumn)}`} onClick={() => handleSort('orders_count')}>Orders<SortIcon column="orders_count" sortColumn={sortColumn} sortDirection={sortDirection} /></th>
-                <th className={`px-4 py-3 text-right ${thCls('total_spent', sortColumn)}`} onClick={() => handleSort('total_spent')}>LTV<SortIcon column="total_spent" sortColumn={sortColumn} sortDirection={sortDirection} /></th>
-                <th className={`px-4 py-3 text-right hidden sm:table-cell ${thCls('aov', sortColumn)}`}>AOV</th>
-                {hasProfiles && <th className="px-4 py-3 text-center hidden xl:table-cell">Engage</th>}
-                {hasProfiles && <th className="px-4 py-3 text-center hidden xl:table-cell">Next Order</th>}
+                <th className="px-4 py-3 text-left hidden md:table-cell">LTV Tier</th>
+                <th className="px-4 py-3 text-left hidden lg:table-cell">Platforms</th>
+                <th className={`px-4 py-3 text-right ${thCls('total_orders', sortColumn)}`} onClick={() => handleSort('total_orders')}>Orders<SortIcon column="total_orders" sortColumn={sortColumn} sortDirection={sortDirection} /></th>
+                <th className={`px-4 py-3 text-right ${thCls('total_revenue', sortColumn)}`} onClick={() => handleSort('total_revenue')}>LTV<SortIcon column="total_revenue" sortColumn={sortColumn} sortDirection={sortDirection} /></th>
+                <th className={`px-4 py-3 text-right hidden sm:table-cell ${thCls('avg_order_value', sortColumn)}`} onClick={() => handleSort('avg_order_value')}>AOV<SortIcon column="avg_order_value" sortColumn={sortColumn} sortDirection={sortDirection} /></th>
+                <th className="px-4 py-3 text-center hidden xl:table-cell">Engage</th>
+                <th className="px-4 py-3 text-center hidden xl:table-cell">Next Order</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-cream-2">
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-5 py-10 text-center text-sm text-ink-3">No customers in this segment yet.</td>
+                  <td colSpan={9} className="px-5 py-10 text-center text-sm text-ink-3">No buyers in this segment yet.</td>
                 </tr>
               ) : (
-                (filtered as unknown as Customer[]).map((c) => {
-                  const name    = [c.first_name, c.last_name].filter(Boolean).join(' ') || 'Guest'
-                  const aov     = c.orders_count > 0 ? Number(c.total_spent) / c.orders_count : 0
-                  const seg     = SEGMENT_META[c.segment] ?? SEGMENT_META.active
-                  const profile = c.email ? profileMap[c.email.toLowerCase()] ?? null : null
-                  const ltvMeta = profile?.ltv_segment ? LTV_META[profile.ltv_segment] : null
-                  const isOverdue = profile?.predicted_next_order_date
-                    ? new Date(profile.predicted_next_order_date) < today
+                (filtered as unknown as BuyerProfile[]).map((b) => {
+                  const seg     = SEGMENT_META[b.segment] ?? SEGMENT_META.active
+                  const ltvMeta = b.ltv_segment ? LTV_META[b.ltv_segment] : null
+                  const isOverdue = b.predicted_next_order_date
+                    ? new Date(b.predicted_next_order_date) < today
                     : false
                   return (
-                    <tr key={c.id} className="hover:bg-cream transition-colors cursor-pointer" onClick={() => setSelected(c)}>
+                    <tr key={b.email} className="hover:bg-cream transition-colors cursor-pointer" onClick={() => setSelected(b)}>
                       <td className="px-5 py-3">
-                        <p className="font-medium text-ink">{name}</p>
-                        <p className="text-xs text-ink-3">{c.email ?? 'No email'}</p>
+                        <p className="font-medium text-ink text-xs truncate max-w-[200px]">{b.email}</p>
+                        {b.last_order_at && (
+                          <p className="text-[10px] text-ink-3 mt-0.5">Last order {new Date(b.last_order_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${seg.bg} ${seg.text}`}>{seg.label}</span>
                       </td>
-                      {hasProfiles && (
-                        <td className="px-4 py-3 hidden md:table-cell">
-                          {ltvMeta && profile?.ltv_segment ? (
-                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${ltvMeta.bg} ${ltvMeta.text}`}>{profile.ltv_segment}</span>
-                          ) : <span className="text-xs text-ink-3">—</span>}
-                        </td>
-                      )}
-                      {hasProfiles && (
-                        <td className="px-4 py-3 hidden lg:table-cell">
-                          <div className="flex gap-1">
-                            {profile?.is_subscriber && <span className="rounded-full bg-teal-pale px-1.5 py-0.5 text-[10px] font-medium text-teal-deep">Sub</span>}
-                            {profile?.is_loyalty_member && <span className="rounded-full bg-yellow-50 px-1.5 py-0.5 text-[10px] font-medium text-yellow-700">Loyal</span>}
-                          </div>
-                        </td>
-                      )}
-                      <td className="px-4 py-3 text-right font-data text-xs text-ink-2">{c.orders_count}</td>
-                      <td className="px-4 py-3 text-right font-data text-xs font-medium text-ink">{fmt(Number(c.total_spent))}</td>
-                      <td className="px-4 py-3 text-right font-data text-xs text-ink-2 hidden sm:table-cell">{fmt(aov)}</td>
-                      {hasProfiles && (
-                        <td className="px-4 py-3 text-center hidden xl:table-cell">
-                          {profile?.engagement_score != null ? <EngagementBar score={profile.engagement_score} /> : <span className="text-xs text-ink-3">—</span>}
-                        </td>
-                      )}
-                      {hasProfiles && (
-                        <td className="px-4 py-3 text-center hidden xl:table-cell">
-                          {profile?.predicted_next_order_date ? (
-                            <span className={`text-xs font-medium ${isOverdue ? 'text-red-600' : 'text-ink-2'}`}>
-                              {isOverdue ? 'Overdue' : new Date(profile.predicted_next_order_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                            </span>
-                          ) : <span className="text-xs text-ink-3">—</span>}
-                        </td>
-                      )}
+                      <td className="px-4 py-3 hidden md:table-cell">
+                        {ltvMeta && b.ltv_segment ? (
+                          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${ltvMeta.bg} ${ltvMeta.text}`}>{b.ltv_segment}</span>
+                        ) : <span className="text-xs text-ink-3">—</span>}
+                      </td>
+                      <td className="px-4 py-3 hidden lg:table-cell">
+                        <div className="flex gap-1">
+                          {b.is_subscriber && <span className="rounded-full bg-teal-pale px-1.5 py-0.5 text-[10px] font-medium text-teal-deep">Sub</span>}
+                          {b.is_loyalty_member && <span className="rounded-full bg-yellow-50 px-1.5 py-0.5 text-[10px] font-medium text-yellow-700">Loyal</span>}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-right font-data text-xs text-ink-2">{b.total_orders}</td>
+                      <td className="px-4 py-3 text-right font-data text-xs font-medium text-ink">{fmt(Number(b.total_revenue))}</td>
+                      <td className="px-4 py-3 text-right font-data text-xs text-ink-2 hidden sm:table-cell">{fmt(Number(b.avg_order_value))}</td>
+                      <td className="px-4 py-3 text-center hidden xl:table-cell">
+                        {b.engagement_score != null ? <EngagementBar score={b.engagement_score} /> : <span className="text-xs text-ink-3">—</span>}
+                      </td>
+                      <td className="px-4 py-3 text-center hidden xl:table-cell">
+                        {b.predicted_next_order_date ? (
+                          <span className={`text-xs font-medium ${isOverdue ? 'text-red-600' : 'text-ink-2'}`}>
+                            {isOverdue ? 'Overdue' : new Date(b.predicted_next_order_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                          </span>
+                        ) : <span className="text-xs text-ink-3">—</span>}
+                      </td>
                     </tr>
                   )
                 })
@@ -669,7 +620,7 @@ export default function CustomerTable({
         {/* Pagination */}
         {totalPages > 1 && (
           <div className="flex items-center justify-between border-t border-cream-2 px-5 py-3">
-            <span className="font-data text-xs text-ink-3">Page {page} of {totalPages} — {totalCount.toLocaleString()} customers</span>
+            <span className="font-data text-xs text-ink-3">Page {page} of {totalPages} — {totalCount.toLocaleString()} unique buyers</span>
             <div className="flex gap-2">
               <Link href={`/dashboard/customers?page=${page - 1}`} className={`rounded-lg border border-cream-3 px-3 py-1.5 text-xs font-medium text-ink-2 hover:bg-cream transition ${page <= 1 ? 'pointer-events-none opacity-40' : ''}`}>Previous</Link>
               <Link href={`/dashboard/customers?page=${page + 1}`} className={`rounded-lg border border-cream-3 px-3 py-1.5 text-xs font-medium text-ink-2 hover:bg-cream transition ${page >= totalPages ? 'pointer-events-none opacity-40' : ''}`}>Next</Link>
@@ -681,8 +632,7 @@ export default function CustomerTable({
       {/* Detail panel */}
       {selected && (
         <DetailPanel
-          customer={selected}
-          profile={selected.email ? profileMap[selected.email.toLowerCase()] ?? null : null}
+          buyer={selected}
           onClose={() => setSelected(null)}
         />
       )}

@@ -399,7 +399,7 @@ export default async function DashboardPage() {
     { data: rechargeSubs },
     { data: analyticsMetrics },
     { data: analyticsSessions },
-    { data: customerProfiles },
+    { data: customerProfiles, count: profileCount },
   ] = await Promise.all([
     supabase.from('orders').select('total_price, currency, processed_at').eq('financial_status', 'paid').gte('processed_at', thirtyDaysAgo.toISOString()),
     supabase.from('orders').select('total_price').eq('financial_status', 'paid').gte('processed_at', sixtyDaysAgo.toISOString()).lt('processed_at', thirtyDaysAgo.toISOString()),
@@ -415,7 +415,7 @@ export default async function DashboardPage() {
     service.from('recharge_subscriptions').select('status, price, order_interval_unit, charge_interval_frequency').eq('tenant_id', TENANT_ID).eq('status', 'active'),
     service.from('analytics_metrics_cache').select('metric_name, metric_value').eq('tenant_id', TENANT_ID),
     service.from('analytics_sessions').select('sessions, conversions').eq('tenant_id', TENANT_ID).eq('date_range', '90d'),
-    service.from('customer_profiles').select('segment').eq('tenant_id', TENANT_ID),
+    service.from('customer_profiles').select('segment', { count: 'exact' }).eq('tenant_id', TENANT_ID),
   ])
 
   // ── Connection flags ─────────────────────────────────────────────────────────
@@ -565,7 +565,7 @@ export default async function DashboardPage() {
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         <MetricCard label="Revenue (30d)" value={fmt(currRevenue, currency)} delta={revDelta} sub="paid orders" />
         <MetricCard label="Orders (30d)"  value={currCount.toLocaleString()} delta={countDelta} sub="paid orders" />
-        <MetricCard label="Total Customers" value={totalCustomers !== null ? totalCustomers.toLocaleString() : '—'} delta={null} sub="all time" noAnimation />
+        <MetricCard label="Total Customers" value={profileCount !== null ? profileCount.toLocaleString() : (totalCustomers !== null ? totalCustomers.toLocaleString() : '—')} delta={null} sub="unique buyers" noAnimation />
         <MetricCard label={rechargeConnected ? 'MRR' : 'Avg. Order Value'} value={rechargeConnected ? fmt(mrr) : fmt(currAOV, currency)} delta={rechargeConnected ? null : aovDelta} sub={rechargeConnected ? 'subscriptions' : 'paid orders'} />
       </div>
 
