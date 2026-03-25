@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { useSortableTable, SortIcon, thCls } from '@/hooks/useSortableTable'
+import { usePagination, Paginator, exportCSV } from '@/hooks/usePagination'
 
 interface Campaign {
   id: string
@@ -207,6 +208,7 @@ export default function MetaDashboard({ connected, campaigns, metrics }: Props) 
     'spend',
     'desc',
   )
+  const { paged: pagedCampaigns, page: campPage, setPage: setCampPage, totalPages: campTotalPages } = usePagination(sortedCampaigns as unknown as Campaign[], 20)
 
   if (!connected) return <ConnectPrompt />
 
@@ -360,7 +362,20 @@ export default function MetaDashboard({ connected, campaigns, metrics }: Props) 
       <section className="rounded-2xl border border-cream-3 bg-white shadow-sm overflow-hidden">
         <div className="flex items-center justify-between border-b border-cream-2 px-5 py-3.5">
           <h2 className="font-display text-sm font-semibold text-ink">All Campaigns</h2>
-          <span className="font-data text-xs text-ink-3">Total spend: {fmt(totalSpend90)} · 90 days</span>
+          <div className="flex items-center gap-3">
+            <span className="font-data text-xs text-ink-3">Total spend: {fmt(totalSpend90)} · 90 days</span>
+            {campaigns.length > 0 && (
+              <button
+                onClick={() => exportCSV('meta-campaigns', campaigns.map((c) => ({ name: c.name, status: c.status, objective: c.objective, spend: c.spend, impressions: c.impressions, clicks: c.clicks, ctr: c.ctr, purchases: c.purchases, purchase_value: c.purchase_value, roas: c.roas })))}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-cream-3 px-2.5 py-1 text-xs text-ink-3 hover:bg-cream transition"
+              >
+                <svg className="h-3 w-3" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <path d="M6 1v7M3 5l3 3 3-3M1 9v1a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V9" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+                CSV
+              </button>
+            )}
+          </div>
         </div>
         {campaigns.length === 0 ? (
           <div className="px-5 py-10 text-center text-sm text-ink-3">No campaigns found — run a sync to import data.</div>
@@ -381,7 +396,7 @@ export default function MetaDashboard({ connected, campaigns, metrics }: Props) 
                 </tr>
               </thead>
               <tbody className="divide-y divide-cream-2">
-                {(sortedCampaigns as unknown as Campaign[]).map((c) => (
+                {pagedCampaigns.map((c) => (
                   <tr
                     key={c.id}
                     className={`hover:bg-cream transition-colors ${c.spend > 0 && c.roas < 1 ? 'bg-red-50/50' : ''}`}
@@ -412,6 +427,7 @@ export default function MetaDashboard({ connected, campaigns, metrics }: Props) 
             </table>
           </div>
         )}
+        <Paginator page={campPage} totalPages={campTotalPages} setPage={setCampPage} />
       </section>
     </div>
   )

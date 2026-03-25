@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import { usePagination, Paginator, exportCSV } from '@/hooks/usePagination'
 
 interface SessionRow { channel: string; sessions: number; conversions: number; revenue: number }
 interface PageRow { page_path: string; sessions: number; conversions: number; avg_time_seconds: number | null }
@@ -315,6 +316,7 @@ export default function AnalyticsDashboard({
 }: Props) {
   const [syncing, setSyncing] = useState(false)
   const [syncMsg, setSyncMsg] = useState('')
+  const { paged: pagedPages, page: pagesPage, setPage: setPagesPage, totalPages: pagesTotalPages } = usePagination(pages, 20)
 
   if (!connected) return <ConnectPrompt />
 
@@ -422,9 +424,22 @@ export default function AnalyticsDashboard({
 
       {/* Top landing pages */}
       <section className="rounded-2xl border border-cream-3 bg-white shadow-sm overflow-hidden">
-        <div className="border-b border-cream-2 px-5 py-3.5">
-          <h2 className="font-display text-sm font-semibold text-ink">Top Landing Pages</h2>
-          <p className="text-xs text-ink-3 mt-0.5">Last 90 days — by sessions</p>
+        <div className="border-b border-cream-2 px-5 py-3.5 flex items-center justify-between">
+          <div>
+            <h2 className="font-display text-sm font-semibold text-ink">Top Landing Pages</h2>
+            <p className="text-xs text-ink-3 mt-0.5">Last 90 days — by sessions</p>
+          </div>
+          {pages.length > 0 && (
+            <button
+              onClick={() => exportCSV('analytics-landing-pages', pages.map((p) => ({ page: p.page_path, sessions: p.sessions, conversions: p.conversions, avg_time_seconds: p.avg_time_seconds ?? 0 })))}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-cream-3 px-2.5 py-1 text-xs text-ink-3 hover:bg-cream transition"
+            >
+              <svg className="h-3 w-3" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <path d="M6 1v7M3 5l3 3 3-3M1 9v1a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V9" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+              CSV
+            </button>
+          )}
         </div>
         {pages.length === 0 ? (
           <div className="px-5 py-10 text-center text-sm text-ink-3">No page data — run a sync first.</div>
@@ -441,7 +456,7 @@ export default function AnalyticsDashboard({
                 </tr>
               </thead>
               <tbody className="divide-y divide-cream-2">
-                {pages.map((p) => {
+                {pagedPages.map((p) => {
                   const cvr = p.sessions > 0 ? ((p.conversions / p.sessions) * 100).toFixed(1) : '0.0'
                   return (
                     <tr key={p.page_path} className="hover:bg-cream transition-colors">
@@ -463,6 +478,7 @@ export default function AnalyticsDashboard({
             </table>
           </div>
         )}
+        <Paginator page={pagesPage} totalPages={pagesTotalPages} setPage={setPagesPage} />
       </section>
 
       {/* Google Ads campaigns from GA4 */}

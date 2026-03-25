@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import { usePagination, Paginator, exportCSV } from '@/hooks/usePagination'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -216,6 +217,15 @@ export default function SemrushDashboard({ connected, domain, metrics, keywords,
   const [syncing, setSyncing] = useState(false)
   const [syncError, setSyncError] = useState<string | null>(null)
   const [kwTab, setKwTab] = useState<KeywordTab>('all')
+  const { paged: pagedKeywords, page: kwPage, setPage: setKwPage, reset: resetKwPage, totalPages: kwTotalPages } = usePagination(
+    keywords.filter((k) => {
+      if (kwTab === 'improved') return k.position_change < -1
+      if (kwTab === 'declined') return k.position_change > 1
+      if (kwTab === 'new') return k.previous_position === 0 && k.position > 0
+      return true
+    }),
+    25
+  )
   const [generating, setGenerating] = useState(false)
   const [aiInsight, setAiInsight] = useState<string | null>(null)
 
@@ -255,13 +265,6 @@ export default function SemrushDashboard({ connected, domain, metrics, keywords,
     } catch { setAiInsight('Error generating insights') }
     finally { setGenerating(false) }
   }
-
-  const filteredKeywords = keywords.filter((k) => {
-    if (kwTab === 'improved') return k.position_change < -1
-    if (kwTab === 'declined') return k.position_change > 1
-    if (kwTab === 'new') return k.previous_position === 0 && k.position > 0
-    return true
-  })
 
   // Lost rankings = keywords that dropped significantly
   const lostRankings = keywords
@@ -376,23 +379,36 @@ export default function SemrushDashboard({ connected, domain, metrics, keywords,
       <section className="rounded-2xl border border-cream-3 bg-white shadow-sm overflow-hidden">
         <div className="flex items-center justify-between border-b border-cream-2 px-5 py-3.5 flex-wrap gap-2">
           <h2 className="font-display text-base font-semibold text-ink">Top Organic Keywords</h2>
-          <div className="flex gap-1">
-            {(['all', 'improved', 'declined', 'new'] as KeywordTab[]).map((tab) => (
+          <div className="flex items-center gap-2">
+            <div className="flex gap-1">
+              {(['all', 'improved', 'declined', 'new'] as KeywordTab[]).map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => { setKwTab(tab); resetKwPage() }}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-medium transition ${
+                    kwTab === tab
+                      ? 'bg-ink text-cream'
+                      : 'text-ink-3 hover:bg-cream-2'
+                  }`}
+                >
+                  {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                </button>
+              ))}
+            </div>
+            {keywords.length > 0 && (
               <button
-                key={tab}
-                onClick={() => setKwTab(tab)}
-                className={`px-2.5 py-1 rounded-lg text-xs font-medium transition ${
-                  kwTab === tab
-                    ? 'bg-ink text-cream'
-                    : 'text-ink-3 hover:bg-cream-2'
-                }`}
+                onClick={() => exportCSV('semrush-keywords', keywords.map((k) => ({ keyword: k.keyword, position: k.position, position_change: k.position_change, search_volume: k.search_volume, cpc: k.cpc, traffic_percent: k.traffic_percent, url: k.url ?? '' })))}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-cream-3 px-2.5 py-1 text-xs text-ink-3 hover:bg-cream transition"
               >
-                {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                <svg className="h-3 w-3" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <path d="M6 1v7M3 5l3 3 3-3M1 9v1a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V9" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+                CSV
               </button>
-            ))}
+            )}
           </div>
         </div>
-        {filteredKeywords.length === 0 ? (
+        {pagedKeywords.length === 0 ? (
           <div className="px-5 py-8 text-center text-sm text-ink-3">No keywords in this category</div>
         ) : (
           <div className="overflow-x-auto">
@@ -408,7 +424,7 @@ export default function SemrushDashboard({ connected, domain, metrics, keywords,
                 </tr>
               </thead>
               <tbody className="divide-y divide-cream-2">
-                {filteredKeywords.map((k, i) => (
+                {pagedKeywords.map((k, i) => (
                   <tr key={i} className="hover:bg-cream transition-colors">
                     <td className="px-5 py-2.5">
                       <span className="font-medium text-ink text-sm">{k.keyword}</span>
@@ -443,6 +459,7 @@ export default function SemrushDashboard({ connected, domain, metrics, keywords,
             </table>
           </div>
         )}
+        <Paginator page={kwPage} totalPages={kwTotalPages} setPage={setKwPage} />
       </section>
 
       {/* Competitor Analysis + Keyword Gap (side by side on large screens) */}
