@@ -31,9 +31,10 @@ interface OrderRow {
 }
 
 export async function POST(req: NextRequest) {
+  const isCron = req.headers.get('Authorization') === `Bearer ${process.env.CRON_SECRET ?? ''}`
   const supabase = await createSupabaseServerClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!user && !isCron) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
   const url   = new URL(req.url)
   const batch = Math.max(0, parseInt(url.searchParams.get('batch') ?? '0', 10))

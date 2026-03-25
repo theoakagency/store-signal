@@ -8,10 +8,11 @@ const TENANT_ID = '00000000-0000-0000-0000-000000000001'
 const STORE_ID = '00000000-0000-0000-0000-000000000002'
 
 export async function POST(req: NextRequest) {
-  // Auth check
+  // Auth check — allow internal cron calls with CRON_SECRET
+  const isCron = req.headers.get('Authorization') === `Bearer ${process.env.CRON_SECRET ?? ''}`
   const supabase = await createSupabaseServerClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!user && !isCron) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
   const service = createSupabaseServiceClient()
 

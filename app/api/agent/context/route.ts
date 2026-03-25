@@ -26,10 +26,11 @@ export async function GET() {
   return Response.json({ context: data?.context ?? null, calculated_at: data?.calculated_at ?? null })
 }
 
-export async function POST(_req: NextRequest) {
+export async function POST(req: NextRequest) {
+  const isCron = req.headers.get('Authorization') === `Bearer ${process.env.CRON_SECRET ?? ''}`
   const supabase = await createSupabaseServerClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!user && !isCron) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
   const service = createSupabaseServiceClient()
 
