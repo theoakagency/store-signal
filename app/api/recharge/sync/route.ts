@@ -6,6 +6,7 @@ import { NextRequest } from 'next/server'
 import { createSupabaseServerClient, createSupabaseServiceClient } from '@/lib/supabase'
 import {
   getSubscriptions,
+  getCustomers,
   toMonthlyRevenue,
   type RechargeSubscription,
 } from '@/lib/recharge'
@@ -39,19 +40,29 @@ export async function POST(_req: NextRequest) {
   const apiToken = (store as { recharge_api_token: string | null } | null)?.recharge_api_token
   if (!apiToken) return Response.json({ error: 'Recharge not connected' }, { status: 400 })
 
-  // ── Fetch subscriptions (active + cancelled only — expired unused in metrics) ─
+  // ── Fetch subscriptions + customers in parallel ───────────────────────────────
+  // The /subscriptions endpoint does NOT embed customer.email in the response,
+  // so we fetch /customers separately and build a customer_id → email map.
   let active: Awaited<ReturnType<typeof getSubscriptions>>
   let cancelled: Awaited<ReturnType<typeof getSubscriptions>>
+  let allCustomers: Awaited<ReturnType<typeof getCustomers>>
 
   try {
-    ;[active, cancelled] = await Promise.all([
+    ;[active, cancelled, allCustomers] = await Promise.all([
       getSubscriptions(apiToken, 'active'),
       getSubscriptions(apiToken, 'cancelled'),
+      getCustomers(apiToken),
     ])
   } catch (e) {
     const msg = (e as Error).message
-    console.error('Recharge subscription fetch error:', msg)
-    return Response.json({ error: `Subscription fetch failed: ${msg}` }, { status: 502 })
+    console.error('Recharge fetch error:', msg)
+    return Response.json({ error: `Recharge fetch failed: ${msg}` }, { status: 502 })
+  }
+
+  // Build customer_id → email lookup
+  const customerEmailById = new Map<string, string>()
+  for (const c of allCustomers) {
+    if (c.email) customerEmailById.set(String(c.id), c.email.toLowerCase().trim())
   }
 
   const allSubscriptions = [...active, ...cancelled]
@@ -62,7 +73,7 @@ export async function POST(_req: NextRequest) {
       id: String(s.id),
       tenant_id: TENANT_ID,
       customer_id: String(s.customer_id),
-      customer_email: s.customer?.email ?? null,
+      customer_email: customerEmailById.get(String(s.customer_id)) ?? s.customer?.email?.toLowerCase().trim() ?? null,
       status: s.status,
       product_title: s.product_title,
       variant_title: s.variant_title ?? null,
@@ -161,7 +172,12 @@ export async function POST(_req: NextRequest) {
   // Subscriber vs non-subscriber LTV
   // Use customer_profiles (all 40k buyers) instead of customers table (Shopify accounts only).
   // Paginate to bypass the PostgREST 1,000-row cap.
-  const subscriberEmails = new Set(allSubscriptions.map((s) => s.customer?.email?.toLowerCase()).filter(Boolean))
+  // Use the customerEmailById map (not s.customer?.email which is always null from the API).
+  const subscriberEmails = new Set(
+    allSubscriptions
+      .map((s) => customerEmailById.get(String(s.customer_id)) ?? s.customer?.email?.toLowerCase().trim())
+      .filter(Boolean) as string[]
+  )
 
   type ProfileLtv = { email: string; total_revenue: number; total_orders: number; avg_order_value: number }
   const allProfiles: ProfileLtv[] = []
