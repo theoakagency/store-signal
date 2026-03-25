@@ -402,6 +402,52 @@ function DetailPanel({ buyer, onClose }: {
   )
 }
 
+// ── Rebuild Overlap Button ─────────────────────────────────────────────────────
+
+function RebuildOverlapButton() {
+  const [status, setStatus] = useState<'idle' | 'running' | 'done' | 'error'>('idle')
+  const [info, setInfo]     = useState<string | null>(null)
+
+  async function rebuild() {
+    setStatus('running')
+    setInfo(null)
+    try {
+      const res  = await fetch('/api/customers/rebuild-overlap', { method: 'POST' })
+      const data = await res.json()
+      if (!res.ok || data.error) {
+        setInfo(data.error ?? 'Request failed')
+        setStatus('error')
+        return
+      }
+      setStatus('done')
+      setInfo(`${(data.total_customers ?? 0).toLocaleString()} buyers · ${(data._debug?.active_subscriber_emails ?? 0).toLocaleString()} subscribers matched`)
+      setTimeout(() => window.location.reload(), 1200)
+    } catch {
+      setInfo('Network error')
+      setStatus('error')
+    }
+  }
+
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <button
+        onClick={rebuild}
+        disabled={status === 'running' || status === 'done'}
+        className="flex items-center gap-1.5 rounded-lg border border-cream-3 px-3 py-1.5 text-xs font-medium text-ink-2 hover:bg-cream-2 disabled:opacity-50 transition"
+      >
+        {status === 'running' ? (
+          <><span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-ink-3/30 border-t-ink-3" />Rebuilding…</>
+        ) : status === 'done' ? 'Done — reloading…' : (
+          <><svg className="h-3 w-3" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M2 8a6 6 0 1 1 12 0" strokeLinecap="round"/><path d="M2 8l2-2M2 8l-2-2" strokeLinecap="round" strokeLinejoin="round"/></svg>Rebuild Overlap</>
+        )}
+      </button>
+      {info && (
+        <p className={`text-[10px] ${status === 'error' ? 'text-red-600' : 'text-ink-3'}`}>{info}</p>
+      )}
+    </div>
+  )
+}
+
 // ── Build Profiles Button ──────────────────────────────────────────────────────
 
 function BuildProfilesButton() {
@@ -497,7 +543,10 @@ export default function CustomerTable({
             <span className="ml-1.5 text-ink-3/60">· includes guest checkouts and all historical orders</span>
           </p>
         </div>
-        <BuildProfilesButton />
+        <div className="flex items-start gap-2">
+          <RebuildOverlapButton />
+          <BuildProfilesButton />
+        </div>
       </div>
 
       {/* Overlap Venn */}

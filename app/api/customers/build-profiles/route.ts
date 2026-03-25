@@ -41,18 +41,42 @@ export async function POST(req: NextRequest) {
   const service = createSupabaseServiceClient()
 
   // ── Fetch source data ─────────────────────────────────────────────────────────
-  // Orders: paginate in chunks of 5,000 to bypass the PostgREST max-rows limit.
-  // Subscriptions + loyalty: small tables, fetch all at once.
-  const [subsResult, loyaltyResult] = await Promise.all([
-    service
-      .from('recharge_subscriptions')
-      .select('customer_email, status, price, charge_interval_frequency, order_interval_unit')
-      .eq('tenant_id', TENANT_ID),
-    service
-      .from('loyalty_customers')
-      .select('email, tier, points_balance, points_spent_total')
-      .eq('tenant_id', TENANT_ID),
-  ])
+  // All three tables are paginated to bypass the PostgREST 1,000-row cap.
+  // recharge_subscriptions has 3,400+ rows; loyalty_customers may also exceed 1k.
+
+  type SubRow = { customer_email: string | null; status: string; price: string; charge_interval_frequency: number; order_interval_unit: string }
+  const allSubs: SubRow[] = []
+  {
+    let from = 0
+    while (true) {
+      const { data } = await service
+        .from('recharge_subscriptions')
+        .select('customer_email, status, price, charge_interval_frequency, order_interval_unit')
+        .eq('tenant_id', TENANT_ID)
+        .range(from, from + 999)
+      if (!data || data.length === 0) break
+      allSubs.push(...(data as SubRow[]))
+      if (data.length < 1000) break
+      from += 1000
+    }
+  }
+
+  type LoyaltyRow = { email: string | null; tier: string | null; points_balance: number | null; points_spent_total: number | null }
+  const allLoyalty: LoyaltyRow[] = []
+  {
+    let from = 0
+    while (true) {
+      const { data } = await service
+        .from('loyalty_customers')
+        .select('email, tier, points_balance, points_spent_total')
+        .eq('tenant_id', TENANT_ID)
+        .range(from, from + 999)
+      if (!data || data.length === 0) break
+      allLoyalty.push(...(data as LoyaltyRow[]))
+      if (data.length < 1000) break
+      from += 1000
+    }
+  }
 
   const orders: OrderRow[] = []
   const PAGE = 1000  // must be ≤ Supabase max-rows so the "< PAGE" sentinel works
@@ -72,7 +96,7 @@ export async function POST(req: NextRequest) {
 
   // ── Build subscription map (email → best active sub) ─────────────────────────
   const subsByEmail = new Map<string, { status: string; interval: string; mrr: number }>()
-  for (const sub of subsResult.data ?? []) {
+  for (const sub of allSubs) {
     if (!sub.customer_email) continue
     const email = sub.customer_email.toLowerCase()
     if (!subsByEmail.has(email) || sub.status === 'active') {
@@ -92,7 +116,7 @@ export async function POST(req: NextRequest) {
 
   // ── Build loyalty map ─────────────────────────────────────────────────────────
   const loyaltyByEmail = new Map<string, { tier: string; balance: number; spent: number }>()
-  for (const lc of loyaltyResult.data ?? []) {
+  for (const lc of allLoyalty) {
     if (!lc.email) continue
     loyaltyByEmail.set(lc.email.toLowerCase(), {
       tier:    lc.tier ?? '',
