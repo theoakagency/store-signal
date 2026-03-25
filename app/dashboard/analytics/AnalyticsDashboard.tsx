@@ -365,6 +365,9 @@ export default function AnalyticsDashboard({
       </div>
       {syncMsg && <p className="text-sm text-ink-2">{syncMsg}</p>}
 
+      {/* AI Insights — top of page */}
+      <AnalyticsInsights />
+
       {/* KPI row */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
         <MetricCard
@@ -416,9 +419,6 @@ export default function AnalyticsDashboard({
 
       {/* Channel Efficiency */}
       <ChannelEfficiency sessions={sessions} />
-
-      {/* AI Insights */}
-      <AnalyticsInsights />
 
       {/* Top landing pages */}
       <section className="rounded-2xl border border-cream-3 bg-white shadow-sm overflow-hidden">

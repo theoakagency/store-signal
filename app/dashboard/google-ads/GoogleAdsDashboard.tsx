@@ -141,6 +141,8 @@ function TypeBreakdown({ campaigns }: { campaigns: Campaign[] }) {
 export default function GoogleAdsDashboard({ connected, campaigns, metrics, dataSource = 'google_ads' }: Props) {
   const [syncing, setSyncing] = useState(false)
   const [syncMsg, setSyncMsg] = useState('')
+  const [aiInsight, setAiInsight] = useState<string | null>(null)
+  const [generating, setGenerating] = useState(false)
   const { sortedData: sortedCampaigns, sortColumn, sortDirection, handleSort } = useSortableTable(
     campaigns as unknown as Record<string, unknown>[],
     'spend',
@@ -152,6 +154,20 @@ export default function GoogleAdsDashboard({ connected, campaigns, metrics, data
   const m = (k: string) => metrics[k] ?? 0
   const belowOne = campaigns.filter((c) => c.spend > 0 && c.roas < 1)
   const totalSpendAll = campaigns.reduce((s, c) => s + c.spend, 0)
+
+  async function handleGenerateInsights() {
+    setGenerating(true)
+    setAiInsight(null)
+    try {
+      const res = await fetch('/api/insights/advertising', { method: 'POST' })
+      const data = await res.json() as { insight?: string; error?: string }
+      setAiInsight(data.error ? `Error: ${data.error}` : (data.insight ?? ''))
+    } catch {
+      setAiInsight('Network error — try again')
+    } finally {
+      setGenerating(false)
+    }
+  }
 
   async function handleSync() {
     setSyncing(true)
@@ -187,6 +203,42 @@ export default function GoogleAdsDashboard({ connected, campaigns, metrics, data
         </button>
       </div>
       {syncMsg && <p className="text-sm text-ink-2">{syncMsg}</p>}
+
+      {/* AI Insights — top of page */}
+      <section className="rounded-2xl border border-cream-3 bg-white p-6 shadow-sm">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="font-display text-base font-semibold text-ink">AI Ad Intelligence</h2>
+            <p className="text-xs text-ink-3 mt-0.5">Cross-platform analysis of Google &amp; Meta campaign performance</p>
+          </div>
+          <button
+            onClick={handleGenerateInsights}
+            disabled={generating}
+            className="flex items-center gap-2 rounded-xl bg-[#4285F4] px-4 py-2 text-sm font-semibold text-white hover:bg-[#3367d6] disabled:opacity-50 transition"
+          >
+            {generating ? (
+              <>
+                <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                Analyzing…
+              </>
+            ) : (
+              <>
+                <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="currentColor">
+                  <path d="M8 1l1.5 3.5L13 6l-2.5 2.5.5 3.5L8 10.5 5 12l.5-3.5L3 6l3.5-.5L8 1z" />
+                </svg>
+                {aiInsight ? 'Regenerate' : 'Generate Insights'}
+              </>
+            )}
+          </button>
+        </div>
+        {aiInsight ? (
+          <div className="rounded-xl bg-ink/5 border border-ink/10 px-5 py-4 text-sm text-ink leading-relaxed whitespace-pre-wrap">{aiInsight}</div>
+        ) : (
+          <div className="rounded-xl border border-dashed border-cream-3 bg-cream px-5 py-6 text-center">
+            <p className="text-sm text-ink-3">Generate AI analysis of campaign ROAS, spend efficiency, and optimization opportunities across Google &amp; Meta.</p>
+          </div>
+        )}
+      </section>
 
       {/* GA4 fallback notice */}
       {dataSource === 'ga4' && (

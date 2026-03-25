@@ -360,6 +360,55 @@ export default function KlaviyoDashboard({ connected, campaigns, flows, metrics 
 
       {!noData && (
         <>
+          {/* AI Insights — TOP of page (UX principle: most valuable first) */}
+          <section className="rounded-2xl border border-cream-3 bg-white p-6 shadow-sm">
+            <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="font-display text-base font-semibold text-ink">AI Email Intelligence</h2>
+                  <span className="inline-flex items-center rounded-full bg-orange-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-orange-700">Klaviyo</span>
+                </div>
+                <p className="text-xs text-ink-3 mt-0.5">Auto-analyzing campaigns, flows &amp; engagement patterns</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => router.push(`/dashboard/chat?q=${encodeURIComponent('Analyze my email strategy — which campaigns and flows are performing best, and what should I do differently?')}`)}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-teal/25 bg-teal/5 px-3 py-1 text-xs font-medium text-teal hover:bg-teal hover:text-white transition"
+                >
+                  <svg className="h-3 w-3" viewBox="0 0 12 12" fill="currentColor"><path d="M6 1l1.2 3.8H11l-3 2.2 1.2 3.8L6 8.5l-3.2 2.3L4 7 1 4.8h3.8L6 1z" /></svg>
+                  Ask AI
+                </button>
+                {insightsState !== 'idle' && (
+                  <button onClick={loadInsights} disabled={insightsState === 'loading'} className="inline-flex items-center gap-1 rounded-lg border border-cream-3 bg-cream px-2.5 py-1.5 text-xs font-medium text-ink-2 hover:bg-cream-2 disabled:opacity-50 transition">
+                    {insightsState === 'loading' ? <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-cream-3 border-t-teal" /> : <svg className="h-3 w-3" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M11 6A5 5 0 1 1 6 1" strokeLinecap="round"/><path d="M11 1v3H8" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                    {insightsState === 'loading' ? 'Analyzing…' : 'Refresh'}
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {insightsState === 'loading' && (
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                {[1, 2, 3, 4].map((i) => <div key={i} className="rounded-xl border border-cream-2 bg-cream p-4 animate-pulse"><div className="h-3 w-24 bg-cream-3 rounded mb-2"/><div className="h-4 w-full bg-cream-3 rounded mb-1.5"/><div className="h-3 w-3/4 bg-cream-3 rounded"/></div>)}
+              </div>
+            )}
+            {insightsState === 'done' && insights.length > 0 && (
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                {insights.map((insight, i) => <InsightCard key={i} insight={insight} />)}
+              </div>
+            )}
+            {insightsState === 'idle' && (
+              <div className="rounded-xl border border-dashed border-cream-3 bg-cream px-6 py-8 text-center">
+                <p className="text-sm text-ink-2 font-medium">No email insights yet</p>
+                <p className="text-xs text-ink-3 mt-1 mb-3">AI analyzes your campaign performance, flow health, and engagement trends</p>
+                <button onClick={loadInsights} className="rounded-lg bg-teal px-4 py-2 text-sm font-semibold text-white hover:bg-teal-dark transition">Generate AI Insights</button>
+              </div>
+            )}
+            {insightsState === 'error' && (
+              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-700">Failed to generate insights. Check your ANTHROPIC_API_KEY is set.</div>
+            )}
+          </section>
+
           {/* KPI cards */}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <MetricCard
@@ -747,64 +796,6 @@ export default function KlaviyoDashboard({ connected, campaigns, flows, metrics 
             </p>
           </section>
 
-          {/* AI Insights */}
-          <section>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="font-display text-base font-semibold text-ink">Key Insights</h2>
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={() => router.push(`/dashboard/chat?q=${encodeURIComponent('Analyze my email strategy — which campaigns and flows are performing best, and what should I do differently?')}`)}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-teal/25 bg-teal/5 px-3 py-1 text-xs font-medium text-teal hover:bg-teal hover:text-white transition"
-                >
-                  <svg className="h-3 w-3" viewBox="0 0 12 12" fill="currentColor">
-                    <path d="M6 1l1.2 3.8H11l-3 2.2 1.2 3.8L6 8.5l-3.2 2.3L4 7 1 4.8h3.8L6 1z" />
-                  </svg>
-                  Ask AI about email strategy
-                </button>
-                {insightsState === 'done' && (
-                  <button onClick={loadInsights} className="text-xs text-teal hover:text-teal-dark font-medium transition">
-                    Regenerate
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {insightsState === 'loading' && (
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                {[1, 2, 3, 4].map((i) => (
-                  <div key={i} className="rounded-xl border border-cream-3 bg-white p-5 shadow-sm">
-                    <div className="skeleton h-3 w-1/3 mb-3" />
-                    <div className="skeleton h-4 w-2/3 mb-4" />
-                    <div className="skeleton h-3 w-full mb-2" />
-                    <div className="skeleton h-3 w-4/5" />
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {insightsState === 'done' && insights.length > 0 && (
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                {insights.map((insight, i) => (
-                  <InsightCard key={i} insight={insight} />
-                ))}
-              </div>
-            )}
-
-            {insightsState === 'idle' && (
-              <div className="rounded-xl border border-cream-3 bg-white px-5 py-8 text-center shadow-sm">
-                <button onClick={loadInsights} className="rounded-lg bg-teal px-4 py-2 text-sm font-semibold text-white hover:bg-teal-dark transition">
-                  Generate AI Insights
-                </button>
-                <p className="mt-2 text-xs text-ink-3">Powered by Claude Haiku</p>
-              </div>
-            )}
-
-            {insightsState === 'error' && (
-              <div className="rounded-xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700">
-                Failed to generate insights. Check your ANTHROPIC_API_KEY is set.
-              </div>
-            )}
-          </section>
         </>
       )}
 

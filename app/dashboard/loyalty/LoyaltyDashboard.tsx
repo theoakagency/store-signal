@@ -190,6 +190,34 @@ export default function LoyaltyDashboard({ connected, metrics, totalCustomers }:
         </div>
       ) : (
         <>
+          {/* AI Analysis — top of page */}
+          <div className="rounded-2xl border border-cream-3 bg-white p-6 shadow-sm">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="font-display text-base font-semibold text-ink">AI Analysis</h2>
+                <p className="mt-0.5 text-xs text-ink-3">Do points promotions work? What is the true program cost?</p>
+              </div>
+              <button
+                onClick={generateInsight}
+                disabled={aiLoading}
+                className="flex items-center gap-2 rounded-lg bg-charcoal px-4 py-2 text-sm font-semibold text-cream hover:bg-charcoal/80 disabled:opacity-50 transition"
+              >
+                {aiLoading ? (
+                  <><span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-cream/40 border-t-cream" />Analyzing…</>
+                ) : (
+                  <>Generate Insights</>
+                )}
+              </button>
+            </div>
+            {aiInsight ? (
+              <div className="rounded-xl bg-cream p-4 text-sm text-ink leading-relaxed whitespace-pre-wrap">{aiInsight}</div>
+            ) : (
+              <div className="rounded-xl bg-cream p-4 text-sm text-ink-3">
+                Click "Generate Insights" to analyze whether your loyalty promotions are driving incremental purchases, the true cost of the program, and simplification opportunities.
+              </div>
+            )}
+          </div>
+
           {/* Section 1: Health KPIs */}
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
             <KpiCard
@@ -379,33 +407,6 @@ export default function LoyaltyDashboard({ connected, metrics, totalCustomers }:
             )}
           </div>
 
-          {/* Section 6: AI Insights */}
-          <div className="rounded-2xl border border-cream-3 bg-white p-6 shadow-sm">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h2 className="font-display text-base font-semibold text-ink">AI Analysis</h2>
-                <p className="mt-0.5 text-xs text-ink-3">Do points promotions work? What is the true program cost?</p>
-              </div>
-              <button
-                onClick={generateInsight}
-                disabled={aiLoading}
-                className="flex items-center gap-2 rounded-lg bg-charcoal px-4 py-2 text-sm font-semibold text-cream hover:bg-charcoal/80 disabled:opacity-50 transition"
-              >
-                {aiLoading ? (
-                  <><span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-cream/40 border-t-cream" />Analyzing…</>
-                ) : (
-                  <>Generate Insights</>
-                )}
-              </button>
-            </div>
-            {aiInsight ? (
-              <div className="rounded-xl bg-cream p-4 text-sm text-ink leading-relaxed whitespace-pre-wrap">{aiInsight}</div>
-            ) : (
-              <div className="rounded-xl bg-cream p-4 text-sm text-ink-3">
-                Click "Generate Insights" to analyze whether your loyalty promotions are driving incremental purchases, the true cost of the program, and simplification opportunities.
-              </div>
-            )}
-          </div>
         </>
       )}
     </div>

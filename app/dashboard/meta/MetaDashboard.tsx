@@ -279,6 +279,9 @@ export default function MetaDashboard({ connected, campaigns, metrics }: Props) 
         </div>
       )}
 
+      {/* AI Insights — TOP of page */}
+      <AiInsightsPanel />
+
       {/* Primary KPI cards — 90d */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <MetricCard
@@ -352,9 +355,6 @@ export default function MetaDashboard({ connected, campaigns, metrics }: Props) 
         <p className="text-xs text-ink-3 mt-0.5">Last 90 days — sorted best to worst · spend and status shown below each name</p>
         <RoasBarChart campaigns={campaigns} />
       </section>
-
-      {/* AI Insights */}
-      <AiInsightsPanel />
 
       {/* Campaign table */}
       <section className="rounded-2xl border border-cream-3 bg-white shadow-sm overflow-hidden">

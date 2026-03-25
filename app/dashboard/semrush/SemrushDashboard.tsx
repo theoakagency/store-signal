@@ -288,6 +288,53 @@ export default function SemrushDashboard({ connected, domain, metrics, keywords,
         </div>
       )}
 
+      {/* AI SEO Analysis — top of page */}
+      <section className="rounded-2xl border border-cream-3 bg-white p-6 shadow-sm">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="font-display text-base font-semibold text-ink">AI SEO Analysis</h2>
+            <p className="text-xs text-ink-3 mt-0.5">Analyzes your rankings, competitor gaps, and lost keywords</p>
+          </div>
+          <button
+            onClick={handleGenerateInsights}
+            disabled={generating}
+            className="flex items-center gap-2 rounded-xl bg-ink px-4 py-2 text-sm font-semibold text-cream hover:bg-charcoal disabled:opacity-50 transition"
+          >
+            {generating ? (
+              <>
+                <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-cream/30 border-t-cream" />
+                Analyzing…
+              </>
+            ) : (
+              <>
+                <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="currentColor">
+                  <path d="M8 1l1.5 3.5L13 6l-2.5 2.5.5 3.5L8 10.5 5 12l.5-3.5L3 6l3.5-.5L8 1z" />
+                </svg>
+                Generate Insights
+              </>
+            )}
+          </button>
+        </div>
+
+        {aiInsight ? (
+          <div className="rounded-xl bg-ink/5 border border-ink/10 px-5 py-4 text-sm text-ink leading-relaxed whitespace-pre-wrap">
+            {aiInsight}
+          </div>
+        ) : (
+          <div className="rounded-xl border border-dashed border-cream-3 bg-cream px-5 py-6 text-center">
+            <p className="text-sm text-ink-3">
+              Click &quot;Generate Insights&quot; to get AI analysis of:
+            </p>
+            <ul className="mt-2 text-xs text-ink-3 space-y-1">
+              <li>Why organic traffic is trending the way it is</li>
+              <li>Which lost rankings need immediate attention</li>
+              <li>Top keyword gap opportunities vs competitors</li>
+              <li>Top 3 SEO actions for the next 30 days</li>
+            </ul>
+          </div>
+        )}
+      </section>
+
       {/* Domain Health Cards */}
       <section>
         <h2 className="font-display text-sm font-semibold text-ink mb-3">Domain Health</h2>
@@ -574,52 +621,6 @@ export default function SemrushDashboard({ connected, domain, metrics, keywords,
         </p>
       </section>
 
-      {/* AI Insights */}
-      <section className="rounded-2xl border border-cream-3 bg-white p-6 shadow-sm">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h2 className="font-display text-base font-semibold text-ink">AI SEO Analysis</h2>
-            <p className="text-xs text-ink-3 mt-0.5">Analyzes your rankings, competitor gaps, and lost keywords</p>
-          </div>
-          <button
-            onClick={handleGenerateInsights}
-            disabled={generating}
-            className="flex items-center gap-2 rounded-xl bg-ink px-4 py-2 text-sm font-semibold text-cream hover:bg-charcoal disabled:opacity-50 transition"
-          >
-            {generating ? (
-              <>
-                <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-cream/30 border-t-cream" />
-                Analyzing…
-              </>
-            ) : (
-              <>
-                <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="currentColor">
-                  <path d="M8 1l1.5 3.5L13 6l-2.5 2.5.5 3.5L8 10.5 5 12l.5-3.5L3 6l3.5-.5L8 1z" />
-                </svg>
-                Generate Insights
-              </>
-            )}
-          </button>
-        </div>
-
-        {aiInsight ? (
-          <div className="rounded-xl bg-ink/5 border border-ink/10 px-5 py-4 text-sm text-ink leading-relaxed whitespace-pre-wrap">
-            {aiInsight}
-          </div>
-        ) : (
-          <div className="rounded-xl border border-dashed border-cream-3 bg-cream px-5 py-6 text-center">
-            <p className="text-sm text-ink-3">
-              Click &quot;Generate Insights&quot; to get AI analysis of:
-            </p>
-            <ul className="mt-2 text-xs text-ink-3 space-y-1">
-              <li>Why organic traffic is trending the way it is</li>
-              <li>Which lost rankings need immediate attention</li>
-              <li>Top keyword gap opportunities vs competitors</li>
-              <li>Top 3 SEO actions for the next 30 days</li>
-            </ul>
-          </div>
-        )}
-      </section>
     </div>
   )
 }
