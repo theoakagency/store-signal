@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import { useSortableTable, SortIcon, thCls } from '@/hooks/useSortableTable'
 
 interface Campaign {
   id: string
@@ -140,6 +141,11 @@ function TypeBreakdown({ campaigns }: { campaigns: Campaign[] }) {
 export default function GoogleAdsDashboard({ connected, campaigns, metrics, dataSource = 'google_ads' }: Props) {
   const [syncing, setSyncing] = useState(false)
   const [syncMsg, setSyncMsg] = useState('')
+  const { sortedData: sortedCampaigns, sortColumn, sortDirection, handleSort } = useSortableTable(
+    campaigns as unknown as Record<string, unknown>[],
+    'spend',
+    'desc',
+  )
 
   if (!connected) return <ConnectPrompt />
 
@@ -259,16 +265,16 @@ export default function GoogleAdsDashboard({ connected, campaigns, metrics, data
                   <th className="px-5 py-2.5 text-left">Campaign</th>
                   <th className="px-4 py-2.5 text-left">Type</th>
                   <th className="px-4 py-2.5 text-left">Status</th>
-                  <th className="px-4 py-2.5 text-right">Spend</th>
-                  <th className="px-4 py-2.5 text-right">Clicks</th>
-                  <th className="px-4 py-2.5 text-right">CTR</th>
-                  <th className="px-4 py-2.5 text-right">Conv.</th>
-                  <th className="px-4 py-2.5 text-right">ROAS</th>
+                  <th className={`px-4 py-2.5 text-right ${thCls('spend', sortColumn)}`} onClick={() => handleSort('spend')}>Spend<SortIcon column="spend" sortColumn={sortColumn} sortDirection={sortDirection} /></th>
+                  <th className={`px-4 py-2.5 text-right ${thCls('clicks', sortColumn)}`} onClick={() => handleSort('clicks')}>Clicks<SortIcon column="clicks" sortColumn={sortColumn} sortDirection={sortDirection} /></th>
+                  <th className={`px-4 py-2.5 text-right ${thCls('ctr', sortColumn)}`} onClick={() => handleSort('ctr')}>CTR<SortIcon column="ctr" sortColumn={sortColumn} sortDirection={sortDirection} /></th>
+                  <th className={`px-4 py-2.5 text-right ${thCls('conversions', sortColumn)}`} onClick={() => handleSort('conversions')}>Conv.<SortIcon column="conversions" sortColumn={sortColumn} sortDirection={sortDirection} /></th>
+                  <th className={`px-4 py-2.5 text-right ${thCls('roas', sortColumn)}`} onClick={() => handleSort('roas')}>ROAS<SortIcon column="roas" sortColumn={sortColumn} sortDirection={sortDirection} /></th>
                   <th className="px-4 py-2.5 text-left">Score</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-cream-2">
-                {campaigns.map((c) => (
+                {(sortedCampaigns as unknown as Campaign[]).map((c) => (
                   <tr key={c.id} className={`hover:bg-cream transition-colors ${c.spend > 0 && c.roas < 1 ? 'bg-red-50/50' : ''}`}>
                     <td className="px-5 py-2.5 max-w-48">
                       <p className="text-xs font-medium text-ink truncate" title={c.name}>{c.name}</p>

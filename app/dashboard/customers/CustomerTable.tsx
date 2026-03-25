@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { useSortableTable, SortIcon, thCls } from '@/hooks/useSortableTable'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -514,9 +515,15 @@ export default function CustomerTable({
   const hasProfiles = Object.keys(profileMap).length > 0
   const totalProfiled = Object.values(ltvCounts).reduce((s, v) => s + v.count, 0)
 
-  const filtered = activeSegment === 'all'
+  const segmentFiltered = activeSegment === 'all'
     ? customers
     : customers.filter((c) => c.segment === activeSegment)
+
+  const { sortedData: filtered, sortColumn, sortDirection, handleSort } = useSortableTable(
+    segmentFiltered as unknown as Record<string, unknown>[],
+    'total_spent',
+    'desc',
+  )
 
   const today = new Date()
 
@@ -583,14 +590,14 @@ export default function CustomerTable({
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm">
             <thead>
-              <tr className="border-b border-cream-2 text-xs font-medium text-ink-3">
+              <tr className="border-b border-cream-2 bg-cream/40 text-xs font-medium text-ink-3">
                 <th className="px-5 py-3 text-left">Customer</th>
                 <th className="px-4 py-3 text-left">Segment</th>
-                {hasProfiles && <th className="px-4 py-3 text-left hidden md:table-cell">LTV</th>}
+                {hasProfiles && <th className="px-4 py-3 text-left hidden md:table-cell">LTV Tier</th>}
                 {hasProfiles && <th className="px-4 py-3 text-left hidden lg:table-cell">Platforms</th>}
-                <th className="px-4 py-3 text-right">Orders</th>
-                <th className="px-4 py-3 text-right">LTV</th>
-                <th className="px-4 py-3 text-right hidden sm:table-cell">AOV</th>
+                <th className={`px-4 py-3 text-right ${thCls('orders_count', sortColumn)}`} onClick={() => handleSort('orders_count')}>Orders<SortIcon column="orders_count" sortColumn={sortColumn} sortDirection={sortDirection} /></th>
+                <th className={`px-4 py-3 text-right ${thCls('total_spent', sortColumn)}`} onClick={() => handleSort('total_spent')}>LTV<SortIcon column="total_spent" sortColumn={sortColumn} sortDirection={sortDirection} /></th>
+                <th className={`px-4 py-3 text-right hidden sm:table-cell ${thCls('aov', sortColumn)}`}>AOV</th>
                 {hasProfiles && <th className="px-4 py-3 text-center hidden xl:table-cell">Engage</th>}
                 {hasProfiles && <th className="px-4 py-3 text-center hidden xl:table-cell">Next Order</th>}
               </tr>
@@ -601,7 +608,7 @@ export default function CustomerTable({
                   <td colSpan={9} className="px-5 py-10 text-center text-sm text-ink-3">No customers in this segment yet.</td>
                 </tr>
               ) : (
-                filtered.map((c) => {
+                (filtered as unknown as Customer[]).map((c) => {
                   const name    = [c.first_name, c.last_name].filter(Boolean).join(' ') || 'Guest'
                   const aov     = c.orders_count > 0 ? Number(c.total_spent) / c.orders_count : 0
                   const seg     = SEGMENT_META[c.segment] ?? SEGMENT_META.active

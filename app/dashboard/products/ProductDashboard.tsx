@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useSortableTable, SortIcon, thCls } from '@/hooks/useSortableTable'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -200,6 +201,21 @@ function ProductPerformanceTab({
   affinities: AffinityPair[]
 }) {
   const [selected, setSelected] = useState<ProductStat | null>(null)
+  const { sortedData: sortedProducts, sortColumn, sortDirection, handleSort } = useSortableTable(
+    products as unknown as Record<string, unknown>[],
+    'total_revenue',
+    'desc',
+  )
+
+  const HEADERS: [string, string][] = [
+    ['Product', ''],
+    ['Total Revenue', 'total_revenue'],
+    ['12M Revenue', 'revenue_12m'],
+    ['Buyers', 'unique_customers'],
+    ['Repeat Rate', 'repeat_purchase_rate'],
+    ['Reorder Cycle', 'avg_days_to_repurchase'],
+    ['Sub Conv.', 'subscription_conversion_rate'],
+  ]
 
   return (
     <>
@@ -207,15 +223,19 @@ function ProductPerformanceTab({
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-cream-3 bg-cream">
-              {['Product', 'Total Revenue', '12M Revenue', 'Buyers', 'Repeat Rate', 'Reorder Cycle', 'Sub Conv.'].map((h) => (
-                <th key={h} className="text-left py-3 px-4 text-ink-3 text-[10px] font-data uppercase tracking-widest font-normal whitespace-nowrap">
-                  {h}
+              {HEADERS.map(([h, field]) => (
+                <th
+                  key={h}
+                  className={`text-left py-3 px-4 text-ink-3 text-[10px] font-data uppercase tracking-widest font-normal whitespace-nowrap ${field ? thCls(field, sortColumn) : ''}`}
+                  onClick={field ? () => handleSort(field) : undefined}
+                >
+                  {h}{field && <SortIcon column={field} sortColumn={sortColumn} sortDirection={sortDirection} />}
                 </th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {products.map((p) => (
+            {(sortedProducts as unknown as ProductStat[]).map((p) => (
               <tr
                 key={`${p.product_title}__${p.variant_title}`}
                 className="border-b border-cream-2 hover:bg-cream cursor-pointer transition-colors"
