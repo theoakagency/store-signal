@@ -33,6 +33,16 @@ interface TopRedeemer {
   tier: string | null
 }
 
+interface RewardRow {
+  id: string
+  name: string
+  points_price: number
+  discount_type: string
+  discount_value: number
+  redemptions_count: number
+  dollar_value: number
+}
+
 interface Metrics {
   enrolled_customers: number
   active_redeemers_30d: number
@@ -44,6 +54,7 @@ interface Metrics {
   promotion_response_rate: PromotionResult[]
   tier_breakdown: TierRow[]
   top_redeemers: TopRedeemer[]
+  rewards_catalog: RewardRow[] | null
   calculated_at: string
 }
 
@@ -97,8 +108,6 @@ export default function LoyaltyDashboard({ connected, metrics, totalCustomers }:
   const [aiLoading, setAiLoading] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [syncError, setSyncError] = useState('')
-  const [auditing, setAuditing] = useState(false)
-  const [auditResult, setAuditResult] = useState<string>('')
 
   if (!connected) return <NotConnected />
 
@@ -117,20 +126,6 @@ export default function LoyaltyDashboard({ connected, metrics, totalCustomers }:
     } catch {
       setSyncError('Network error — check console')
       setSyncing(false)
-    }
-  }
-
-  async function runAudit() {
-    setAuditing(true)
-    setAuditResult('')
-    try {
-      const res = await fetch('/api/loyaltylion/audit', { method: 'POST' })
-      const data = await res.json()
-      setAuditResult(JSON.stringify(data, null, 2))
-    } catch {
-      setAuditResult('Network error — check console')
-    } finally {
-      setAuditing(false)
     }
   }
 
@@ -157,6 +152,7 @@ export default function LoyaltyDashboard({ connected, metrics, totalCustomers }:
   const promos = m?.promotion_response_rate ?? []
   const tiers = m?.tier_breakdown ?? []
   const redeemers = m?.top_redeemers ?? []
+  const rewards = m?.rewards_catalog ?? []
   const { sortedData: sortedPromos, sortColumn: promoSort, sortDirection: promoDir, handleSort: promoHandleSort } = useSortableTable(promos as unknown as Record<string, unknown>[], 'lift_pct', 'desc')
   const enrollmentPct = totalCustomers > 0 && m ? (m.enrolled_customers ?? 0) / totalCustomers : 0
   const lowRedemption = m ? (m.redemption_rate ?? 0) < 0.1 : false
@@ -389,25 +385,43 @@ export default function LoyaltyDashboard({ connected, metrics, totalCustomers }:
             </div>
           )}
 
-          {/* TEMPORARY: Cross-merchant audit */}
-          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6">
-            <div className="flex items-center justify-between mb-3">
-              <div>
-                <h2 className="font-display text-base font-semibold text-amber-900">Data Scope Audit (Temporary)</h2>
-                <p className="mt-0.5 text-xs text-amber-700">Fetches all raw LoyaltyLion data and stores it for investigation. Check Supabase tables <code className="font-mono bg-amber-100 px-1 rounded">ll_audit_customers</code> and <code className="font-mono bg-amber-100 px-1 rounded">ll_audit_activities</code> after running.</p>
+          {/* Section 6: Rewards Catalog */}
+          {rewards.length > 0 && (
+            <div className="rounded-2xl border border-cream-3 bg-white p-6 shadow-sm">
+              <div className="mb-4">
+                <h2 className="font-display text-base font-semibold text-ink">Rewards Catalog</h2>
+                <p className="mt-0.5 text-xs text-ink-3">Available rewards and their redemption counts</p>
               </div>
-              <button
-                onClick={runAudit}
-                disabled={auditing}
-                className="shrink-0 rounded-lg border border-amber-400 bg-white px-4 py-2 text-sm font-medium text-amber-900 hover:bg-amber-100 disabled:opacity-50 transition"
-              >
-                {auditing ? 'Running…' : 'Run Audit'}
-              </button>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-cream-2 text-left">
+                      <th className="pb-2 pr-4 text-xs font-data font-medium uppercase tracking-wider text-ink-3">Reward</th>
+                      <th className="pb-2 pr-3 text-xs font-data font-medium uppercase tracking-wider text-ink-3 text-right">Points Cost</th>
+                      <th className="pb-2 pr-3 text-xs font-data font-medium uppercase tracking-wider text-ink-3 text-right">Dollar Value</th>
+                      <th className="pb-2 pr-3 text-xs font-data font-medium uppercase tracking-wider text-ink-3 text-right">Discount</th>
+                      <th className="pb-2 text-xs font-data font-medium uppercase tracking-wider text-ink-3 text-right">Redemptions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-cream-2">
+                    {rewards.sort((a, b) => b.redemptions_count - a.redemptions_count).map((r) => (
+                      <tr key={r.id} className="hover:bg-cream/50 transition">
+                        <td className="py-2.5 pr-4 font-medium text-ink">{r.name}</td>
+                        <td className="py-2.5 pr-3 text-right font-data text-ink-2">{fmt(r.points_price)} pts</td>
+                        <td className="py-2.5 pr-3 text-right text-ink-2">{fmtUsd(r.dollar_value)}</td>
+                        <td className="py-2.5 pr-3 text-right text-ink-2">
+                          {r.discount_type === 'percentage'
+                            ? `${r.discount_value}% off`
+                            : fmtUsd(r.discount_value) + ' off'}
+                        </td>
+                        <td className="py-2.5 text-right font-semibold text-ink">{fmt(r.redemptions_count)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
-            {auditResult && (
-              <pre className="mt-2 overflow-x-auto rounded-lg bg-white border border-amber-200 p-3 text-xs text-amber-900 whitespace-pre-wrap">{auditResult}</pre>
-            )}
-          </div>
+          )}
 
         </>
       )}

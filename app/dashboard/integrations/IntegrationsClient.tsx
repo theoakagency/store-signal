@@ -715,6 +715,7 @@ function RechargeModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
 
 function LoyaltyLionModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
   const [token, setToken] = useState('')
+  const [secret, setSecret] = useState('')
   const [testState, setTestState] = useState<'idle' | 'testing' | 'ok' | 'fail'>('idle')
   const [testMsg, setTestMsg] = useState('')
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'done'>('idle')
@@ -725,7 +726,7 @@ function LoyaltyLionModal({ onClose, onSuccess }: { onClose: () => void; onSucce
     if (!token.trim()) return
     setTestState('testing'); setTestMsg('')
     try {
-      const res = await fetch('/api/loyaltylion/test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) })
+      const res = await fetch('/api/loyaltylion/test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, secret: secret || undefined }) })
       const data = await res.json() as { ok?: boolean; message?: string }
       if (data.ok) { setTestState('ok'); setTestMsg(data.message ?? 'Connection successful') }
       else { setTestState('fail'); setTestMsg(data.message ?? 'Connection failed') }
@@ -736,7 +737,7 @@ function LoyaltyLionModal({ onClose, onSuccess }: { onClose: () => void; onSucce
     if (!token.trim()) return
     setSaveState('saving')
     try {
-      const res = await fetch('/api/loyaltylion/connect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) })
+      const res = await fetch('/api/loyaltylion/connect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, secret: secret || undefined }) })
       const data = await res.json() as { ok?: boolean; error?: string }
       if (data.error) { setSaveState('idle'); showToast(`Error: ${data.error}`); return }
       setSaveState('done')
@@ -764,13 +765,18 @@ function LoyaltyLionModal({ onClose, onSuccess }: { onClose: () => void; onSucce
         </div>
         <div className="px-6 py-5 space-y-4">
           <div className="rounded-xl bg-pink-50 border border-pink-100 px-4 py-3 text-xs text-pink-900 space-y-1">
-            <p className="font-semibold">How to get your API token:</p>
+            <p className="font-semibold">How to find your credentials:</p>
             <p>1. Go to <strong>LoyaltyLion Admin → Settings → API</strong></p>
-            <p>2. Click <strong>Create API key</strong> and copy the token</p>
+            <p>2. Copy your <strong>API Token</strong> and <strong>API Secret</strong></p>
+            <p className="text-pink-700">Both are required for full API access.</p>
           </div>
           <div>
             <label className="block text-xs font-medium text-ink-2 mb-1">API Token *</label>
-            <input type="text" value={token} onChange={(e) => setToken(e.target.value)} placeholder="pat_xxxxxxxxxxxxxxxx" className={inputCls} />
+            <input type="text" value={token} onChange={(e) => setToken(e.target.value)} placeholder="Token from LoyaltyLion → Settings → API" className={inputCls} />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-ink-2 mb-1">API Secret *</label>
+            <input type="password" value={secret} onChange={(e) => setSecret(e.target.value)} placeholder="Secret from LoyaltyLion → Settings → API" className={inputCls} />
           </div>
           {testMsg && (
             <div className={`rounded-lg px-3 py-2.5 text-xs ${testState === 'ok' ? 'bg-teal-pale text-teal-deep' : 'bg-red-50 text-red-700'}`}>

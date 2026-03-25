@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
 
   // Fetch store context for the AI prompt
   const service = createSupabaseServiceClient()
-  const [{ data: statsRows }, { data: topCustomers }, { data: allCustomers }, { data: klaviyoMetrics }, { data: recentCampaigns }, { data: gscKeywords }, { data: gscMonthly }, { data: semrushMetrics }, { data: topProducts }] = await Promise.all([
+  const [{ data: statsRows }, { data: topCustomers }, { data: allCustomers }, { data: klaviyoMetrics }, { data: recentCampaigns }, { data: gscKeywords }, { data: gscMonthly }, { data: semrushMetrics }, { data: topProducts }, { data: loyaltyCache }, { data: rechargeCache }] = await Promise.all([
     service
       .from('orders')
       .select('total_price, financial_status')
@@ -83,6 +83,16 @@ export async function POST(req: NextRequest) {
       .eq('tenant_id', TENANT_ID)
       .order('total_revenue', { ascending: false })
       .limit(5),
+    service
+      .from('loyalty_metrics_cache')
+      .select('enrolled_customers, redemption_rate, points_liability_value, promotion_response_rate, active_redeemers_30d')
+      .eq('tenant_id', TENANT_ID)
+      .maybeSingle(),
+    service
+      .from('recharge_metrics_cache')
+      .select('active_subscribers')
+      .eq('tenant_id', TENANT_ID)
+      .maybeSingle(),
   ])
 
   const totalRevenue = (statsRows ?? []).reduce((s, r) => s + Number(r.total_price), 0)
@@ -174,6 +184,37 @@ ${(topProducts ?? []).map((p) => {
 }).join('\n')}`.trim()
     : ''
 
+  // Build loyalty program context — must come before storeContext since it's embedded there
+  const lc = loyaltyCache as {
+    enrolled_customers: number | null
+    redemption_rate: number | null
+    points_liability_value: number | null
+    active_redeemers_30d: number | null
+    promotion_response_rate: Array<{ campaign_name: string; lift_pct: number | null; verdict: string; multiplier: number | null }> | null
+  } | null
+
+  const rc = rechargeCache as { active_subscribers: number | null } | null
+  const activeSubscribers = rc?.active_subscribers ?? 0
+
+  const hasLoyalty = !!lc?.enrolled_customers
+  const subscriberPct = hasLoyalty && lc!.enrolled_customers! > 0 && activeSubscribers > 0
+    ? ((activeSubscribers / totalCustomers) * 100).toFixed(0)
+    : null
+
+  const pastMultiplierCampaigns = (lc?.promotion_response_rate ?? [])
+    .filter((p) => p.lift_pct !== null)
+    .sort((a, b) => (b.lift_pct ?? 0) - (a.lift_pct ?? 0))
+    .slice(0, 3)
+
+  const loyaltyContext = hasLoyalty
+    ? `
+LOYALTY PROGRAM (LoyaltyLion):
+- Enrolled members: ${(lc!.enrolled_customers ?? 0).toLocaleString()} (${totalCustomers > 0 ? ((lc!.enrolled_customers! / totalCustomers) * 100).toFixed(0) : '?'}% of customer base)
+- Active redeemers (30d): ${lc!.active_redeemers_30d ?? 'N/A'}
+- Redemption rate: ${lc!.redemption_rate != null ? (lc!.redemption_rate * 100).toFixed(1) + '%' : 'N/A'} of issued points are being redeemed${(lc!.redemption_rate ?? 0) < 0.1 ? ' (LOW — members may not be engaged with rewards)' : ''}
+- Outstanding points liability: $${(lc!.points_liability_value ?? 0).toFixed(0)}${activeSubscribers > 0 ? `\n- Active subscribers (Recharge): ${activeSubscribers.toLocaleString()}${subscriberPct ? ` (${subscriberPct}% of customers)` : ''}` : ''}${pastMultiplierCampaigns.length > 0 ? `\n- Past points multiplier campaign results:\n${pastMultiplierCampaigns.map((p) => `  • "${p.campaign_name}" (${p.multiplier}×): ${p.lift_pct !== null ? `${p.lift_pct > 0 ? '+' : ''}${p.lift_pct}% lift` : 'no lift data'} — ${p.verdict}`).join('\n')}` : ''}`.trim()
+    : ''
+
   const storeContext = `
 Store: LashBox LA (beauty/lash retail, 10+ years in business)
 Total paid orders (all time): ${orderCount}
@@ -185,7 +226,8 @@ Lapsed customers (90+ days inactive): ${lapsedCount} (${totalCustomers > 0 ? Mat
 ${emailContext}
 ${gscContext}
 ${semrushContext}
-${productContext}`.trim()
+${productContext}
+${loyaltyContext}`.trim()
 
   const emailInstruction = hasKlaviyo && avgOpenRate
     ? `This store's email campaigns average ${(avgOpenRate * 100).toFixed(1)}% open rate and ${avgCampaignRevenue != null ? '$' + avgCampaignRevenue.toFixed(0) : 'an unknown amount'} revenue per send. Their automated flows generate ${flowRevenueRatio != null ? flowRevenueRatio.toFixed(1) + '×' : 'more'} revenue per recipient than broadcast campaigns. Factor this into the audience fit and buying motivation scores when the channel involves email.`
@@ -203,7 +245,12 @@ ${productContext}`.trim()
     ? ` Product data is available: consider whether the promoted product has a high or low repeat purchase rate, whether it has subscription expansion potential (gap between repeat rate and subscription conversion), and whether the promotion targets a high-value product (by total revenue) or a gateway product that drives future purchases.`
     : ''
 
-  const prompt = `You are a retail promotion strategist. A beauty brand (LashBox LA) wants to evaluate a promotion idea. Use the real store data below to give a grounded, honest assessment — validate or challenge the team's thinking.${emailInstruction ? ' ' + emailInstruction : ''}${gscInstruction}${semrushInstruction}${productInstruction}
+  const isPointsPromo = promotion_type?.toLowerCase().includes('points') || channel?.toLowerCase().includes('loyalty')
+  const loyaltyInstruction = hasLoyalty
+    ? ` Loyalty program data is available: ${lc!.enrolled_customers?.toLocaleString()} members enrolled, ${lc!.redemption_rate != null ? (lc!.redemption_rate * 100).toFixed(1) + '%' : 'unknown'} redemption rate. ${activeSubscribers > 0 ? `${activeSubscribers.toLocaleString()} customers are already subscribers — points promotions are less effective at changing subscriber behavior since they already buy regularly.` : ''} ${isPointsPromo && pastMultiplierCampaigns.length > 0 ? `Historical points multiplier campaigns show mixed results: ${pastMultiplierCampaigns.map((p) => `${p.multiplier}× earned ${p.lift_pct !== null ? p.lift_pct + '% lift' : 'no measurable lift'}`).join(', ')}. Use this to calibrate whether another points multiplier is likely to drive incremental purchases.` : ''} The outstanding points liability of $${(lc!.points_liability_value ?? 0).toFixed(0)} represents real future discount cost — factor this into margin impact scoring when the promotion would issue more points.`
+    : ''
+
+  const prompt = `You are a retail promotion strategist. A beauty brand (LashBox LA) wants to evaluate a promotion idea. Use the real store data below to give a grounded, honest assessment — validate or challenge the team's thinking.${emailInstruction ? ' ' + emailInstruction : ''}${gscInstruction}${semrushInstruction}${productInstruction}${loyaltyInstruction}
 
 STORE DATA:
 ${storeContext}

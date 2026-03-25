@@ -6,9 +6,14 @@
 
 const BASE_URL = 'https://api.loyaltylion.com/v2'
 
-function headers(token: string): Record<string, string> {
+function headers(token: string, secret?: string | null): Record<string, string> {
+  // LoyaltyLion v2 uses HTTP Basic Auth (token:secret). If only token is stored
+  // (legacy), fall back to Bearer which also works for read-only endpoints.
+  const auth = secret
+    ? 'Basic ' + Buffer.from(`${token}:${secret}`).toString('base64')
+    : `Bearer ${token}`
   return {
-    Authorization: `Bearer ${token}`,
+    Authorization: auth,
     'Content-Type': 'application/json',
   }
 }
@@ -59,7 +64,8 @@ export interface LoyaltyCampaign {
 async function fetchAllPages<T>(
   token: string,
   path: string,
-  params: Record<string, string> = {}
+  params: Record<string, string> = {},
+  secret?: string | null
 ): Promise<T[]> {
   const results: T[] = []
   let cursor: string | null = null
@@ -68,7 +74,7 @@ async function fetchAllPages<T>(
     const query = new URLSearchParams({ per_page: '500', ...params })
     if (cursor) query.set('cursor', cursor)
 
-    const res = await fetch(`${BASE_URL}${path}?${query}`, { headers: headers(token) })
+    const res = await fetch(`${BASE_URL}${path}?${query}`, { headers: headers(token, secret) })
 
     if (!res.ok) {
       const body = await res.text()
@@ -97,32 +103,33 @@ async function fetchAllPages<T>(
 
 // ── Public API functions ──────────────────────────────────────────────────────
 
-export async function getCustomers(token: string): Promise<LoyaltyCustomer[]> {
-  return fetchAllPages<LoyaltyCustomer>(token, '/customers')
+export async function getCustomers(token: string, secret?: string | null): Promise<LoyaltyCustomer[]> {
+  return fetchAllPages<LoyaltyCustomer>(token, '/customers', {}, secret)
 }
 
 export async function getActivities(
   token: string,
-  dateRange: { from: string; to: string }
+  dateRange: { from: string; to: string },
+  secret?: string | null
 ): Promise<LoyaltyActivity[]> {
   return fetchAllPages<LoyaltyActivity>(token, '/activities', {
     created_at_gte: dateRange.from,
     created_at_lte: dateRange.to,
-  })
+  }, secret)
 }
 
-export async function getRewards(token: string): Promise<LoyaltyReward[]> {
-  return fetchAllPages<LoyaltyReward>(token, '/rewards')
+export async function getRewards(token: string, secret?: string | null): Promise<LoyaltyReward[]> {
+  return fetchAllPages<LoyaltyReward>(token, '/rewards', {}, secret)
 }
 
-export async function getCampaigns(token: string): Promise<LoyaltyCampaign[]> {
-  return fetchAllPages<LoyaltyCampaign>(token, '/campaigns')
+export async function getCampaigns(token: string, secret?: string | null): Promise<LoyaltyCampaign[]> {
+  return fetchAllPages<LoyaltyCampaign>(token, '/campaigns', {}, secret)
 }
 
-export async function testConnection(token: string): Promise<{ ok: boolean; message: string }> {
+export async function testConnection(token: string, secret?: string | null): Promise<{ ok: boolean; message: string }> {
   try {
     const res = await fetch(`${BASE_URL}/customers?per_page=1`, {
-      headers: headers(token),
+      headers: headers(token, secret),
     })
     if (res.ok) {
       return { ok: true, message: 'Connection successful — token verified' }
