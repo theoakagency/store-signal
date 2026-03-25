@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { useSortableTable, SortIcon, thCls } from '@/hooks/useSortableTable'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -236,6 +237,8 @@ export default function KlaviyoDashboard({ connected, campaigns, flows, metrics 
   const [page, setPage] = useState(0)
   const [flowInsights, setFlowInsights] = useState<FlowInsight[]>([])
   const [flowInsightsState, setFlowInsightsState] = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
+  const { sortedData: sortedCampaigns, sortColumn: campSort, sortDirection: campDir, handleSort: campHandleSort } = useSortableTable(campaigns as unknown as Record<string, unknown>[], 'revenue_attributed', 'desc')
+  const { sortedData: sortedFlows, sortColumn: flowSort, sortDirection: flowDir, handleSort: flowHandleSort } = useSortableTable(flows as unknown as Record<string, unknown>[], 'revenue_attributed', 'desc')
 
   const noData = campaigns.length === 0 && flows.length === 0
 
@@ -504,21 +507,21 @@ export default function KlaviyoDashboard({ connected, campaigns, flows, metrics 
 
             {/* Campaigns tab */}
             {activeTab === 'campaigns' && (() => {
-              const totalPages = Math.ceil(campaigns.length / PAGE_SIZE)
-              const paginated = campaigns.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
+              const totalPages = Math.ceil(sortedCampaigns.length / PAGE_SIZE)
+              const paginated = (sortedCampaigns as unknown as Campaign[]).slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
               return (
                 <>
                   <div className="overflow-x-auto">
                     <table className="min-w-full text-sm">
                       <thead>
                         <tr className="border-b border-cream-2 text-xs font-medium text-ink-3">
-                          <th className="px-5 py-2.5 text-left">Campaign</th>
-                          <th className="px-5 py-2.5 text-left">Ch.</th>
-                          <th className="px-5 py-2.5 text-left">Date</th>
-                          <th className="px-5 py-2.5 text-right">Recipients</th>
-                          <th className="px-5 py-2.5 text-right">Open</th>
-                          <th className="px-5 py-2.5 text-right">Click</th>
-                          <th className="px-5 py-2.5 text-right">Revenue</th>
+                          <th className={`px-5 py-2.5 text-left ${thCls('name', campSort)}`} onClick={() => campHandleSort('name')}>Campaign<SortIcon column="name" sortColumn={campSort} sortDirection={campDir} /></th>
+                          <th className={`px-5 py-2.5 text-left ${thCls('channel', campSort)}`} onClick={() => campHandleSort('channel')}>Ch.<SortIcon column="channel" sortColumn={campSort} sortDirection={campDir} /></th>
+                          <th className={`px-5 py-2.5 text-left ${thCls('send_time', campSort)}`} onClick={() => campHandleSort('send_time')}>Date<SortIcon column="send_time" sortColumn={campSort} sortDirection={campDir} /></th>
+                          <th className={`px-5 py-2.5 text-right ${thCls('recipient_count', campSort)}`} onClick={() => campHandleSort('recipient_count')}>Recipients<SortIcon column="recipient_count" sortColumn={campSort} sortDirection={campDir} /></th>
+                          <th className={`px-5 py-2.5 text-right ${thCls('open_rate', campSort)}`} onClick={() => campHandleSort('open_rate')}>Open<SortIcon column="open_rate" sortColumn={campSort} sortDirection={campDir} /></th>
+                          <th className={`px-5 py-2.5 text-right ${thCls('click_rate', campSort)}`} onClick={() => campHandleSort('click_rate')}>Click<SortIcon column="click_rate" sortColumn={campSort} sortDirection={campDir} /></th>
+                          <th className={`px-5 py-2.5 text-right ${thCls('revenue_attributed', campSort)}`} onClick={() => campHandleSort('revenue_attributed')}>Revenue<SortIcon column="revenue_attributed" sortColumn={campSort} sortDirection={campDir} /></th>
                           <th className="px-5 py-2.5 text-right">Est. Cost</th>
                           <th className="px-5 py-2.5 text-right">Net ROI</th>
                           <th className="px-5 py-2.5 text-center">Score</th>
@@ -696,17 +699,17 @@ export default function KlaviyoDashboard({ connected, campaigns, flows, metrics 
                   <table className="min-w-full text-sm">
                     <thead>
                       <tr className="border-b border-cream-2 text-xs font-medium text-ink-3">
-                        <th className="px-5 py-2.5 text-left">Flow Name</th>
-                        <th className="px-5 py-2.5 text-left">Ch.</th>
-                        <th className="px-5 py-2.5 text-left">Trigger</th>
-                        <th className="px-5 py-2.5 text-right">Recipients</th>
-                        <th className="px-5 py-2.5 text-right">Open Rate</th>
-                        <th className="px-5 py-2.5 text-right">Click Rate</th>
-                        <th className="px-5 py-2.5 text-right">Revenue</th>
+                        <th className={`px-5 py-2.5 text-left ${thCls('name', flowSort)}`} onClick={() => flowHandleSort('name')}>Flow Name<SortIcon column="name" sortColumn={flowSort} sortDirection={flowDir} /></th>
+                        <th className={`px-5 py-2.5 text-left ${thCls('channel', flowSort)}`} onClick={() => flowHandleSort('channel')}>Ch.<SortIcon column="channel" sortColumn={flowSort} sortDirection={flowDir} /></th>
+                        <th className={`px-5 py-2.5 text-left ${thCls('trigger_type', flowSort)}`} onClick={() => flowHandleSort('trigger_type')}>Trigger<SortIcon column="trigger_type" sortColumn={flowSort} sortDirection={flowDir} /></th>
+                        <th className={`px-5 py-2.5 text-right ${thCls('recipient_count', flowSort)}`} onClick={() => flowHandleSort('recipient_count')}>Recipients<SortIcon column="recipient_count" sortColumn={flowSort} sortDirection={flowDir} /></th>
+                        <th className={`px-5 py-2.5 text-right ${thCls('open_rate', flowSort)}`} onClick={() => flowHandleSort('open_rate')}>Open Rate<SortIcon column="open_rate" sortColumn={flowSort} sortDirection={flowDir} /></th>
+                        <th className={`px-5 py-2.5 text-right ${thCls('click_rate', flowSort)}`} onClick={() => flowHandleSort('click_rate')}>Click Rate<SortIcon column="click_rate" sortColumn={flowSort} sortDirection={flowDir} /></th>
+                        <th className={`px-5 py-2.5 text-right ${thCls('revenue_attributed', flowSort)}`} onClick={() => flowHandleSort('revenue_attributed')}>Revenue<SortIcon column="revenue_attributed" sortColumn={flowSort} sortDirection={flowDir} /></th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-cream-2">
-                      {flows.map((f) => {
+                      {(sortedFlows as unknown as Flow[]).map((f) => {
                         const isInactive = f.recipient_count === 0
                         return (
                           <tr key={f.id} className={`transition-colors ${isInactive ? 'opacity-50 hover:opacity-75' : 'hover:bg-cream'}`}>

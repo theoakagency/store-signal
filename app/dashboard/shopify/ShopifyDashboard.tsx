@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useSortableTable, SortIcon as HookSortIcon, thCls } from '@/hooks/useSortableTable'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -332,6 +333,8 @@ export default function ShopifyDashboard({
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const PAGE = 20
 
+  const { sortedData: sortedCustomers, sortColumn: custSort, sortDirection: custDir, handleSort: custHandleSort } = useSortableTable(customers as unknown as Record<string, unknown>[], 'total_spent', 'desc')
+
   function handleSort(field: keyof Order) {
     if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
     else { setSortField(field); setSortDir('desc') }
@@ -354,7 +357,7 @@ export default function ShopifyDashboard({
     })
 
   const pagedOrders = filteredOrders.slice(ordersPage * PAGE, (ordersPage + 1) * PAGE)
-  const pagedCustomers = customers.slice(customersPage * PAGE, (customersPage + 1) * PAGE)
+  const pagedCustomers = (sortedCustomers as unknown as Customer[]).slice(customersPage * PAGE, (customersPage + 1) * PAGE)
   const totalOrderPages = Math.ceil(filteredOrders.length / PAGE)
   const totalCustPages  = Math.ceil(customers.length / PAGE)
 
@@ -468,9 +471,9 @@ export default function ShopifyDashboard({
                 <thead>
                   <tr className="border-b border-cream-2 text-xs font-medium text-ink-3">
                     <th className="px-5 py-2.5 text-left w-8">#</th>
-                    <th className="px-5 py-2.5 text-left">Email</th>
-                    <th className="px-5 py-2.5 text-right">Orders</th>
-                    <th className="px-5 py-2.5 text-right">Lifetime Value</th>
+                    <th className={`px-5 py-2.5 text-left ${thCls('email', custSort)}`} onClick={() => custHandleSort('email')}>Email <HookSortIcon column="email" sortColumn={custSort} sortDirection={custDir} /></th>
+                    <th className={`px-5 py-2.5 text-right ${thCls('orders_count', custSort)}`} onClick={() => custHandleSort('orders_count')}>Orders <HookSortIcon column="orders_count" sortColumn={custSort} sortDirection={custDir} /></th>
+                    <th className={`px-5 py-2.5 text-right ${thCls('total_spent', custSort)}`} onClick={() => custHandleSort('total_spent')}>Lifetime Value <HookSortIcon column="total_spent" sortColumn={custSort} sortDirection={custDir} /></th>
                     <th className="px-5 py-2.5 text-right">AOV</th>
                   </tr>
                 </thead>

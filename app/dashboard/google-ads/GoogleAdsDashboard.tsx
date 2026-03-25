@@ -329,15 +329,15 @@ export default function GoogleAdsDashboard({ connected, campaigns, metrics, data
             <table className="min-w-full text-sm">
               <thead>
                 <tr className="border-b border-cream-2 text-xs font-medium text-ink-3 bg-cream">
-                  <th className="px-5 py-2.5 text-left">Campaign</th>
-                  <th className="px-4 py-2.5 text-left">Type</th>
-                  <th className="px-4 py-2.5 text-left">Status</th>
+                  <th className={`px-5 py-2.5 text-left ${thCls('name', sortColumn)}`} onClick={() => handleSort('name')}>Campaign<SortIcon column="name" sortColumn={sortColumn} sortDirection={sortDirection} /></th>
+                  <th className={`px-4 py-2.5 text-left ${thCls('campaign_type', sortColumn)}`} onClick={() => handleSort('campaign_type')}>Type<SortIcon column="campaign_type" sortColumn={sortColumn} sortDirection={sortDirection} /></th>
+                  <th className={`px-4 py-2.5 text-left ${thCls('status', sortColumn)}`} onClick={() => handleSort('status')}>Status<SortIcon column="status" sortColumn={sortColumn} sortDirection={sortDirection} /></th>
                   <th className={`px-4 py-2.5 text-right ${thCls('spend', sortColumn)}`} onClick={() => handleSort('spend')}>Spend<SortIcon column="spend" sortColumn={sortColumn} sortDirection={sortDirection} /></th>
                   <th className={`px-4 py-2.5 text-right ${thCls('clicks', sortColumn)}`} onClick={() => handleSort('clicks')}>Clicks<SortIcon column="clicks" sortColumn={sortColumn} sortDirection={sortDirection} /></th>
                   <th className={`px-4 py-2.5 text-right ${thCls('ctr', sortColumn)}`} onClick={() => handleSort('ctr')}>CTR<SortIcon column="ctr" sortColumn={sortColumn} sortDirection={sortDirection} /></th>
                   <th className={`px-4 py-2.5 text-right ${thCls('conversions', sortColumn)}`} onClick={() => handleSort('conversions')}>Conv.<SortIcon column="conversions" sortColumn={sortColumn} sortDirection={sortDirection} /></th>
                   <th className={`px-4 py-2.5 text-right ${thCls('roas', sortColumn)}`} onClick={() => handleSort('roas')}>ROAS<SortIcon column="roas" sortColumn={sortColumn} sortDirection={sortDirection} /></th>
-                  <th className="px-4 py-2.5 text-left">Score</th>
+                  <th className={`px-4 py-2.5 text-left ${thCls('roas', sortColumn)}`} onClick={() => handleSort('roas')}>Score<SortIcon column="roas" sortColumn={sortColumn} sortDirection={sortDirection} /></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-cream-2">

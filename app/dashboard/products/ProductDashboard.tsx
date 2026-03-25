@@ -302,6 +302,8 @@ function MarketBasketTab({ affinities }: { affinities: AffinityPair[] }) {
     return true
   })
 
+  const { sortedData: sortedDeduped, sortColumn: afSort, sortDirection: afDir, handleSort: afHandleSort } = useSortableTable(deduped as unknown as Record<string, unknown>[], 'lift', 'desc')
+
   const bundles = deduped.filter((a) => a.lift >= 2 && a.co_purchase_count >= 10).slice(0, 3)
 
   return (
@@ -346,15 +348,15 @@ function MarketBasketTab({ affinities }: { affinities: AffinityPair[] }) {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-cream-3 bg-cream">
-                {['Product A', 'Product B', 'Co-purchases', 'Co-purchase Rate', 'Confidence', 'Lift'].map((h) => (
-                  <th key={h} className="text-left py-3 px-4 text-ink-3 text-[10px] font-data uppercase tracking-widest font-normal whitespace-nowrap">
-                    {h}
+                {([['Product A', ''], ['Product B', ''], ['Co-purchases', 'co_purchase_count'], ['Co-purchase Rate', 'co_purchase_rate'], ['Confidence', 'confidence'], ['Lift', 'lift']] as [string, string][]).map(([h, field]) => (
+                  <th key={h} className={`text-left py-3 px-4 text-ink-3 text-[10px] font-data uppercase tracking-widest font-normal whitespace-nowrap ${field ? thCls(field, afSort) : ''}`} onClick={field ? () => afHandleSort(field) : undefined}>
+                    {h}{field && <SortIcon column={field} sortColumn={afSort} sortDirection={afDir} />}
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {deduped.map((a) => (
+              {(sortedDeduped as unknown as AffinityPair[]).map((a) => (
                 <tr key={`${a.product_a}|||${a.product_b}`} className="border-b border-cream-2">
                   <td className="py-3 px-4 text-ink text-xs max-w-[200px] truncate">{a.product_a}</td>
                   <td className="py-3 px-4 text-ink text-xs max-w-[200px] truncate">{a.product_b}</td>
@@ -453,6 +455,8 @@ function RepurchaseIntelligenceTab({ products }: { products: ProductStat[] }) {
     .sort((a, b) => Number(a.avg_days_to_repurchase) - Number(b.avg_days_to_repurchase))
     .slice(0, 8)
 
+  const { sortedData: sortedFastReorder, sortColumn: rrSort, sortDirection: rrDir, handleSort: rrHandleSort } = useSortableTable(fastReorder as unknown as Record<string, unknown>[], 'avg_days_to_repurchase', 'asc')
+
   return (
     <div className="space-y-8">
       <div>
@@ -503,15 +507,15 @@ function RepurchaseIntelligenceTab({ products }: { products: ProductStat[] }) {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-cream-3 bg-cream">
-                  {['Product', 'Avg Days to Reorder', 'Repeat Rate', 'Subscription Conv.', 'Unique Buyers'].map((h) => (
-                    <th key={h} className="text-left py-3 px-4 text-ink-3 text-[10px] font-data uppercase tracking-widest font-normal whitespace-nowrap">
-                      {h}
+                  {([['Product', ''], ['Avg Days to Reorder', 'avg_days_to_repurchase'], ['Repeat Rate', 'repeat_purchase_rate'], ['Subscription Conv.', 'subscription_conversion_rate'], ['Unique Buyers', 'unique_customers']] as [string, string][]).map(([h, field]) => (
+                    <th key={h} className={`text-left py-3 px-4 text-ink-3 text-[10px] font-data uppercase tracking-widest font-normal whitespace-nowrap ${field ? thCls(field, rrSort) : ''}`} onClick={field ? () => rrHandleSort(field) : undefined}>
+                      {h}{field && <SortIcon column={field} sortColumn={rrSort} sortDirection={rrDir} />}
                     </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {fastReorder.map((p) => (
+                {(sortedFastReorder as unknown as ProductStat[]).map((p) => (
                   <tr key={p.product_title} className="border-b border-cream-2">
                     <td className="py-3 px-4 text-ink text-xs max-w-[200px]">
                       <p className="truncate">{p.product_title}</p>

@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { useSortableTable, SortIcon, thCls } from '@/hooks/useSortableTable'
 
 interface HistoryRow {
   id: string
@@ -132,6 +133,7 @@ function DimBar({ label, value }: { label: string; value: number }) {
 
 export default function PromotionScorer({ history }: { history: HistoryRow[] }) {
   const router = useRouter()
+  const { sortedData: sortedHistory, sortColumn: histSort, sortDirection: histDir, handleSort: histHandleSort } = useSortableTable(history as unknown as Record<string, unknown>[], 'created_at', 'desc')
   const [state, setState] = useState<'idle' | 'scoring' | 'done' | 'error'>('idle')
   const [analysis, setAnalysis] = useState<Analysis | null>(null)
   const [errorMsg, setErrorMsg] = useState('')
@@ -502,16 +504,16 @@ export default function PromotionScorer({ history }: { history: HistoryRow[] }) 
             <table className="min-w-full text-sm">
               <thead>
                 <tr className="border-b border-cream-2 text-xs font-medium text-ink-3">
-                  <th className="px-5 py-2.5 text-left">Name</th>
-                  <th className="px-5 py-2.5 text-left">Type</th>
-                  <th className="px-5 py-2.5 text-left">Discount</th>
-                  <th className="px-5 py-2.5 text-center">Score</th>
+                  <th className={`px-5 py-2.5 text-left ${thCls('name', histSort)}`} onClick={() => histHandleSort('name')}>Name<SortIcon column="name" sortColumn={histSort} sortDirection={histDir} /></th>
+                  <th className={`px-5 py-2.5 text-left ${thCls('promotion_type', histSort)}`} onClick={() => histHandleSort('promotion_type')}>Type<SortIcon column="promotion_type" sortColumn={histSort} sortDirection={histDir} /></th>
+                  <th className={`px-5 py-2.5 text-left ${thCls('discount_value', histSort)}`} onClick={() => histHandleSort('discount_value')}>Discount<SortIcon column="discount_value" sortColumn={histSort} sortDirection={histDir} /></th>
+                  <th className={`px-5 py-2.5 text-center ${thCls('score', histSort)}`} onClick={() => histHandleSort('score')}>Score<SortIcon column="score" sortColumn={histSort} sortDirection={histDir} /></th>
                   <th className="px-5 py-2.5 text-left">Verdict</th>
-                  <th className="px-5 py-2.5 text-left">Date</th>
+                  <th className={`px-5 py-2.5 text-left ${thCls('created_at', histSort)}`} onClick={() => histHandleSort('created_at')}>Date<SortIcon column="created_at" sortColumn={histSort} sortDirection={histDir} /></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-cream-2">
-                {history.map((row) => {
+                {(sortedHistory as unknown as HistoryRow[]).map((row) => {
                   const score = row.score ?? 0
                   const scoreColor =
                     score >= 75 ? 'text-teal-deep' : score >= 50 ? 'text-amber-600' : 'text-red-500'

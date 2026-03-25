@@ -600,9 +600,9 @@ export default function CustomerTable({
           <table className="min-w-full text-sm">
             <thead>
               <tr className="border-b border-cream-2 bg-cream/40 text-xs font-medium text-ink-3">
-                <th className="px-5 py-3 text-left">Buyer</th>
-                <th className="px-4 py-3 text-left">Segment</th>
-                <th className="px-4 py-3 text-left hidden md:table-cell">LTV Tier</th>
+                <th className={`px-5 py-3 text-left ${thCls('email', sortColumn)}`} onClick={() => handleSort('email')}>Buyer<SortIcon column="email" sortColumn={sortColumn} sortDirection={sortDirection} /></th>
+                <th className={`px-4 py-3 text-left ${thCls('segment', sortColumn)}`} onClick={() => handleSort('segment')}>Segment<SortIcon column="segment" sortColumn={sortColumn} sortDirection={sortDirection} /></th>
+                <th className={`px-4 py-3 text-left hidden md:table-cell ${thCls('ltv_segment', sortColumn)}`} onClick={() => handleSort('ltv_segment')}>LTV Tier<SortIcon column="ltv_segment" sortColumn={sortColumn} sortDirection={sortDirection} /></th>
                 <th className="px-4 py-3 text-left hidden lg:table-cell">Platforms</th>
                 <th className={`px-4 py-3 text-right ${thCls('total_orders', sortColumn)}`} onClick={() => handleSort('total_orders')}>Orders<SortIcon column="total_orders" sortColumn={sortColumn} sortDirection={sortDirection} /></th>
                 <th className={`px-4 py-3 text-right ${thCls('total_revenue', sortColumn)}`} onClick={() => handleSort('total_revenue')}>LTV<SortIcon column="total_revenue" sortColumn={sortColumn} sortDirection={sortDirection} /></th>

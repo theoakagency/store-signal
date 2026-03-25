@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import { useSortableTable, SortIcon, thCls } from '@/hooks/useSortableTable'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -167,6 +168,7 @@ export default function SubscriptionsDashboard({ connected, metrics, recentCance
   const ib = m?.interval_breakdown ?? {}
   const ltv = m?.subscriber_vs_nonsubscriber_ltv
   const products = m?.product_breakdown ?? []
+  const { sortedData: sortedProducts, sortColumn: pSort, sortDirection: pDir, handleSort: pHandleSort } = useSortableTable(products as unknown as Record<string, unknown>[], 'mrr', 'desc')
   const totalMrr = m?.mrr ?? 0
   const totalIntervalCount = ['3w', '4w', '6w', 'other'].reduce((s, k) => s + (ib[k]?.count ?? 0), 0)
 
@@ -348,15 +350,15 @@ export default function SubscriptionsDashboard({ connected, metrics, recentCance
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-cream-2 text-left">
-                      <th className="pb-2 pr-4 text-xs font-data font-medium uppercase tracking-wider text-ink-3">Product</th>
-                      <th className="pb-2 pr-4 text-xs font-data font-medium uppercase tracking-wider text-ink-3 text-right">Subscribers</th>
-                      <th className="pb-2 pr-4 text-xs font-data font-medium uppercase tracking-wider text-ink-3 text-right">MRR</th>
-                      <th className="pb-2 pr-4 text-xs font-data font-medium uppercase tracking-wider text-ink-3 text-right">% of Total</th>
-                      <th className="pb-2 text-xs font-data font-medium uppercase tracking-wider text-ink-3 text-right">Avg Interval</th>
+                      <th className={`pb-2 pr-4 text-xs font-data font-medium uppercase tracking-wider text-ink-3 ${thCls('name', pSort)}`} onClick={() => pHandleSort('name')}>Product<SortIcon column="name" sortColumn={pSort} sortDirection={pDir} /></th>
+                      <th className={`pb-2 pr-4 text-xs font-data font-medium uppercase tracking-wider text-ink-3 text-right ${thCls('active_subscribers', pSort)}`} onClick={() => pHandleSort('active_subscribers')}>Subscribers<SortIcon column="active_subscribers" sortColumn={pSort} sortDirection={pDir} /></th>
+                      <th className={`pb-2 pr-4 text-xs font-data font-medium uppercase tracking-wider text-ink-3 text-right ${thCls('mrr', pSort)}`} onClick={() => pHandleSort('mrr')}>MRR<SortIcon column="mrr" sortColumn={pSort} sortDirection={pDir} /></th>
+                      <th className={`pb-2 pr-4 text-xs font-data font-medium uppercase tracking-wider text-ink-3 text-right ${thCls('pct_of_total', pSort)}`} onClick={() => pHandleSort('pct_of_total')}>% of Total<SortIcon column="pct_of_total" sortColumn={pSort} sortDirection={pDir} /></th>
+                      <th className={`pb-2 text-xs font-data font-medium uppercase tracking-wider text-ink-3 text-right ${thCls('avg_interval', pSort)}`} onClick={() => pHandleSort('avg_interval')}>Avg Interval<SortIcon column="avg_interval" sortColumn={pSort} sortDirection={pDir} /></th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-cream-2">
-                    {products.map((p, i) => (
+                    {(sortedProducts as unknown as ProductRow[]).map((p, i) => (
                       <tr key={i} className="hover:bg-cream/50 transition">
                         <td className="py-2.5 pr-4 font-medium text-ink max-w-[200px] truncate">{p.name}</td>
                         <td className="py-2.5 pr-4 text-right text-ink-2">{fmt(p.active_subscribers)}</td>

@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import { useSortableTable, SortIcon, thCls } from '@/hooks/useSortableTable'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -156,6 +157,7 @@ export default function LoyaltyDashboard({ connected, metrics, totalCustomers }:
   const promos = m?.promotion_response_rate ?? []
   const tiers = m?.tier_breakdown ?? []
   const redeemers = m?.top_redeemers ?? []
+  const { sortedData: sortedPromos, sortColumn: promoSort, sortDirection: promoDir, handleSort: promoHandleSort } = useSortableTable(promos as unknown as Record<string, unknown>[], 'lift_pct', 'desc')
   const enrollmentPct = totalCustomers > 0 && m ? (m.enrolled_customers ?? 0) / totalCustomers : 0
   const lowRedemption = m ? (m.redemption_rate ?? 0) < 0.1 : false
 
@@ -302,17 +304,17 @@ export default function LoyaltyDashboard({ connected, metrics, totalCustomers }:
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-cream-2 text-left">
-                      <th className="pb-2 pr-4 text-xs font-data font-medium uppercase tracking-wider text-ink-3">Campaign</th>
-                      <th className="pb-2 pr-3 text-xs font-data font-medium uppercase tracking-wider text-ink-3 text-right">Multiplier</th>
-                      <th className="pb-2 pr-3 text-xs font-data font-medium uppercase tracking-wider text-ink-3 text-right">Participants</th>
-                      <th className="pb-2 pr-3 text-xs font-data font-medium uppercase tracking-wider text-ink-3 text-right">Orders During</th>
-                      <th className="pb-2 pr-3 text-xs font-data font-medium uppercase tracking-wider text-ink-3 text-right">Orders Before</th>
-                      <th className="pb-2 pr-3 text-xs font-data font-medium uppercase tracking-wider text-ink-3 text-right">Lift</th>
-                      <th className="pb-2 text-xs font-data font-medium uppercase tracking-wider text-ink-3">Verdict</th>
+                      <th className={`pb-2 pr-4 text-xs font-data font-medium uppercase tracking-wider text-ink-3 ${thCls('campaign_name', promoSort)}`} onClick={() => promoHandleSort('campaign_name')}>Campaign<SortIcon column="campaign_name" sortColumn={promoSort} sortDirection={promoDir} /></th>
+                      <th className={`pb-2 pr-3 text-xs font-data font-medium uppercase tracking-wider text-ink-3 text-right ${thCls('multiplier', promoSort)}`} onClick={() => promoHandleSort('multiplier')}>Multiplier<SortIcon column="multiplier" sortColumn={promoSort} sortDirection={promoDir} /></th>
+                      <th className={`pb-2 pr-3 text-xs font-data font-medium uppercase tracking-wider text-ink-3 text-right ${thCls('participants', promoSort)}`} onClick={() => promoHandleSort('participants')}>Participants<SortIcon column="participants" sortColumn={promoSort} sortDirection={promoDir} /></th>
+                      <th className={`pb-2 pr-3 text-xs font-data font-medium uppercase tracking-wider text-ink-3 text-right ${thCls('orders_during', promoSort)}`} onClick={() => promoHandleSort('orders_during')}>Orders During<SortIcon column="orders_during" sortColumn={promoSort} sortDirection={promoDir} /></th>
+                      <th className={`pb-2 pr-3 text-xs font-data font-medium uppercase tracking-wider text-ink-3 text-right ${thCls('orders_before_14d', promoSort)}`} onClick={() => promoHandleSort('orders_before_14d')}>Orders Before<SortIcon column="orders_before_14d" sortColumn={promoSort} sortDirection={promoDir} /></th>
+                      <th className={`pb-2 pr-3 text-xs font-data font-medium uppercase tracking-wider text-ink-3 text-right ${thCls('lift_pct', promoSort)}`} onClick={() => promoHandleSort('lift_pct')}>Lift<SortIcon column="lift_pct" sortColumn={promoSort} sortDirection={promoDir} /></th>
+                      <th className={`pb-2 text-xs font-data font-medium uppercase tracking-wider text-ink-3 ${thCls('verdict', promoSort)}`} onClick={() => promoHandleSort('verdict')}>Verdict<SortIcon column="verdict" sortColumn={promoSort} sortDirection={promoDir} /></th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-cream-2">
-                    {promos.map((p, i) => {
+                    {(sortedPromos as unknown as PromotionResult[]).map((p, i) => {
                       const positiveLift = p.lift_pct !== null && p.lift_pct > 10
                       const negativeLift = p.lift_pct !== null && p.lift_pct < -10
                       return (

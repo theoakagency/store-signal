@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { usePagination, Paginator, exportCSV } from '@/hooks/usePagination'
+import { useSortableTable, SortIcon, thCls } from '@/hooks/useSortableTable'
 
 interface SessionRow { channel: string; sessions: number; conversions: number; revenue: number }
 interface PageRow { page_path: string; sessions: number; conversions: number; avg_time_seconds: number | null }
@@ -316,7 +317,9 @@ export default function AnalyticsDashboard({
 }: Props) {
   const [syncing, setSyncing] = useState(false)
   const [syncMsg, setSyncMsg] = useState('')
-  const { paged: pagedPages, page: pagesPage, setPage: setPagesPage, totalPages: pagesTotalPages } = usePagination(pages, 20)
+  const { sortedData: sortedPages, sortColumn: pgSort, sortDirection: pgDir, handleSort: pgHandleSort } = useSortableTable(pages as unknown as Record<string, unknown>[], 'sessions', 'desc')
+  const { paged: pagedPages, page: pagesPage, setPage: setPagesPage, totalPages: pagesTotalPages } = usePagination(sortedPages as unknown as PageRow[], 20)
+  const { sortedData: sortedCampaigns, sortColumn: campSort, sortDirection: campDir, handleSort: campHandleSort } = useSortableTable(adCampaigns as unknown as Record<string, unknown>[], 'revenue', 'desc')
 
   if (!connected) return <ConnectPrompt />
 
@@ -448,11 +451,11 @@ export default function AnalyticsDashboard({
             <table className="min-w-full text-sm">
               <thead>
                 <tr className="border-b border-cream-2 text-xs font-medium text-ink-3 bg-cream">
-                  <th className="px-5 py-2.5 text-left">Page</th>
-                  <th className="px-4 py-2.5 text-right">Sessions</th>
-                  <th className="px-4 py-2.5 text-right">Conversions</th>
+                  <th className={`px-5 py-2.5 text-left ${thCls('page_path', pgSort)}`} onClick={() => pgHandleSort('page_path')}>Page<SortIcon column="page_path" sortColumn={pgSort} sortDirection={pgDir} /></th>
+                  <th className={`px-4 py-2.5 text-right ${thCls('sessions', pgSort)}`} onClick={() => pgHandleSort('sessions')}>Sessions<SortIcon column="sessions" sortColumn={pgSort} sortDirection={pgDir} /></th>
+                  <th className={`px-4 py-2.5 text-right ${thCls('conversions', pgSort)}`} onClick={() => pgHandleSort('conversions')}>Conversions<SortIcon column="conversions" sortColumn={pgSort} sortDirection={pgDir} /></th>
                   <th className="px-4 py-2.5 text-right">CVR</th>
-                  <th className="px-4 py-2.5 text-right">Avg Time</th>
+                  <th className={`px-4 py-2.5 text-right ${thCls('avg_time_seconds', pgSort)}`} onClick={() => pgHandleSort('avg_time_seconds')}>Avg Time<SortIcon column="avg_time_seconds" sortColumn={pgSort} sortDirection={pgDir} /></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-cream-2">
@@ -497,15 +500,15 @@ export default function AnalyticsDashboard({
             <table className="min-w-full text-sm">
               <thead>
                 <tr className="border-b border-cream-2 text-xs font-medium text-ink-3 bg-cream">
-                  <th className="px-5 py-2.5 text-left">Campaign</th>
-                  <th className="px-4 py-2.5 text-right">Sessions</th>
-                  <th className="px-4 py-2.5 text-right">Conversions</th>
-                  <th className="px-4 py-2.5 text-right">Revenue</th>
+                  <th className={`px-5 py-2.5 text-left ${thCls('campaign_name', campSort)}`} onClick={() => campHandleSort('campaign_name')}>Campaign<SortIcon column="campaign_name" sortColumn={campSort} sortDirection={campDir} /></th>
+                  <th className={`px-4 py-2.5 text-right ${thCls('sessions', campSort)}`} onClick={() => campHandleSort('sessions')}>Sessions<SortIcon column="sessions" sortColumn={campSort} sortDirection={campDir} /></th>
+                  <th className={`px-4 py-2.5 text-right ${thCls('conversions', campSort)}`} onClick={() => campHandleSort('conversions')}>Conversions<SortIcon column="conversions" sortColumn={campSort} sortDirection={campDir} /></th>
+                  <th className={`px-4 py-2.5 text-right ${thCls('revenue', campSort)}`} onClick={() => campHandleSort('revenue')}>Revenue<SortIcon column="revenue" sortColumn={campSort} sortDirection={campDir} /></th>
                   <th className="px-4 py-2.5 text-right">Rev / Conversion</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-cream-2">
-                {adCampaigns.map((c) => (
+                {(sortedCampaigns as unknown as CampaignRow[]).map((c) => (
                   <tr key={c.campaign_name} className="hover:bg-cream transition-colors">
                     <td className="px-5 py-2.5 max-w-xs">
                       <p className="text-xs font-medium text-ink truncate" title={c.campaign_name}>{c.campaign_name}</p>

@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { useSortableTable, SortIcon, thCls } from '@/hooks/useSortableTable'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -278,6 +279,16 @@ export default function SearchDashboard({
   cachedInsights, insightsCalculatedAt, semrushData,
 }: Props) {
   const router = useRouter()
+  const { sortedData: sortedKeywords, sortColumn: kwSort, sortDirection: kwDir, handleSort: kwHandleSort } = useSortableTable(keywords as unknown as Record<string, unknown>[], 'clicks', 'desc')
+  const { sortedData: sortedQuickWins, sortColumn: qwSort, sortDirection: qwDir, handleSort: qwHandleSort } = useSortableTable(
+    keywords.filter((k) => { const p = k.position ?? 99; return p >= 4 && p <= 10 }).sort((a, b) => b.impressions - a.impressions) as unknown as Record<string, unknown>[],
+    'impressions', 'desc'
+  )
+  const { sortedData: sortedLowCtr, sortColumn: lcSort, sortDirection: lcDir, handleSort: lcHandleSort } = useSortableTable(
+    keywords.filter((k) => k.impressions > 100 && (k.ctr ?? 1) < 0.02).sort((a, b) => b.impressions - a.impressions) as unknown as Record<string, unknown>[],
+    'impressions', 'desc'
+  )
+  const { sortedData: sortedPages, sortColumn: pgSort, sortDirection: pgDir, handleSort: pgHandleSort } = useSortableTable(pages as unknown as Record<string, unknown>[], 'clicks', 'desc')
   const [syncing, setSyncing] = useState(false)
   const [showSemrush, setShowSemrush] = useState(false)
   const [activeTab, setActiveTab] = useState<'keywords' | 'opportunities' | 'pages'>('keywords')
@@ -574,11 +585,11 @@ export default function SearchDashboard({
               <table className="min-w-full text-sm">
                 <thead>
                   <tr className="border-b border-cream-2 text-xs font-medium text-ink-3">
-                    <th className="px-5 py-2.5 text-left">Query</th>
-                    <th className="px-5 py-2.5 text-right">Clicks</th>
-                    <th className="px-5 py-2.5 text-right">Impressions</th>
-                    <th className="px-5 py-2.5 text-right">CTR</th>
-                    <th className="px-5 py-2.5 text-right">GSC Pos</th>
+                    <th className={`px-5 py-2.5 text-left ${thCls('query', kwSort)}`} onClick={() => kwHandleSort('query')}>Query<SortIcon column="query" sortColumn={kwSort} sortDirection={kwDir} /></th>
+                    <th className={`px-5 py-2.5 text-right ${thCls('clicks', kwSort)}`} onClick={() => kwHandleSort('clicks')}>Clicks<SortIcon column="clicks" sortColumn={kwSort} sortDirection={kwDir} /></th>
+                    <th className={`px-5 py-2.5 text-right ${thCls('impressions', kwSort)}`} onClick={() => kwHandleSort('impressions')}>Impressions<SortIcon column="impressions" sortColumn={kwSort} sortDirection={kwDir} /></th>
+                    <th className={`px-5 py-2.5 text-right ${thCls('ctr', kwSort)}`} onClick={() => kwHandleSort('ctr')}>CTR<SortIcon column="ctr" sortColumn={kwSort} sortDirection={kwDir} /></th>
+                    <th className={`px-5 py-2.5 text-right ${thCls('position', kwSort)}`} onClick={() => kwHandleSort('position')}>GSC Pos<SortIcon column="position" sortColumn={kwSort} sortDirection={kwDir} /></th>
                     {showSemrush && semrushData && (
                       <>
                         <th className="px-4 py-2.5 text-right text-[#FF642D]">Monthly Vol</th>
@@ -588,7 +599,7 @@ export default function SearchDashboard({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-cream-2">
-                  {keywords.map((k) => {
+                  {(sortedKeywords as unknown as Keyword[]).map((k) => {
                     const semEntry = semrushData?.[k.query.toLowerCase()]
                     return (
                       <tr key={k.query} className="hover:bg-cream transition-colors">
@@ -639,17 +650,17 @@ export default function SearchDashboard({
                   <table className="min-w-full text-sm">
                     <thead>
                       <tr className="border-b border-cream-2 text-xs font-medium text-ink-3">
-                        <th className="px-5 py-2.5 text-left">Keyword</th>
-                        <th className="px-5 py-2.5 text-right">Position</th>
-                        <th className="px-5 py-2.5 text-right">Clicks</th>
-                        <th className="px-5 py-2.5 text-right">Impressions</th>
-                        <th className="px-5 py-2.5 text-right">CTR</th>
+                        <th className={`px-5 py-2.5 text-left ${thCls('query', qwSort)}`} onClick={() => qwHandleSort('query')}>Keyword<SortIcon column="query" sortColumn={qwSort} sortDirection={qwDir} /></th>
+                        <th className={`px-5 py-2.5 text-right ${thCls('position', qwSort)}`} onClick={() => qwHandleSort('position')}>Position<SortIcon column="position" sortColumn={qwSort} sortDirection={qwDir} /></th>
+                        <th className={`px-5 py-2.5 text-right ${thCls('clicks', qwSort)}`} onClick={() => qwHandleSort('clicks')}>Clicks<SortIcon column="clicks" sortColumn={qwSort} sortDirection={qwDir} /></th>
+                        <th className={`px-5 py-2.5 text-right ${thCls('impressions', qwSort)}`} onClick={() => qwHandleSort('impressions')}>Impressions<SortIcon column="impressions" sortColumn={qwSort} sortDirection={qwDir} /></th>
+                        <th className={`px-5 py-2.5 text-right ${thCls('ctr', qwSort)}`} onClick={() => qwHandleSort('ctr')}>CTR<SortIcon column="ctr" sortColumn={qwSort} sortDirection={qwDir} /></th>
                         <th className="px-5 py-2.5 text-right">Potential Gain</th>
                         <th className="px-5 py-2.5 text-center"></th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-cream-2">
-                      {quickWinKeywords.map((k) => {
+                      {(sortedQuickWins as unknown as Keyword[]).map((k) => {
                         const gain = estimatePotentialGain(k)
                         return (
                           <tr key={k.query} className="hover:bg-cream transition-colors">
@@ -693,16 +704,16 @@ export default function SearchDashboard({
                   <table className="min-w-full text-sm">
                     <thead>
                       <tr className="border-b border-cream-2 text-xs font-medium text-ink-3">
-                        <th className="px-5 py-2.5 text-left">Keyword</th>
-                        <th className="px-5 py-2.5 text-right">Impressions</th>
-                        <th className="px-5 py-2.5 text-right">Current CTR</th>
+                        <th className={`px-5 py-2.5 text-left ${thCls('query', lcSort)}`} onClick={() => lcHandleSort('query')}>Keyword<SortIcon column="query" sortColumn={lcSort} sortDirection={lcDir} /></th>
+                        <th className={`px-5 py-2.5 text-right ${thCls('impressions', lcSort)}`} onClick={() => lcHandleSort('impressions')}>Impressions<SortIcon column="impressions" sortColumn={lcSort} sortDirection={lcDir} /></th>
+                        <th className={`px-5 py-2.5 text-right ${thCls('ctr', lcSort)}`} onClick={() => lcHandleSort('ctr')}>Current CTR<SortIcon column="ctr" sortColumn={lcSort} sortDirection={lcDir} /></th>
                         <th className="px-5 py-2.5 text-right">Benchmark CTR</th>
-                        <th className="px-5 py-2.5 text-right">Position</th>
+                        <th className={`px-5 py-2.5 text-right ${thCls('position', lcSort)}`} onClick={() => lcHandleSort('position')}>Position<SortIcon column="position" sortColumn={lcSort} sortDirection={lcDir} /></th>
                         <th className="px-5 py-2.5 text-center"></th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-cream-2">
-                      {lowCtrKeywords.map((k) => (
+                      {(sortedLowCtr as unknown as Keyword[]).map((k) => (
                         <tr key={k.query} className="hover:bg-cream transition-colors">
                           <td className="px-5 py-3 font-medium text-ink max-w-[240px]">
                             <span className="truncate block">{k.query}</span>
@@ -801,16 +812,16 @@ export default function SearchDashboard({
               <table className="min-w-full text-sm">
                 <thead>
                   <tr className="border-b border-cream-2 text-xs font-medium text-ink-3">
-                    <th className="px-5 py-2.5 text-left">Page</th>
-                    <th className="px-5 py-2.5 text-right">Clicks (90d)</th>
-                    <th className="px-5 py-2.5 text-right">Impressions</th>
-                    <th className="px-5 py-2.5 text-right">CTR</th>
-                    <th className="px-5 py-2.5 text-right">Position</th>
+                    <th className={`px-5 py-2.5 text-left ${thCls('page', pgSort)}`} onClick={() => pgHandleSort('page')}>Page<SortIcon column="page" sortColumn={pgSort} sortDirection={pgDir} /></th>
+                    <th className={`px-5 py-2.5 text-right ${thCls('clicks', pgSort)}`} onClick={() => pgHandleSort('clicks')}>Clicks (90d)<SortIcon column="clicks" sortColumn={pgSort} sortDirection={pgDir} /></th>
+                    <th className={`px-5 py-2.5 text-right ${thCls('impressions', pgSort)}`} onClick={() => pgHandleSort('impressions')}>Impressions<SortIcon column="impressions" sortColumn={pgSort} sortDirection={pgDir} /></th>
+                    <th className={`px-5 py-2.5 text-right ${thCls('ctr', pgSort)}`} onClick={() => pgHandleSort('ctr')}>CTR<SortIcon column="ctr" sortColumn={pgSort} sortDirection={pgDir} /></th>
+                    <th className={`px-5 py-2.5 text-right ${thCls('position', pgSort)}`} onClick={() => pgHandleSort('position')}>Position<SortIcon column="position" sortColumn={pgSort} sortDirection={pgDir} /></th>
                     <th className="px-5 py-2.5 text-right">Trend</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-cream-2">
-                  {pages.map((p) => {
+                  {(sortedPages as unknown as Page[]).map((p) => {
                     const delta = p.clicks - p.clicks_prior
                     const isLosing = delta < 0 && p.clicks_prior > 10
                     const trendPct = p.clicks_prior > 0

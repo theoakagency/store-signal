@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { usePagination, Paginator, exportCSV } from '@/hooks/usePagination'
+import { useSortableTable, SortIcon, thCls } from '@/hooks/useSortableTable'
 
 interface SessionRow { channel: string; sessions: number; conversions: number; revenue: number }
 interface MonthlyRow { month: string; sessions: number }
@@ -150,7 +151,9 @@ export default function AnalyticsOverviewDashboard({
     cachedInsights && cachedInsights.length > 0 ? 'done' : 'idle'
   )
 
-  const { paged: pagedGaps, page: gapsPage, setPage: setGapsPage, totalPages: gapsTotalPages } = usePagination(keywordGaps, 10)
+  const { sortedData: sortedGaps, sortColumn: gapSort, sortDirection: gapDir, handleSort: gapHandleSort } = useSortableTable(keywordGaps as unknown as Record<string, unknown>[], 'opportunity_score', 'desc')
+  const { paged: pagedGaps, page: gapsPage, setPage: setGapsPage, totalPages: gapsTotalPages } = usePagination(sortedGaps as unknown as GapRow[], 10)
+  const { sortedData: sortedKeywords, sortColumn: kwSort, sortDirection: kwDir, handleSort: kwHandleSort } = useSortableTable(keywords as unknown as Record<string, unknown>[], 'traffic_percent', 'desc')
 
   const m = (k: string) => ga4Metrics[k] ?? 0
   const totalSessions = sessions.reduce((s, r) => s + r.sessions, 0)
@@ -474,12 +477,12 @@ export default function AnalyticsOverviewDashboard({
                 <table className="min-w-full text-sm">
                   <thead>
                     <tr className="border-b border-cream-2 text-xs font-medium text-ink-3 bg-cream">
-                      <th className="px-5 py-2.5 text-left">Keyword</th>
-                      <th className="px-4 py-2.5 text-left">Competitor</th>
-                      <th className="px-4 py-2.5 text-right">Their Rank</th>
-                      <th className="px-4 py-2.5 text-right">Our Rank</th>
-                      <th className="px-4 py-2.5 text-right">Volume</th>
-                      <th className="px-4 py-2.5 text-right">Opp. Score</th>
+                      <th className={`px-5 py-2.5 text-left ${thCls('keyword', gapSort)}`} onClick={() => gapHandleSort('keyword')}>Keyword<SortIcon column="keyword" sortColumn={gapSort} sortDirection={gapDir} /></th>
+                      <th className={`px-4 py-2.5 text-left ${thCls('competitor_domain', gapSort)}`} onClick={() => gapHandleSort('competitor_domain')}>Competitor<SortIcon column="competitor_domain" sortColumn={gapSort} sortDirection={gapDir} /></th>
+                      <th className={`px-4 py-2.5 text-right ${thCls('competitor_position', gapSort)}`} onClick={() => gapHandleSort('competitor_position')}>Their Rank<SortIcon column="competitor_position" sortColumn={gapSort} sortDirection={gapDir} /></th>
+                      <th className={`px-4 py-2.5 text-right ${thCls('our_position', gapSort)}`} onClick={() => gapHandleSort('our_position')}>Our Rank<SortIcon column="our_position" sortColumn={gapSort} sortDirection={gapDir} /></th>
+                      <th className={`px-4 py-2.5 text-right ${thCls('search_volume', gapSort)}`} onClick={() => gapHandleSort('search_volume')}>Volume<SortIcon column="search_volume" sortColumn={gapSort} sortDirection={gapDir} /></th>
+                      <th className={`px-4 py-2.5 text-right ${thCls('opportunity_score', gapSort)}`} onClick={() => gapHandleSort('opportunity_score')}>Opp. Score<SortIcon column="opportunity_score" sortColumn={gapSort} sortDirection={gapDir} /></th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-cream-2">
@@ -522,14 +525,14 @@ export default function AnalyticsOverviewDashboard({
                 <table className="min-w-full text-sm">
                   <thead>
                     <tr className="border-b border-cream-2 text-xs font-medium text-ink-3 bg-cream">
-                      <th className="px-5 py-2.5 text-left">Keyword</th>
-                      <th className="px-4 py-2.5 text-center">Position</th>
-                      <th className="px-4 py-2.5 text-right">Volume</th>
-                      <th className="px-4 py-2.5 text-right">Traffic %</th>
+                      <th className={`px-5 py-2.5 text-left ${thCls('keyword', kwSort)}`} onClick={() => kwHandleSort('keyword')}>Keyword<SortIcon column="keyword" sortColumn={kwSort} sortDirection={kwDir} /></th>
+                      <th className={`px-4 py-2.5 text-center ${thCls('position', kwSort)}`} onClick={() => kwHandleSort('position')}>Position<SortIcon column="position" sortColumn={kwSort} sortDirection={kwDir} /></th>
+                      <th className={`px-4 py-2.5 text-right ${thCls('search_volume', kwSort)}`} onClick={() => kwHandleSort('search_volume')}>Volume<SortIcon column="search_volume" sortColumn={kwSort} sortDirection={kwDir} /></th>
+                      <th className={`px-4 py-2.5 text-right ${thCls('traffic_percent', kwSort)}`} onClick={() => kwHandleSort('traffic_percent')}>Traffic %<SortIcon column="traffic_percent" sortColumn={kwSort} sortDirection={kwDir} /></th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-cream-2">
-                    {keywords.slice(0, 15).map((k, i) => (
+                    {(sortedKeywords as unknown as KeywordRow[]).slice(0, 15).map((k, i) => (
                       <tr key={i} className="hover:bg-cream transition-colors">
                         <td className="px-5 py-2.5 font-medium text-ink text-xs">{k.keyword}</td>
                         <td className="px-4 py-2.5 text-center">

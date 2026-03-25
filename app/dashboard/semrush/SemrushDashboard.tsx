@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { usePagination, Paginator, exportCSV } from '@/hooks/usePagination'
+import { useSortableTable, SortIcon, thCls } from '@/hooks/useSortableTable'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -217,8 +218,9 @@ export default function SemrushDashboard({ connected, domain, metrics, keywords,
   const [syncing, setSyncing] = useState(false)
   const [syncError, setSyncError] = useState<string | null>(null)
   const [kwTab, setKwTab] = useState<KeywordTab>('all')
+  const { sortedData: sortedKeywords, sortColumn: kwSort, sortDirection: kwSortDir, handleSort: kwHandleSort } = useSortableTable(keywords as unknown as Record<string, unknown>[], 'position', 'asc')
   const { paged: pagedKeywords, page: kwPage, setPage: setKwPage, reset: resetKwPage, totalPages: kwTotalPages } = usePagination(
-    keywords.filter((k) => {
+    (sortedKeywords as unknown as Keyword[]).filter((k) => {
       if (kwTab === 'improved') return k.position_change < -1
       if (kwTab === 'declined') return k.position_change > 1
       if (kwTab === 'new') return k.previous_position === 0 && k.position > 0
@@ -226,8 +228,12 @@ export default function SemrushDashboard({ connected, domain, metrics, keywords,
     }),
     25
   )
+  function handleKwSort(col: string) { kwHandleSort(col); resetKwPage() }
   const [generating, setGenerating] = useState(false)
   const [aiInsight, setAiInsight] = useState<string | null>(null)
+  const { sortedData: sortedGaps, sortColumn: gapSort, sortDirection: gapDir, handleSort: gapHandleSort } = useSortableTable(keywordGaps as unknown as Record<string, unknown>[], 'opportunity_score', 'desc')
+  const lostRankingsBase = keywords.filter((k) => k.position_change > 5).sort((a, b) => b.search_volume - a.search_volume)
+  const { sortedData: sortedLostRankings, sortColumn: lrSort, sortDirection: lrDir, handleSort: lrHandleSort } = useSortableTable(lostRankingsBase as unknown as Record<string, unknown>[], 'search_volume', 'desc')
 
   if (!connected) return <NotConnected domain={domain} />
   if (!metrics && keywords.length === 0) return (
@@ -266,10 +272,8 @@ export default function SemrushDashboard({ connected, domain, metrics, keywords,
     finally { setGenerating(false) }
   }
 
-  // Lost rankings = keywords that dropped significantly
-  const lostRankings = keywords
-    .filter((k) => k.position_change > 5)
-    .sort((a, b) => b.search_volume - a.search_volume)
+  // Lost rankings = keywords that dropped significantly (computed above for hook ordering)
+  const lostRankings = lostRankingsBase
 
   const trend = metrics?.traffic_trend ?? []
   const authorityScore = metrics?.authority_score ?? backlinks?.authority_score ?? null
@@ -415,12 +419,12 @@ export default function SemrushDashboard({ connected, domain, metrics, keywords,
             <table className="min-w-full text-sm">
               <thead>
                 <tr className="border-b border-cream-2 text-xs font-medium text-ink-3">
-                  <th className="px-5 py-2.5 text-left">Keyword</th>
-                  <th className="px-4 py-2.5 text-center">Pos</th>
-                  <th className="px-4 py-2.5 text-center">Change</th>
-                  <th className="px-4 py-2.5 text-right">Volume</th>
-                  <th className="px-4 py-2.5 text-right hidden sm:table-cell">CPC</th>
-                  <th className="px-4 py-2.5 text-right">Traffic %</th>
+                  <th className={`px-5 py-2.5 text-left ${thCls('keyword', kwSort)}`} onClick={() => handleKwSort('keyword')}>Keyword<SortIcon column="keyword" sortColumn={kwSort} sortDirection={kwSortDir} /></th>
+                  <th className={`px-4 py-2.5 text-center ${thCls('position', kwSort)}`} onClick={() => handleKwSort('position')}>Pos<SortIcon column="position" sortColumn={kwSort} sortDirection={kwSortDir} /></th>
+                  <th className={`px-4 py-2.5 text-center ${thCls('position_change', kwSort)}`} onClick={() => handleKwSort('position_change')}>Change<SortIcon column="position_change" sortColumn={kwSort} sortDirection={kwSortDir} /></th>
+                  <th className={`px-4 py-2.5 text-right ${thCls('search_volume', kwSort)}`} onClick={() => handleKwSort('search_volume')}>Volume<SortIcon column="search_volume" sortColumn={kwSort} sortDirection={kwSortDir} /></th>
+                  <th className={`px-4 py-2.5 text-right hidden sm:table-cell ${thCls('cpc', kwSort)}`} onClick={() => handleKwSort('cpc')}>CPC<SortIcon column="cpc" sortColumn={kwSort} sortDirection={kwSortDir} /></th>
+                  <th className={`px-4 py-2.5 text-right ${thCls('traffic_percent', kwSort)}`} onClick={() => handleKwSort('traffic_percent')}>Traffic %<SortIcon column="traffic_percent" sortColumn={kwSort} sortDirection={kwSortDir} /></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-cream-2">
@@ -518,15 +522,15 @@ export default function SemrushDashboard({ connected, domain, metrics, keywords,
                 <table className="min-w-full text-sm">
                   <thead>
                     <tr className="border-b border-cream-2 text-xs font-medium text-ink-3">
-                      <th className="px-4 py-2.5 text-left">Keyword</th>
-                      <th className="px-3 py-2.5 text-right">Vol</th>
-                      <th className="px-3 py-2.5 text-center">Their Pos</th>
-                      <th className="px-3 py-2.5 text-center">Our Pos</th>
-                      <th className="px-3 py-2.5 text-center">Score</th>
+                      <th className={`px-4 py-2.5 text-left ${thCls('keyword', gapSort)}`} onClick={() => gapHandleSort('keyword')}>Keyword<SortIcon column="keyword" sortColumn={gapSort} sortDirection={gapDir} /></th>
+                      <th className={`px-3 py-2.5 text-right ${thCls('search_volume', gapSort)}`} onClick={() => gapHandleSort('search_volume')}>Vol<SortIcon column="search_volume" sortColumn={gapSort} sortDirection={gapDir} /></th>
+                      <th className={`px-3 py-2.5 text-center ${thCls('competitor_position', gapSort)}`} onClick={() => gapHandleSort('competitor_position')}>Their Pos<SortIcon column="competitor_position" sortColumn={gapSort} sortDirection={gapDir} /></th>
+                      <th className={`px-3 py-2.5 text-center ${thCls('our_position', gapSort)}`} onClick={() => gapHandleSort('our_position')}>Our Pos<SortIcon column="our_position" sortColumn={gapSort} sortDirection={gapDir} /></th>
+                      <th className={`px-3 py-2.5 text-center ${thCls('opportunity_score', gapSort)}`} onClick={() => gapHandleSort('opportunity_score')}>Score<SortIcon column="opportunity_score" sortColumn={gapSort} sortDirection={gapDir} /></th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-cream-2">
-                    {keywordGaps.slice(0, 20).map((gap, i) => (
+                    {(sortedGaps as unknown as KeywordGap[]).slice(0, 20).map((gap, i) => (
                       <tr key={i} className="hover:bg-cream transition-colors">
                         <td className="px-4 py-2">
                           <p className="text-xs font-medium text-ink">{gap.keyword}</p>
@@ -570,15 +574,15 @@ export default function SemrushDashboard({ connected, domain, metrics, keywords,
             <table className="min-w-full text-sm">
               <thead>
                 <tr className="border-b border-cream-2 text-xs font-medium text-ink-3">
-                  <th className="px-5 py-2.5 text-left">Keyword</th>
-                  <th className="px-4 py-2.5 text-center">Was</th>
-                  <th className="px-4 py-2.5 text-center">Now</th>
-                  <th className="px-4 py-2.5 text-center">Drop</th>
-                  <th className="px-4 py-2.5 text-right">Volume</th>
+                  <th className={`px-5 py-2.5 text-left ${thCls('keyword', lrSort)}`} onClick={() => lrHandleSort('keyword')}>Keyword<SortIcon column="keyword" sortColumn={lrSort} sortDirection={lrDir} /></th>
+                  <th className={`px-4 py-2.5 text-center ${thCls('previous_position', lrSort)}`} onClick={() => lrHandleSort('previous_position')}>Was<SortIcon column="previous_position" sortColumn={lrSort} sortDirection={lrDir} /></th>
+                  <th className={`px-4 py-2.5 text-center ${thCls('position', lrSort)}`} onClick={() => lrHandleSort('position')}>Now<SortIcon column="position" sortColumn={lrSort} sortDirection={lrDir} /></th>
+                  <th className={`px-4 py-2.5 text-center ${thCls('position_change', lrSort)}`} onClick={() => lrHandleSort('position_change')}>Drop<SortIcon column="position_change" sortColumn={lrSort} sortDirection={lrDir} /></th>
+                  <th className={`px-4 py-2.5 text-right ${thCls('search_volume', lrSort)}`} onClick={() => lrHandleSort('search_volume')}>Volume<SortIcon column="search_volume" sortColumn={lrSort} sortDirection={lrDir} /></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-cream-2">
-                {lostRankings.slice(0, 10).map((k, i) => (
+                {(sortedLostRankings as unknown as Keyword[]).slice(0, 10).map((k, i) => (
                   <tr key={i} className="hover:bg-red-50/30 transition-colors">
                     <td className="px-5 py-2.5 text-sm font-medium text-ink">{k.keyword}</td>
                     <td className="px-4 py-2.5 text-center font-data text-xs text-ink">
