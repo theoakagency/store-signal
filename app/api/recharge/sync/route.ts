@@ -159,34 +159,48 @@ export async function POST(_req: NextRequest) {
     })
 
   // Subscriber vs non-subscriber LTV
-  const subscriberEmails = new Set(allSubscriptions.map((s) => s.customer?.email).filter(Boolean))
+  // Use customer_profiles (all 40k buyers) instead of customers table (Shopify accounts only).
+  // Paginate to bypass the PostgREST 1,000-row cap.
+  const subscriberEmails = new Set(allSubscriptions.map((s) => s.customer?.email?.toLowerCase()).filter(Boolean))
 
-  const { data: allCustomers } = await service
-    .from('customers')
-    .select('email, total_spent, orders_count')
-    .eq('tenant_id', TENANT_ID)
-
-  const subCustomers = (allCustomers ?? []).filter((c) => c.email && subscriberEmails.has(c.email))
-  const nonSubCustomers = (allCustomers ?? []).filter((c) => !c.email || !subscriberEmails.has(c.email))
-
-  function avgLtv(customers: { total_spent: string | number; orders_count: number }[]) {
-    if (customers.length === 0) return { ltv: 0, orders: 0, aov: 0 }
-    const totalSpent = customers.reduce((s, c) => s + Number(c.total_spent), 0)
-    const totalOrders = customers.reduce((s, c) => s + c.orders_count, 0)
-    return {
-      ltv: Math.round((totalSpent / customers.length) * 100) / 100,
-      orders: Math.round((totalOrders / customers.length) * 10) / 10,
-      aov: totalOrders > 0 ? Math.round((totalSpent / totalOrders) * 100) / 100 : 0,
+  type ProfileLtv = { email: string; total_revenue: number; total_orders: number; avg_order_value: number }
+  const allProfiles: ProfileLtv[] = []
+  {
+    let from = 0
+    while (true) {
+      const { data } = await service
+        .from('customer_profiles')
+        .select('email, total_revenue, total_orders, avg_order_value')
+        .eq('tenant_id', TENANT_ID)
+        .range(from, from + 999)
+      if (!data || data.length === 0) break
+      allProfiles.push(...(data as ProfileLtv[]))
+      if (data.length < 1000) break
+      from += 1000
     }
   }
 
-  const subLtv = avgLtv(subCustomers)
-  const nonSubLtv = avgLtv(nonSubCustomers)
+  const subProfiles    = allProfiles.filter((p) => subscriberEmails.has(p.email.toLowerCase()))
+  const nonSubProfiles = allProfiles.filter((p) => !subscriberEmails.has(p.email.toLowerCase()))
+
+  function avgLtv(profiles: ProfileLtv[]) {
+    if (profiles.length === 0) return { ltv: 0, orders: 0, aov: 0 }
+    const totalRevenue = profiles.reduce((s, p) => s + Number(p.total_revenue), 0)
+    const totalOrders  = profiles.reduce((s, p) => s + Number(p.total_orders), 0)
+    return {
+      ltv:    Math.round((totalRevenue / profiles.length) * 100) / 100,
+      orders: Math.round((totalOrders  / profiles.length) * 10)  / 10,
+      aov:    totalOrders > 0 ? Math.round((totalRevenue / totalOrders) * 100) / 100 : 0,
+    }
+  }
+
+  const subLtv    = avgLtv(subProfiles)
+  const nonSubLtv = avgLtv(nonSubProfiles)
   const ltvMultiplier = nonSubLtv.ltv > 0 ? Math.round((subLtv.ltv / nonSubLtv.ltv) * 10) / 10 : null
 
   const subscriberVsNonsubscriberLtv = {
-    subscribers: { count: subCustomers.length, ...subLtv },
-    non_subscribers: { count: nonSubCustomers.length, ...nonSubLtv },
+    subscribers:     { count: subProfiles.length,    ...subLtv },
+    non_subscribers: { count: nonSubProfiles.length, ...nonSubLtv },
     ltv_multiplier: ltvMultiplier,
   }
 

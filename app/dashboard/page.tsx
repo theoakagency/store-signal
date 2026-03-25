@@ -396,7 +396,7 @@ export default async function DashboardPage() {
     { data: metaCampaigns },
     { data: googleCampaigns },
     { data: gscClicks },
-    { data: rechargeSubs },
+    { data: rechargeMetrics },
     { data: analyticsMetrics },
     { data: analyticsSessions },
     { data: customerProfiles, count: profileCount },
@@ -412,7 +412,7 @@ export default async function DashboardPage() {
     service.from('meta_campaigns').select('spend, purchase_value, roas').eq('tenant_id', TENANT_ID),
     service.from('google_campaigns').select('cost, conversions_value, roas').eq('tenant_id', TENANT_ID),
     service.from('gsc_keywords').select('clicks').eq('tenant_id', TENANT_ID),
-    service.from('recharge_subscriptions').select('status, price, order_interval_unit, charge_interval_frequency').eq('tenant_id', TENANT_ID).eq('status', 'active'),
+    service.from('recharge_metrics_cache').select('active_subscribers, mrr').eq('tenant_id', TENANT_ID).maybeSingle(),
     service.from('analytics_metrics_cache').select('metric_name, metric_value').eq('tenant_id', TENANT_ID),
     service.from('analytics_sessions').select('sessions, conversions').eq('tenant_id', TENANT_ID).eq('date_range', '90d'),
     service.from('customer_profiles').select('segment', { count: 'exact' }).eq('tenant_id', TENANT_ID),
@@ -484,17 +484,8 @@ export default async function DashboardPage() {
   const semrushData = semrushCache as { authority_score: number | null; organic_keywords_total: number | null; organic_traffic_estimate: number | null } | null
 
   // ── Recharge ─────────────────────────────────────────────────────────────────
-  const activeSubs = (rechargeSubs ?? []).length
-  let mrr = 0
-  for (const sub of rechargeSubs ?? []) {
-    const price = Number(sub.price) || 0
-    const freq  = sub.charge_interval_frequency ?? 1
-    const unit  = (sub.order_interval_unit ?? 'month') as string
-    let monthly = price
-    if (unit === 'week') monthly = price * (52 / 12) / freq
-    else if (unit === 'day') monthly = price * (365 / 12) / freq
-    mrr += monthly
-  }
+  const activeSubs = (rechargeMetrics as { active_subscribers?: number } | null)?.active_subscribers ?? 0
+  const mrr        = (rechargeMetrics as { mrr?: number } | null)?.mrr ?? 0
 
   // ── GA4 ──────────────────────────────────────────────────────────────────────
   const ga4Metrics: Record<string, number> = {}

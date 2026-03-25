@@ -201,6 +201,32 @@ export default function SubscriptionsDashboard({ connected, metrics, recentCance
         </div>
       ) : (
         <>
+          {/* Churn alert */}
+          {m.churn_rate_30d >= 0.05 && (
+            <div className="rounded-2xl border border-red-200 bg-red-50 p-5 flex gap-4 items-start">
+              <div className="shrink-0 mt-0.5">
+                <svg className="h-5 w-5 text-red-500" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-red-800">
+                  High churn rate: {fmtPct(m.churn_rate_30d)} — {fmt(Math.round(m.churn_rate_30d * m.active_subscribers))} subscribers at risk monthly
+                </p>
+                <p className="mt-1 text-xs text-red-700">
+                  At this rate, you could lose ~{fmt(Math.round(m.churn_rate_30d * m.active_subscribers * 12))} subscribers over the next year.
+                  Recommended action: launch a win-back campaign for recently cancelled subscribers and add a cancellation flow with a pause or discount offer.
+                </p>
+              </div>
+              <Link
+                href="/dashboard/chat?q=My+subscription+churn+rate+is+high.+What+specific+win-back+strategies+and+cancellation+flow+improvements+should+I+implement%3F"
+                className="shrink-0 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700 transition"
+              >
+                Ask AI →
+              </Link>
+            </div>
+          )}
+
           {/* AI Analysis — top of page */}
           <div className="rounded-2xl border border-cream-3 bg-white p-6 shadow-sm">
             <div className="flex items-center justify-between mb-4">
