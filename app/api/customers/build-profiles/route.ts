@@ -254,15 +254,25 @@ export async function POST(req: NextRequest) {
 
   // ── Final batch: compute overlap from all stored profiles ─────────────────────
   if (batch === totalBatches - 1) {
-    const { data: allProfiles } = await service
-      .from('customer_profiles')
-      .select('is_subscriber, is_loyalty_member, total_revenue')
-      .eq('tenant_id', TENANT_ID)
+    // Paginate customer_profiles to bypass the Supabase 1,000 row limit
+    const allProfiles: { is_subscriber: boolean; is_loyalty_member: boolean; total_revenue: number }[] = []
+    let profFrom = 0
+    while (true) {
+      const { data: chunk } = await service
+        .from('customer_profiles')
+        .select('is_subscriber, is_loyalty_member, total_revenue')
+        .eq('tenant_id', TENANT_ID)
+        .range(profFrom, profFrom + 999)
+      if (!chunk || chunk.length === 0) break
+      allProfiles.push(...(chunk as typeof allProfiles))
+      if (chunk.length < 1000) break
+      profFrom += 1000
+    }
 
     let subscribersOnly = 0, loyaltyOnly = 0, vipOnly = 0
     let subAndLoyalty = 0, subAndVip = 0, loyaltyAndVip = 0, allThree = 0
 
-    for (const p of allProfiles ?? []) {
+    for (const p of allProfiles) {
       const isSub  = !!p.is_subscriber
       const isLoy  = !!p.is_loyalty_member
       const isVip  = Number(p.total_revenue) >= p90
@@ -278,7 +288,7 @@ export async function POST(req: NextRequest) {
 
     await service.from('customer_overlap_cache').upsert({
       tenant_id:              TENANT_ID,
-      total_customers:        allProfiles?.length ?? totalEmails,
+      total_customers:        allProfiles.length,
       subscribers_only:       subscribersOnly,
       loyalty_only:           loyaltyOnly,
       vip_only:               vipOnly,
