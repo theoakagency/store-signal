@@ -540,13 +540,7 @@ export default async function DashboardPage() {
 
   return (
     <div className="space-y-5">
-      {/* 1. AI Intelligence Brief — most valuable, at top */}
-      <AiInsightsBrief
-        cachedInsights={(execInsightsCache?.insights as ExecutiveInsight[] | null) ?? null}
-        calculatedAt={execInsightsCache?.calculated_at ?? null}
-      />
-
-      {/* 2. Business Health Score */}
+      {/* 1. Business Health Score */}
       <BusinessHealthScore
         score={healthScore}
         components={healthComponents}
@@ -554,10 +548,10 @@ export default async function DashboardPage() {
         calculatedAt={now.toISOString()}
       />
 
-      {/* 3. Platform Health Row */}
+      {/* 2. Platform Health Row */}
       <PlatformHealthRow platforms={platformCards} />
 
-      {/* 4. Revenue Overview + Key Alerts */}
+      {/* 3. Revenue Overview + Key Alerts */}
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
         <div className="lg:col-span-2">
           <RevenueSection monthlyData={chartData} channelData30d={channelRows ?? []} />
@@ -567,7 +561,7 @@ export default async function DashboardPage() {
         </div>
       </div>
 
-      {/* 5. Quick Metrics Row */}
+      {/* 4. Quick Metrics Row */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         <MetricCard label="Revenue (30d)" value={fmt(currRevenue, currency)} delta={revDelta} sub="paid orders" />
         <MetricCard label="Orders (30d)"  value={currCount.toLocaleString()} delta={countDelta} sub="paid orders" />
@@ -575,7 +569,7 @@ export default async function DashboardPage() {
         <MetricCard label={rechargeConnected ? 'MRR' : 'Avg. Order Value'} value={rechargeConnected ? fmt(mrr) : fmt(currAOV, currency)} delta={rechargeConnected ? null : aovDelta} sub={rechargeConnected ? 'subscriptions' : 'paid orders'} />
       </div>
 
-      {/* 6. Ask AI */}
+      {/* 5. Ask AI */}
       <AskAiRow
         label="Ask AI"
         prompts={[
@@ -583,6 +577,12 @@ export default async function DashboardPage() {
           'Who should I focus on retaining?',
           "What's my biggest opportunity right now?",
         ]}
+      />
+
+      {/* 6. AI Intelligence Brief */}
+      <AiInsightsBrief
+        cachedInsights={(execInsightsCache?.insights as ExecutiveInsight[] | null) ?? null}
+        calculatedAt={execInsightsCache?.calculated_at ?? null}
       />
     </div>
   )
