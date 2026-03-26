@@ -216,12 +216,22 @@ export default function LoyaltyDashboard({ connected, metrics, totalCustomers }:
             )}
           </div>
 
+          {/* API limitation notice */}
+          <div className="flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+            <svg className="h-4 w-4 shrink-0 text-amber-600 mt-0.5" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 10 5zm0 9a1 1 0 1 0 0-2 1 1 0 0 0 0 2z" clipRule="evenodd"/>
+            </svg>
+            <div className="text-xs text-amber-800">
+              <span className="font-semibold">API limitation:</span> LoyaltyLion&apos;s API returns only recently-active members (~20,000) regardless of pagination. Your actual enrolled count is higher (Glow: 49k+, Allure: 5.4k, Icon: 1.3k, Empire: 788). Redemption rates and tier LTV figures below are calculated from this subset and may be understated. This is an upstream LL limitation — not fixable without a bulk export or webhook from LoyaltyLion.
+            </div>
+          </div>
+
           {/* Section 1: Health KPIs */}
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
             <KpiCard
               label="Enrolled Customers"
               value={fmt(m.enrolled_customers)}
-              sub={`${fmtPct(enrollmentPct)} of customer base`}
+              sub={`${fmtPct(enrollmentPct)} of customer base (API subset only)`}
             />
             <KpiCard label="Active Redeemers (30d)" value={fmt(m.active_redeemers_30d)} />
             <KpiCard

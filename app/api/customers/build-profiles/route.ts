@@ -277,15 +277,15 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // ── Final batch: compute overlap from all stored profiles ─────────────────────
+  // ── Final batch: compute overlap + segment/LTV stats from all stored profiles ──
   if (batch === totalBatches - 1) {
     // Paginate customer_profiles to bypass the Supabase 1,000 row limit
-    const allProfiles: { is_subscriber: boolean; is_loyalty_member: boolean; total_revenue: number }[] = []
+    const allProfiles: { is_subscriber: boolean; is_loyalty_member: boolean; total_revenue: number; segment: string | null; ltv_segment: string | null }[] = []
     let profFrom = 0
     while (true) {
       const { data: chunk } = await service
         .from('customer_profiles')
-        .select('is_subscriber, is_loyalty_member, total_revenue')
+        .select('is_subscriber, is_loyalty_member, total_revenue, segment, ltv_segment')
         .eq('tenant_id', TENANT_ID)
         .range(profFrom, profFrom + 999)
       if (!chunk || chunk.length === 0) break
@@ -296,6 +296,8 @@ export async function POST(req: NextRequest) {
 
     let subscribersOnly = 0, loyaltyOnly = 0, vipOnly = 0
     let subAndLoyalty = 0, subAndVip = 0, loyaltyAndVip = 0, allThree = 0
+    const segmentCounts: Record<string, number> = {}
+    const ltvStats: Record<string, { count: number; totalRevenue: number }> = {}
 
     for (const p of allProfiles) {
       const isSub  = !!p.is_subscriber
@@ -309,6 +311,16 @@ export async function POST(req: NextRequest) {
       else if (isSub)               subscribersOnly++
       else if (isLoy)               loyaltyOnly++
       else if (isVip)               vipOnly++
+
+      // Segment pill counts (vip, active, at_risk, lapsed, new)
+      const seg = p.segment ?? 'unknown'
+      segmentCounts[seg] = (segmentCounts[seg] ?? 0) + 1
+
+      // LTV tier stats (Diamond, Gold, Silver, Bronze)
+      const ltv = p.ltv_segment ?? 'unknown'
+      if (!ltvStats[ltv]) ltvStats[ltv] = { count: 0, totalRevenue: 0 }
+      ltvStats[ltv].count++
+      ltvStats[ltv].totalRevenue += Number(p.total_revenue)
     }
 
     await service.from('customer_overlap_cache').upsert({
@@ -321,6 +333,8 @@ export async function POST(req: NextRequest) {
       subscriber_and_vip:     subAndVip,
       loyalty_and_vip:        loyaltyAndVip,
       all_three:              allThree,
+      segment_counts:         segmentCounts,
+      ltv_stats:              ltvStats,
       calculated_at:          now.toISOString(),
     }, { onConflict: 'tenant_id' })
   }

@@ -48,7 +48,7 @@ async function paginateOrders<T extends Record<string, unknown>>(
     if (lt) q = q.lt('processed_at', lt)
     const { data } = await q
     if (!data || data.length === 0) break
-    rows.push(...(data as T[]))
+    rows.push(...(data as unknown as T[]))
     if (data.length < PAGE) break
     from += PAGE
   }

@@ -81,6 +81,16 @@ export async function POST(_req: NextRequest) {
   const now90d  = Date.now() - 90  * 86400000
   const now365d = Date.now() - 365 * 86400000
 
+  // Build email → earliest order timestamp map (across ALL orders, for first_purchase_leads_to_second)
+  const emailFirstOrderTs = new Map<string, number>()
+  for (const order of orders) {
+    const email = (order.email ?? '').toLowerCase().trim()
+    if (!email) continue
+    const ts = new Date(order.processed_at ?? order.created_at).getTime()
+    const existing = emailFirstOrderTs.get(email)
+    if (existing === undefined || ts < existing) emailFirstOrderTs.set(email, ts)
+  }
+
   // ── Step 1: Product Stats ─────────────────────────────────────────────────────
 
   interface ProductAgg {
@@ -176,6 +186,28 @@ export async function POST(_req: NextRequest) {
     const subConversionRate = uniqueCustomers > 0 ? subBuyers / uniqueCustomers : 0
     const isSubscribable    = subscribedProductTitles.has(p.title.toLowerCase())
 
+    // first_purchase_leads_to_second: % of customers whose very first order ever
+    // included this product who then came back and bought this product again.
+    // This is distinct from repeat_purchase_rate (which counts all repeat buyers).
+    let firstPurchasers = 0
+    let firstPurchaseReturned = 0
+    for (const [email, dates] of p.customerDates) {
+      const uniqueSorted = [...new Set(dates)]
+        .map((d) => new Date(d).getTime())
+        .sort((a, b) => a - b)
+      const firstProductTs = uniqueSorted[0]
+      const firstOrderEver = emailFirstOrderTs.get(email)
+      // A customer's "first purchase" of this product counts as a gateway purchase
+      // if it occurred within the same day as their very first order overall.
+      if (firstOrderEver !== undefined && firstProductTs - firstOrderEver < 86400000 && firstProductTs >= firstOrderEver) {
+        firstPurchasers++
+        if (uniqueSorted.length > 1) firstPurchaseReturned++
+      }
+    }
+    const firstPurchaseLeadsToSecond = firstPurchasers > 0
+      ? firstPurchaseReturned / firstPurchasers
+      : 0
+
     productStatRows.push({
       tenant_id: TENANT_ID,
       product_title: p.title,
@@ -187,7 +219,7 @@ export async function POST(_req: NextRequest) {
       avg_order_value_with_product: Math.round(avgOV * 100) / 100,
       repeat_purchase_rate: Math.round(repeatRate * 10000) / 10000,
       avg_days_to_repurchase: Math.round(avgDaysRepurchase * 100) / 100,
-      first_purchase_leads_to_second: Math.round(repeatRate * 10000) / 10000,
+      first_purchase_leads_to_second: Math.round(firstPurchaseLeadsToSecond * 10000) / 10000,
       subscription_conversion_rate: Math.round(subConversionRate * 10000) / 10000,
       is_subscribable: isSubscribable,
       revenue_30d: Math.round(p.revenue30d * 100) / 100,

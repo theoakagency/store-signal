@@ -1,4 +1,4 @@
-import { createSupabaseServerClient } from '@/lib/supabase'
+import { createSupabaseServerClient, createSupabaseServiceClient } from '@/lib/supabase'
 import IntegrationsClient from './IntegrationsClient'
 
 export const metadata = {
@@ -7,12 +7,32 @@ export const metadata = {
 
 export default async function IntegrationsPage() {
   const supabase = await createSupabaseServerClient()
+  const service = createSupabaseServiceClient()
 
-  const { data: store } = await supabase
-    .from('stores')
-    .select('shopify_domain, shopify_access_token, klaviyo_api_key, klaviyo_account_id, last_synced_at, gsc_refresh_token, gsc_property_url, ga4_refresh_token, ga4_property_id, meta_access_token, meta_ad_account_id, google_ads_customer_id, google_ads_refresh_token, recharge_api_token, loyaltylion_token, semrush_api_key, semrush_domain')
-    .eq('id', '00000000-0000-0000-0000-000000000002')
-    .single()
+  const [{ data: store }, { data: recentAdsLog }] = await Promise.all([
+    supabase
+      .from('stores')
+      .select('shopify_domain, shopify_access_token, klaviyo_api_key, klaviyo_account_id, last_synced_at, gsc_refresh_token, gsc_property_url, ga4_refresh_token, ga4_property_id, meta_access_token, meta_ad_account_id, google_ads_customer_id, google_ads_refresh_token, recharge_api_token, loyaltylion_token, semrush_api_key, semrush_domain')
+      .eq('id', '00000000-0000-0000-0000-000000000002')
+      .single(),
+    // Check if the most recent sync-ads run failed with a token-related error
+    service
+      .from('cron_logs')
+      .select('status, errors')
+      .eq('cron_name', 'sync-ads')
+      .order('started_at', { ascending: false })
+      .limit(1)
+      .single(),
+  ])
+
+  // Detect Meta token expiry: last sync-ads run failed with an error mentioning token/expired/HTML
+  const metaTokenExpired = !!(
+    store?.meta_access_token &&
+    recentAdsLog?.status === 'failed' &&
+    (recentAdsLog.errors ?? []).some((e: string) =>
+      /expired|token|non-json|html/i.test(e)
+    )
+  )
 
   return (
     <IntegrationsClient
@@ -27,6 +47,7 @@ export default async function IntegrationsPage() {
       ga4PropertyId={store?.ga4_property_id ?? null}
       metaConnected={!!store?.meta_access_token}
       metaAdAccountId={store?.meta_ad_account_id ?? null}
+      metaTokenExpired={metaTokenExpired}
       googleAdsConnected={!!store?.google_ads_refresh_token}
       googleAdsCustomerId={store?.google_ads_customer_id ?? null}
       rechargeConnected={!!store?.recharge_api_token}

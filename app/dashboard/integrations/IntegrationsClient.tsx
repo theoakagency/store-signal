@@ -15,6 +15,7 @@ interface Props {
   ga4PropertyId: string | null
   metaConnected: boolean
   metaAdAccountId: string | null
+  metaTokenExpired: boolean
   googleAdsConnected: boolean
   googleAdsCustomerId: string | null
   rechargeConnected: boolean
@@ -901,6 +902,7 @@ export default function IntegrationsClient({
   ga4PropertyId,
   metaConnected,
   metaAdAccountId,
+  metaTokenExpired,
   googleAdsConnected,
   googleAdsCustomerId,
   rechargeConnected,
@@ -1197,7 +1199,7 @@ export default function IntegrationsClient({
             />
             <IntegrationCard
               name="Google Analytics 4"
-              description="Track sessions by channel, landing page performance, monthly trends, conversion rates, and ecommerce revenue. Also provides Google Ads campaign data as a fallback."
+              description="Track website traffic by channel, landing page performance, monthly trends, and ecommerce conversions. Note: this is a separate Google authorization from Google Ads — both use Google accounts but require different permissions."
               logo={
                 <div className="h-5 w-5 rounded bg-[#E37400] flex items-center justify-center">
                   <svg className="h-3.5 w-3.5 text-white" viewBox="0 0 24 24" fill="currentColor">
@@ -1269,10 +1271,26 @@ export default function IntegrationsClient({
                   <svg className="h-4 w-4 text-white" viewBox="0 0 24 24" fill="currentColor"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
                 </div>
               }
-              status={metaConnected ? 'connected' : 'not_connected'}
-              meta={metaConnected ? `Account: ${metaAdAccountId ?? 'connected'}` : undefined}
+              status={metaConnected && !metaTokenExpired ? 'connected' : 'not_connected'}
+              meta={
+                metaTokenExpired
+                  ? undefined
+                  : metaConnected ? `Account: ${metaAdAccountId ?? 'connected'}` : undefined
+              }
               action={
-                metaConnected ? (
+                metaTokenExpired ? (
+                  <div className="space-y-2">
+                    <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2">
+                      <svg className="h-4 w-4 shrink-0 text-red-500 mt-0.5" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM8.28 7.22a.75.75 0 0 0-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 1 0 1.06 1.06L10 11.06l1.72 1.72a.75.75 0 1 0 1.06-1.06L11.06 10l1.72-1.72a.75.75 0 0 0-1.06-1.06L10 8.94 8.28 7.22z" clipRule="evenodd"/>
+                      </svg>
+                      <p className="text-xs text-red-700 font-medium">Token expired — reconnect required to resume syncing</p>
+                    </div>
+                    <button onClick={() => setShowMetaModal(true)} className="inline-flex items-center rounded-lg bg-[#1877F2] px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 transition">
+                      Reconnect Meta Ads
+                    </button>
+                  </div>
+                ) : metaConnected ? (
                   <div className="flex items-center gap-3">
                     <a href="/dashboard/meta" className="text-xs text-teal hover:text-teal-dark font-medium transition">View dashboard →</a>
                     <button onClick={() => setShowMetaModal(true)} className="text-xs text-ink-3 hover:text-ink transition">Update credentials</button>
@@ -1286,7 +1304,7 @@ export default function IntegrationsClient({
             />
             <IntegrationCard
               name="Google Ads"
-              description="Sync Google Ads campaign performance — spend, ROAS, conversions, and Shopping vs Search breakdown. Unlocks Google Ads in the Advertising section."
+              description="Sync Google Ads paid search and Shopping campaign performance — spend, ROAS, and conversions. Uses a separate Google authorization from GA4 (different API scopes). Unlocks Google Ads in the Advertising section."
               logo={
                 <svg className="h-6 w-6" viewBox="0 0 48 48" fill="none">
                   <path d="M24 4L4 44h9.5l2.5-7h16l2.5 7H44L24 4z" fill="#4285F4"/>
