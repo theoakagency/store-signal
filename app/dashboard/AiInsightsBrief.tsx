@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 export interface ExecutiveInsight {
   title: string
@@ -69,6 +69,15 @@ export default function AiInsightsBrief({ cachedInsights, calculatedAt }: Props)
   const [ts, setTs] = useState<string | null>(calculatedAt)
   const [state, setState] = useState<'idle' | 'loading' | 'error'>('idle')
   const [errMsg, setErrMsg] = useState('')
+
+  // Auto-refresh if insights are stale (>12h) or missing
+  useEffect(() => {
+    const isStale = !ts || (Date.now() - new Date(ts).getTime()) > 12 * 60 * 60 * 1000
+    if (isStale && insights.length === 0) {
+      refresh()
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   async function refresh() {
     setState('loading')

@@ -5,6 +5,7 @@ import AskAiRow from './_components/AskAiRow'
 import BusinessHealthScore, { type HealthComponent } from './BusinessHealthScore'
 import PlatformHealthRow, { type PlatformCard } from './PlatformHealthRow'
 import KeyAlertsPanel, { type Alert } from './KeyAlertsPanel'
+import MetricsToggleRow from './MetricsToggleRow'
 
 export const metadata = { title: 'Executive Summary — Store Signal' }
 
@@ -381,12 +382,16 @@ export default async function DashboardPage() {
   const service  = createSupabaseServiceClient()
 
   const now = new Date()
+  const sevenDaysAgo  = new Date(now); sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
+  const fourteenDaysAgo = new Date(now); fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14)
   const thirtyDaysAgo = new Date(now); thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
   const sixtyDaysAgo  = new Date(now); sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60)
 
   const [
     { data: currentRows },
     { data: priorRows },
+    { data: current7dRows },
+    { data: prior7dRows },
     { data: storeRow },
     { data: klaviyoMetricsRows },
     { data: channelRows },
@@ -403,6 +408,8 @@ export default async function DashboardPage() {
   ] = await Promise.all([
     supabase.from('orders').select('total_price, currency, processed_at').eq('financial_status', 'paid').gte('processed_at', thirtyDaysAgo.toISOString()),
     supabase.from('orders').select('total_price').eq('financial_status', 'paid').gte('processed_at', sixtyDaysAgo.toISOString()).lt('processed_at', thirtyDaysAgo.toISOString()),
+    supabase.from('orders').select('total_price, currency').eq('financial_status', 'paid').gte('processed_at', sevenDaysAgo.toISOString()),
+    supabase.from('orders').select('total_price').eq('financial_status', 'paid').gte('processed_at', fourteenDaysAgo.toISOString()).lt('processed_at', sevenDaysAgo.toISOString()),
     supabase.from('stores').select('klaviyo_api_key, semrush_api_key, gsc_refresh_token, ga4_refresh_token, meta_access_token, google_ads_refresh_token, recharge_api_token').eq('id', STORE_ID).single(),
     supabase.from('klaviyo_metrics_cache').select('metric_name, metric_value').eq('tenant_id', TENANT_ID),
     supabase.from('sales_channel_cache').select('channel_name, revenue, order_count, avg_order_value').eq('tenant_id', TENANT_ID).eq('period', 'last_30d'),
@@ -440,6 +447,16 @@ export default async function DashboardPage() {
   const revDelta   = delta(currRevenue, priorRevenue)
   const countDelta = delta(currCount, priorCount)
   const aovDelta   = delta(currAOV, priorAOV)
+
+  // ── 7-day metrics ─────────────────────────────────────────────────────────────
+  const curr7d  = current7dRows ?? []
+  const prior7d = prior7dRows ?? []
+  const rev7d   = curr7d.reduce((s, r) => s + Number(r.total_price), 0)
+  const rev7dPr = prior7d.reduce((s, r) => s + Number(r.total_price), 0)
+  const cnt7d   = curr7d.length
+  const cnt7dPr = prior7d.length
+  const aov7d   = cnt7d > 0 ? rev7d / cnt7d : 0
+  const aov7dPr = cnt7dPr > 0 ? rev7dPr / cnt7dPr : 0
 
   // ── Chart data ───────────────────────────────────────────────────────────────
   type CachedMonth = { month: string; revenue: number }
@@ -553,12 +570,13 @@ export default async function DashboardPage() {
       </div>
 
       {/* 4. Quick Metrics Row */}
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <MetricCard label="Revenue (30d)" value={fmt(currRevenue, currency)} delta={revDelta} sub="paid orders" />
-        <MetricCard label="Orders (30d)"  value={currCount.toLocaleString()} delta={countDelta} sub="paid orders" />
-        <MetricCard label="Total Customers" value={profileCount !== null ? profileCount.toLocaleString() : (totalCustomers !== null ? totalCustomers.toLocaleString() : '—')} delta={null} sub="unique buyers" noAnimation />
-        <MetricCard label={rechargeConnected ? 'MRR' : 'Avg. Order Value'} value={rechargeConnected ? fmt(mrr) : fmt(currAOV, currency)} delta={rechargeConnected ? null : aovDelta} sub={rechargeConnected ? 'subscriptions' : 'paid orders'} />
-      </div>
+      <MetricsToggleRow
+        data30d={{ revenue: currRevenue, orders: currCount, aov: currAOV, revDelta, orderDelta: countDelta, aovDelta }}
+        data7d={{ revenue: rev7d, orders: cnt7d, aov: aov7d, revDelta: delta(rev7d, rev7dPr), orderDelta: delta(cnt7d, cnt7dPr), aovDelta: delta(aov7d, aov7dPr) }}
+        currency={currency}
+        totalCustomers={profileCount ?? totalCustomers}
+        mrr={rechargeConnected ? mrr : null}
+      />
 
       {/* 5. Ask AI */}
       <AskAiRow
@@ -579,29 +597,3 @@ export default async function DashboardPage() {
   )
 }
 
-// ── Sub-components ─────────────────────────────────────────────────────────────
-
-function MetricCard({ label, value, delta: d, sub, noAnimation }: {
-  label: string; value: string; delta: number | null; sub: string; noAnimation?: boolean
-}) {
-  const isPos = d !== null && d >= 0
-  return (
-    <div className="rounded-2xl border border-cream-3 bg-white px-5 py-5 shadow-sm">
-      <p className="font-data text-xs uppercase tracking-wider text-ink-3">{label}</p>
-      <p className={`mt-2 font-display text-2xl font-semibold text-ink ${noAnimation ? '' : 'animate-count-up'}`}>
-        {value}
-      </p>
-      <div className="mt-1.5 flex items-center gap-1.5">
-        {d !== null && (
-          <span className={`inline-flex items-center gap-0.5 text-xs font-medium ${isPos ? 'text-teal-deep' : 'text-red-500'}`}>
-            <svg className="h-3 w-3" viewBox="0 0 12 12" fill="currentColor">
-              {isPos ? <path d="M6 2l4 6H2l4-6z" /> : <path d="M6 10L2 4h8l-4 6z" />}
-            </svg>
-            {Math.abs(d).toFixed(1)}%
-          </span>
-        )}
-        <span className="text-xs text-ink-3">{sub}</span>
-      </div>
-    </div>
-  )
-}
