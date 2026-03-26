@@ -149,10 +149,15 @@ export async function POST(_req: NextRequest) {
     let repeatCount = 0
     const repurchaseDays: number[] = []
     for (const dates of p.customerDates.values()) {
-      if (dates.length > 1) {
+      // Deduplicate dates first — a single order can contain multiple line items
+      // with the same product title (different variants/quantities). Each pushes
+      // the same processed_at timestamp, causing a false 0d gap between "orders".
+      const uniqueSorted = [...new Set(dates)]
+        .map((d) => new Date(d).getTime())
+        .sort((a, b) => a - b)
+      if (uniqueSorted.length > 1) {
         repeatCount++
-        const sorted = dates.map((d) => new Date(d).getTime()).sort((a, b) => a - b)
-        repurchaseDays.push((sorted[1] - sorted[0]) / 86400000)
+        repurchaseDays.push((uniqueSorted[1] - uniqueSorted[0]) / 86400000)
       }
     }
     const repeatRate        = uniqueCustomers > 0 ? repeatCount / uniqueCustomers : 0
