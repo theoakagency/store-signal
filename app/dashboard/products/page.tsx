@@ -15,7 +15,7 @@ export default async function ProductsPage() {
   ] = await Promise.all([
     service
       .from('product_stats')
-      .select('product_title, variant_title, total_revenue, total_orders, unique_customers, repeat_purchase_rate, avg_days_to_repurchase, subscription_conversion_rate, is_subscribable, revenue_30d, revenue_90d, revenue_12m, avg_order_value_with_product, calculated_at')
+      .select('product_title, variant_title, total_revenue, total_orders, unique_customers, repeat_purchase_rate, avg_days_to_repurchase, subscription_conversion_rate, is_subscribable, revenue_30d, revenue_90d, revenue_12m, avg_order_value_with_product, first_purchase_leads_to_second, calculated_at')
       .eq('tenant_id', TENANT_ID)
       .order('total_revenue', { ascending: false })
       .limit(100),

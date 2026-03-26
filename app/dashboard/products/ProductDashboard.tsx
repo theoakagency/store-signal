@@ -20,6 +20,7 @@ export interface ProductStat {
   revenue_90d: number
   revenue_12m: number
   avg_order_value_with_product: number
+  first_purchase_leads_to_second: number
   calculated_at: string | null
 }
 
@@ -377,6 +378,15 @@ function MarketBasketTab({ affinities }: { affinities: AffinityPair[] }) {
                     <p className="text-ink font-data text-sm font-semibold">{pct(b.confidence)}</p>
                   </div>
                 </div>
+                <a
+                  href={`/dashboard/promotions?bundle=${encodeURIComponent(b.product_a + ' + ' + b.product_b)}`}
+                  className="mt-2 flex items-center gap-1 text-[10px] font-medium text-teal-deep hover:underline"
+                >
+                  <svg className="h-3 w-3" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
+                    <path d="M6 1v10M1 6h10" strokeLinecap="round" />
+                  </svg>
+                  Create bundle promotion →
+                </a>
               </div>
             ))}
           </div>
@@ -504,10 +514,46 @@ function RepurchaseIntelligenceTab({ products }: { products: ProductStat[] }) {
     .sort((a, b) => Number(a.avg_days_to_repurchase) - Number(b.avg_days_to_repurchase))
     .slice(0, 8)
 
+  // Gateway products: high first_purchase_leads_to_second + significant buyer count
+  const gatewayProducts = products
+    .filter((p) => Number(p.first_purchase_leads_to_second) > 0.1 && Number(p.unique_customers) >= 10)
+    .sort((a, b) => Number(b.first_purchase_leads_to_second) - Number(a.first_purchase_leads_to_second))
+    .slice(0, 6)
+
   const { sortedData: sortedFastReorder, sortColumn: rrSort, sortDirection: rrDir, handleSort: rrHandleSort } = useSortableTable(fastReorder as unknown as Record<string, unknown>[], 'avg_days_to_repurchase', 'asc')
 
   return (
     <div className="space-y-8">
+
+      {/* Gateway Products */}
+      {gatewayProducts.length > 0 && (
+        <div>
+          <div className="flex items-baseline gap-2 mb-4">
+            <h3 className="font-display text-sm font-semibold text-ink">Gateway Products</h3>
+            <span className="text-[10px] text-ink-3">First purchases that reliably convert new customers to repeat buyers</span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {gatewayProducts.map((p) => {
+              const rate = Number(p.first_purchase_leads_to_second)
+              const barWidth = Math.min(100, rate * 100)
+              return (
+                <div key={p.product_title} className="bg-white border border-teal/20 rounded-2xl p-4 shadow-sm">
+                  <p className="text-ink text-xs font-medium leading-tight mb-3 truncate">{p.product_title}</p>
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="flex-1 h-1.5 bg-cream-2 rounded-full">
+                      <div className="h-1.5 rounded-full bg-teal" style={{ width: `${barWidth}%` }} />
+                    </div>
+                    <span className="text-teal-deep font-data text-sm font-bold shrink-0">{pct(p.first_purchase_leads_to_second)}</span>
+                  </div>
+                  <p className="text-[10px] text-ink-3">
+                    of first-time buyers repurchase · {p.unique_customers.toLocaleString()} total buyers
+                  </p>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
       <div>
         <div className="flex items-baseline gap-2 mb-4">
           <h3 className="font-display text-sm font-semibold text-ink">Subscription Opportunities</h3>
