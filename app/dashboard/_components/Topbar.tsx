@@ -6,15 +6,22 @@ import SyncButton from '../SyncButton'
 
 const PAGE_TITLES: Record<string, string> = {
   '/dashboard': 'Executive Summary',
+  '/dashboard/shopify': 'Shopify',
   '/dashboard/customers': 'Customer Intelligence',
+  '/dashboard/products': 'Product Intelligence',
   '/dashboard/promotions': 'Promotion Scorer',
+  '/dashboard/chat': 'AI Chat',
   '/dashboard/klaviyo': 'Email Intelligence',
   '/dashboard/search': 'Search Intelligence',
   '/dashboard/integrations': 'Integrations',
-  '/dashboard/analytics': 'Analytics',
+  '/dashboard/analytics': 'Analytics / GA4',
+  '/dashboard/analytics-overview': 'Analytics Overview',
   '/dashboard/advertising': 'Advertising Overview',
   '/dashboard/meta': 'Meta Ads',
   '/dashboard/google-ads': 'Google Ads',
+  '/dashboard/subscriptions': 'Subscription Program',
+  '/dashboard/loyalty': 'Loyalty Program',
+  '/dashboard/semrush': 'SEO Intelligence',
 }
 
 interface CronStatus {

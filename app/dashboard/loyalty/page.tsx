@@ -2,6 +2,7 @@ import { createSupabaseServerClient, createSupabaseServiceClient } from '@/lib/s
 import { redirect } from 'next/navigation'
 import LoyaltyDashboard from './LoyaltyDashboard'
 
+export const metadata = { title: 'Loyalty Program — Store Signal' }
 export const maxDuration = 300
 
 const TENANT_ID = '00000000-0000-0000-0000-000000000001'

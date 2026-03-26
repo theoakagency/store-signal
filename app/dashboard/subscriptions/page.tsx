@@ -2,6 +2,7 @@ import { createSupabaseServerClient, createSupabaseServiceClient } from '@/lib/s
 import { redirect } from 'next/navigation'
 import SubscriptionsDashboard from './SubscriptionsDashboard'
 
+export const metadata = { title: 'Subscription Program — Store Signal' }
 export const maxDuration = 300
 
 const TENANT_ID = '00000000-0000-0000-0000-000000000001'
