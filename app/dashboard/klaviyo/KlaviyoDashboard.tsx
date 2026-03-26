@@ -235,6 +235,7 @@ export default function KlaviyoDashboard({ connected, campaigns, flows, metrics 
   const [syncing, setSyncing] = useState(false)
   const [activeTab, setActiveTab] = useState<'campaigns' | 'flows'>('campaigns')
   const [page, setPage] = useState(0)
+  const [flowPage, setFlowPage] = useState(0)
   const [flowInsights, setFlowInsights] = useState<FlowInsight[]>([])
   const [flowInsightsState, setFlowInsightsState] = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
   const { sortedData: sortedCampaigns, sortColumn: campSort, sortDirection: campDir, handleSort: campHandleSort } = useSortableTable(campaigns as unknown as Record<string, unknown>[], 'revenue_attributed', 'desc')
@@ -695,42 +696,62 @@ export default function KlaviyoDashboard({ connected, campaigns, flows, metrics 
                 </div>
 
                 {/* Flows table */}
-                <div className="overflow-x-auto">
-                  <table className="min-w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-cream-2 text-xs font-medium text-ink-3">
-                        <th className={`px-5 py-2.5 text-left ${thCls('name', flowSort)}`} onClick={() => flowHandleSort('name')}>Flow Name<SortIcon column="name" sortColumn={flowSort} sortDirection={flowDir} /></th>
-                        <th className={`px-5 py-2.5 text-left ${thCls('channel', flowSort)}`} onClick={() => flowHandleSort('channel')}>Ch.<SortIcon column="channel" sortColumn={flowSort} sortDirection={flowDir} /></th>
-                        <th className={`px-5 py-2.5 text-left ${thCls('trigger_type', flowSort)}`} onClick={() => flowHandleSort('trigger_type')}>Trigger<SortIcon column="trigger_type" sortColumn={flowSort} sortDirection={flowDir} /></th>
-                        <th className={`px-5 py-2.5 text-right ${thCls('recipient_count', flowSort)}`} onClick={() => flowHandleSort('recipient_count')}>Recipients<SortIcon column="recipient_count" sortColumn={flowSort} sortDirection={flowDir} /></th>
-                        <th className={`px-5 py-2.5 text-right ${thCls('open_rate', flowSort)}`} onClick={() => flowHandleSort('open_rate')}>Open Rate<SortIcon column="open_rate" sortColumn={flowSort} sortDirection={flowDir} /></th>
-                        <th className={`px-5 py-2.5 text-right ${thCls('click_rate', flowSort)}`} onClick={() => flowHandleSort('click_rate')}>Click Rate<SortIcon column="click_rate" sortColumn={flowSort} sortDirection={flowDir} /></th>
-                        <th className={`px-5 py-2.5 text-right ${thCls('revenue_attributed', flowSort)}`} onClick={() => flowHandleSort('revenue_attributed')}>Revenue<SortIcon column="revenue_attributed" sortColumn={flowSort} sortDirection={flowDir} /></th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-cream-2">
-                      {(sortedFlows as unknown as Flow[]).map((f) => {
-                        const isInactive = f.recipient_count === 0
-                        return (
-                          <tr key={f.id} className={`transition-colors ${isInactive ? 'opacity-50 hover:opacity-75' : 'hover:bg-cream'}`}>
-                            <td className="px-5 py-3 font-medium text-ink">
-                              <div className="flex items-center gap-2">
-                                {isInactive && <span className="h-1.5 w-1.5 rounded-full bg-red-400 shrink-0" />}
-                                {f.name}
-                              </div>
-                            </td>
-                            <td className="px-5 py-3 whitespace-nowrap"><ChannelBadge channel={f.channel ?? 'email'} /></td>
-                            <td className="px-5 py-3 text-xs text-ink-3 capitalize">{f.trigger_type?.replace(/_/g, ' ') ?? '—'}</td>
-                            <td className="px-5 py-3 font-data text-xs text-right text-ink-2">{f.recipient_count.toLocaleString()}</td>
-                            <td className="px-5 py-3 font-data text-xs text-right text-ink-2">{pct(f.open_rate)}</td>
-                            <td className="px-5 py-3 font-data text-xs text-right text-ink-2">{pct(f.click_rate)}</td>
-                            <td className="px-5 py-3 font-data text-xs text-right font-medium text-ink">{usd(f.revenue_attributed)}</td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                {(() => {
+                  const flowTotalPages = Math.ceil(sortedFlows.length / PAGE_SIZE)
+                  const pagedFlows = (sortedFlows as unknown as Flow[]).slice(flowPage * PAGE_SIZE, (flowPage + 1) * PAGE_SIZE)
+                  return (
+                    <>
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full text-sm">
+                          <thead>
+                            <tr className="border-b border-cream-2 text-xs font-medium text-ink-3">
+                              <th className={`px-5 py-2.5 text-left ${thCls('name', flowSort)}`} onClick={() => flowHandleSort('name')}>Flow Name<SortIcon column="name" sortColumn={flowSort} sortDirection={flowDir} /></th>
+                              <th className={`px-5 py-2.5 text-left ${thCls('channel', flowSort)}`} onClick={() => flowHandleSort('channel')}>Ch.<SortIcon column="channel" sortColumn={flowSort} sortDirection={flowDir} /></th>
+                              <th className={`px-5 py-2.5 text-left ${thCls('trigger_type', flowSort)}`} onClick={() => flowHandleSort('trigger_type')}>Trigger<SortIcon column="trigger_type" sortColumn={flowSort} sortDirection={flowDir} /></th>
+                              <th className={`px-5 py-2.5 text-right ${thCls('recipient_count', flowSort)}`} onClick={() => flowHandleSort('recipient_count')}>Recipients<SortIcon column="recipient_count" sortColumn={flowSort} sortDirection={flowDir} /></th>
+                              <th className={`px-5 py-2.5 text-right ${thCls('open_rate', flowSort)}`} onClick={() => flowHandleSort('open_rate')}>Open Rate<SortIcon column="open_rate" sortColumn={flowSort} sortDirection={flowDir} /></th>
+                              <th className={`px-5 py-2.5 text-right ${thCls('click_rate', flowSort)}`} onClick={() => flowHandleSort('click_rate')}>Click Rate<SortIcon column="click_rate" sortColumn={flowSort} sortDirection={flowDir} /></th>
+                              <th className={`px-5 py-2.5 text-right ${thCls('revenue_attributed', flowSort)}`} onClick={() => flowHandleSort('revenue_attributed')}>Revenue<SortIcon column="revenue_attributed" sortColumn={flowSort} sortDirection={flowDir} /></th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-cream-2">
+                            {pagedFlows.map((f) => {
+                              const isInactive = f.recipient_count === 0
+                              return (
+                                <tr key={f.id} className={`transition-colors ${isInactive ? 'opacity-50 hover:opacity-75' : 'hover:bg-cream'}`}>
+                                  <td className="px-5 py-3 font-medium text-ink">
+                                    <div className="flex items-center gap-2">
+                                      {isInactive && <span className="h-1.5 w-1.5 rounded-full bg-red-400 shrink-0" />}
+                                      {f.name}
+                                    </div>
+                                  </td>
+                                  <td className="px-5 py-3 whitespace-nowrap"><ChannelBadge channel={f.channel ?? 'email'} /></td>
+                                  <td className="px-5 py-3 text-xs text-ink-3 capitalize">{f.trigger_type?.replace(/_/g, ' ') ?? '—'}</td>
+                                  <td className="px-5 py-3 font-data text-xs text-right text-ink-2">{f.recipient_count.toLocaleString()}</td>
+                                  <td className="px-5 py-3 font-data text-xs text-right text-ink-2">{pct(f.open_rate)}</td>
+                                  <td className="px-5 py-3 font-data text-xs text-right text-ink-2">{pct(f.click_rate)}</td>
+                                  <td className="px-5 py-3 font-data text-xs text-right font-medium text-ink">{usd(f.revenue_attributed)}</td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                      {flowTotalPages > 1 && (
+                        <div className="flex items-center justify-between border-t border-cream-2 px-5 py-3">
+                          <span className="font-data text-xs text-ink-3">
+                            {flowPage * PAGE_SIZE + 1}–{Math.min((flowPage + 1) * PAGE_SIZE, flows.length)} of {flows.length}
+                          </span>
+                          <div className="flex items-center gap-1">
+                            <button onClick={() => setFlowPage(p => Math.max(0, p - 1))} disabled={flowPage === 0} className="rounded-lg border border-cream-3 px-3 py-1.5 text-xs font-medium text-ink-2 hover:bg-cream disabled:opacity-40 transition">← Prev</button>
+                            <span className="px-2 font-data text-xs text-ink-3">{flowPage + 1} / {flowTotalPages}</span>
+                            <button onClick={() => setFlowPage(p => Math.min(flowTotalPages - 1, p + 1))} disabled={flowPage === flowTotalPages - 1} className="rounded-lg border border-cream-3 px-3 py-1.5 text-xs font-medium text-ink-2 hover:bg-cream disabled:opacity-40 transition">Next →</button>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )
+                })()}
               </>
             )}
           </section>

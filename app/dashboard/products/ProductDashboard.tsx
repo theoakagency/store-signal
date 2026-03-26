@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useSortableTable, SortIcon, thCls } from '@/hooks/useSortableTable'
+import { usePagination, Paginator } from '@/hooks/usePagination'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -201,11 +202,19 @@ function ProductPerformanceTab({
   affinities: AffinityPair[]
 }) {
   const [selected, setSelected] = useState<ProductStat | null>(null)
-  const { sortedData: sortedProducts, sortColumn, sortDirection, handleSort } = useSortableTable(
+  const [search, setSearch] = useState('')
+  const { sortedData, sortColumn, sortDirection, handleSort } = useSortableTable(
     products as unknown as Record<string, unknown>[],
     'total_revenue',
     'desc',
   )
+  const filtered = (sortedData as unknown as ProductStat[]).filter((p) =>
+    !search || p.product_title.toLowerCase().includes(search.toLowerCase())
+  )
+  const { paged: pagedProducts, page, setPage, totalPages, reset } = usePagination(filtered, 25)
+
+  // Reset pagination when sort or search changes
+  useEffect(() => { reset() }, [sortColumn, sortDirection, search, reset])
 
   const HEADERS: [string, string][] = [
     ['Product', ''],
@@ -219,6 +228,28 @@ function ProductPerformanceTab({
 
   return (
     <>
+      {/* Search bar */}
+      <div className="mb-3">
+        <div className="relative max-w-sm">
+          <svg className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-ink-3" viewBox="0 0 20 20" fill="currentColor">
+            <path fillRule="evenodd" d="M9 3.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11zM2 9a7 7 0 1 1 12.452 4.391l3.328 3.329a.75.75 0 1 1-1.06 1.06l-3.329-3.328A7 7 0 0 1 2 9z" clipRule="evenodd"/>
+          </svg>
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search products…"
+            className="w-full rounded-lg border border-cream-3 bg-white pl-8 pr-8 py-1.5 text-xs text-ink focus:border-teal focus:outline-none focus:ring-1 focus:ring-teal transition"
+          />
+          {search && (
+            <button onClick={() => setSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-ink-3 hover:text-ink">
+              <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd"/></svg>
+            </button>
+          )}
+        </div>
+        {search && <p className="mt-1 text-[10px] text-ink-3">{filtered.length} of {products.length} products</p>}
+      </div>
+
       <div className="overflow-x-auto rounded-2xl border border-cream-3 bg-white shadow-sm">
         <table className="w-full text-sm">
           <thead>
@@ -235,7 +266,7 @@ function ProductPerformanceTab({
             </tr>
           </thead>
           <tbody>
-            {(sortedProducts as unknown as ProductStat[]).map((p) => (
+            {pagedProducts.map((p) => (
               <tr
                 key={`${p.product_title}__${p.variant_title}`}
                 className="border-b border-cream-2 hover:bg-cream cursor-pointer transition-colors"
@@ -278,6 +309,15 @@ function ProductPerformanceTab({
             <p className="text-xs mt-1">Click "Run Product Analysis" above to populate this table.</p>
           </div>
         )}
+        {/* Showing X-Y of Z */}
+        {filtered.length > 0 && (
+          <div className="flex items-center justify-between border-t border-cream-2 px-5 py-2">
+            <span className="text-xs text-ink-3">
+              Showing {page * 25 + 1}–{Math.min((page + 1) * 25, filtered.length)} of {filtered.length}
+            </span>
+          </div>
+        )}
+        <Paginator page={page} totalPages={totalPages} setPage={setPage} />
       </div>
 
       {selected && (
@@ -303,6 +343,7 @@ function MarketBasketTab({ affinities }: { affinities: AffinityPair[] }) {
   })
 
   const { sortedData: sortedDeduped, sortColumn: afSort, sortDirection: afDir, handleSort: afHandleSort } = useSortableTable(deduped as unknown as Record<string, unknown>[], 'lift', 'desc')
+  const { paged: pagedAffinities, page: afPage, setPage: setAfPage, totalPages: afTotalPages } = usePagination(sortedDeduped, 25)
 
   const bundles = deduped.filter((a) => a.lift >= 2 && a.co_purchase_count >= 10).slice(0, 3)
 
@@ -356,7 +397,7 @@ function MarketBasketTab({ affinities }: { affinities: AffinityPair[] }) {
               </tr>
             </thead>
             <tbody>
-              {(sortedDeduped as unknown as AffinityPair[]).map((a) => (
+              {(pagedAffinities as unknown as AffinityPair[]).map((a) => (
                 <tr key={`${a.product_a}|||${a.product_b}`} className="border-b border-cream-2">
                   <td className="py-3 px-4 text-ink text-xs max-w-[200px] truncate">{a.product_a}</td>
                   <td className="py-3 px-4 text-ink text-xs max-w-[200px] truncate">{a.product_b}</td>
@@ -379,6 +420,14 @@ function MarketBasketTab({ affinities }: { affinities: AffinityPair[] }) {
               <p className="text-xs mt-1">Run Product Analysis to discover product pairs.</p>
             </div>
           )}
+          {deduped.length > 25 && (
+            <div className="flex items-center justify-between border-t border-cream-2 px-5 py-2">
+              <span className="text-xs text-ink-3">
+                Showing {afPage * 25 + 1}–{Math.min((afPage + 1) * 25, deduped.length)} of {deduped.length}
+              </span>
+            </div>
+          )}
+          <Paginator page={afPage} totalPages={afTotalPages} setPage={setAfPage} />
         </div>
       </div>
     </div>

@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useSortableTable, SortIcon, thCls } from '@/hooks/useSortableTable'
+import { usePagination, Paginator } from '@/hooks/usePagination'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -289,6 +290,12 @@ export default function SearchDashboard({
     'impressions', 'desc'
   )
   const { sortedData: sortedPages, sortColumn: pgSort, sortDirection: pgDir, handleSort: pgHandleSort } = useSortableTable(pages as unknown as Record<string, unknown>[], 'clicks', 'desc')
+  const [kwSearch, setKwSearch] = useState('')
+  const filteredKeywords = (sortedKeywords as unknown as Keyword[]).filter(
+    (k) => !kwSearch || k.query.toLowerCase().includes(kwSearch.toLowerCase())
+  )
+  const { paged: pagedKeywords, page: kwPage, setPage: setKwPage, totalPages: kwTotalPages, reset: kwReset } = usePagination(filteredKeywords, 25)
+  const { paged: pagedPages, page: pgPage, setPage: setPgPage, totalPages: pgTotalPages } = usePagination(sortedPages as unknown as Page[], 25)
   const [syncing, setSyncing] = useState(false)
   const [showSemrush, setShowSemrush] = useState(false)
   const [activeTab, setActiveTab] = useState<'keywords' | 'opportunities' | 'pages'>('keywords')
@@ -565,22 +572,31 @@ export default function SearchDashboard({
         {/* Keywords tab */}
         {activeTab === 'keywords' && (
           <div>
-            {semrushData && (
-              <div className="flex items-center justify-end gap-2 px-5 py-2 border-b border-cream-2 bg-cream/50">
-                <span className="text-xs text-ink-3">SEMrush data</span>
-                <button
-                  onClick={() => setShowSemrush((v) => !v)}
-                  className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${showSemrush ? 'bg-[#FF642D]' : 'bg-cream-3'}`}
-                >
-                  <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform ${showSemrush ? 'translate-x-4' : 'translate-x-1'}`} />
-                </button>
-                {showSemrush && (
-                  <Link href="/dashboard/semrush" className="text-xs text-[#FF642D] hover:underline ml-1">
-                    View SEO Intelligence →
-                  </Link>
-                )}
-              </div>
-            )}
+            <div className="flex items-center gap-3 px-5 py-2 border-b border-cream-2 bg-cream/50">
+              <input
+                type="search"
+                placeholder="Search keywords…"
+                value={kwSearch}
+                onChange={(e) => { setKwSearch(e.target.value); kwReset() }}
+                className="flex-1 rounded-lg border border-cream-3 bg-white px-3 py-1.5 text-xs text-ink placeholder:text-ink-3 focus:outline-none focus:ring-2 focus:ring-teal/40"
+              />
+              {semrushData && (
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="text-xs text-ink-3">SEMrush</span>
+                  <button
+                    onClick={() => setShowSemrush((v) => !v)}
+                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${showSemrush ? 'bg-[#FF642D]' : 'bg-cream-3'}`}
+                  >
+                    <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform ${showSemrush ? 'translate-x-4' : 'translate-x-1'}`} />
+                  </button>
+                  {showSemrush && (
+                    <Link href="/dashboard/semrush" className="text-xs text-[#FF642D] hover:underline">
+                      SEO Intel →
+                    </Link>
+                  )}
+                </div>
+              )}
+            </div>
             <div className="overflow-x-auto">
               <table className="min-w-full text-sm">
                 <thead>
@@ -599,7 +615,7 @@ export default function SearchDashboard({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-cream-2">
-                  {(sortedKeywords as unknown as Keyword[]).map((k) => {
+                  {pagedKeywords.map((k) => {
                     const semEntry = semrushData?.[k.query.toLowerCase()]
                     return (
                       <tr key={k.query} className="hover:bg-cream transition-colors">
@@ -630,6 +646,7 @@ export default function SearchDashboard({
                 </tbody>
               </table>
             </div>
+            <Paginator page={kwPage} totalPages={kwTotalPages} setPage={setKwPage} />
           </div>
         )}
 
@@ -821,7 +838,7 @@ export default function SearchDashboard({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-cream-2">
-                  {(sortedPages as unknown as Page[]).map((p) => {
+                  {pagedPages.map((p) => {
                     const delta = p.clicks - p.clicks_prior
                     const isLosing = delta < 0 && p.clicks_prior > 10
                     const trendPct = p.clicks_prior > 0
@@ -861,6 +878,7 @@ export default function SearchDashboard({
                 </tbody>
               </table>
             </div>
+            <Paginator page={pgPage} totalPages={pgTotalPages} setPage={setPgPage} />
           </>
         )}
       </section>
