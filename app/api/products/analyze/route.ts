@@ -35,12 +35,13 @@ export async function POST(_req: NextRequest) {
 
   const service = createSupabaseServiceClient()
 
-  // Fetch subscriptions (small table, one shot)
+  // Fetch all subscriptions regardless of status — a customer who subscribed
+  // and later cancelled still counts as having converted. Filtering to active-only
+  // causes 0% rates for products where most subscribers have churned.
   const { data: subsData } = await service
     .from('recharge_subscriptions')
     .select('customer_email, product_title')
     .eq('tenant_id', TENANT_ID)
-    .eq('status', 'active')
 
   // Paginate through orders to bypass PostgREST max-rows limit.
   // line_items JSONB is needed for product analysis so we keep it,
