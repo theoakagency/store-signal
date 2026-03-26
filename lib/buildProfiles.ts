@@ -199,12 +199,12 @@ export async function runProfileBatch(batch: number) {
     if (error) throw new Error(`Profile upsert failed: ${error.message}`)
   }
 
-  // ── Final batch: compute overlap cache ────────────────────────────────────
+  // ── Final batch: compute overlap cache + segment/LTV stats ───────────────
   if (batch === totalBatches - 1) {
-    const allProfiles: { is_subscriber: boolean; is_loyalty_member: boolean; total_revenue: number }[] = []
+    const allProfiles: { is_subscriber: boolean; is_loyalty_member: boolean; total_revenue: number; segment: string | null; ltv_segment: string | null }[] = []
     let profFrom = 0
     while (true) {
-      const { data: chunk } = await service.from('customer_profiles').select('is_subscriber, is_loyalty_member, total_revenue').eq('tenant_id', TENANT_ID).range(profFrom, profFrom + 999)
+      const { data: chunk } = await service.from('customer_profiles').select('is_subscriber, is_loyalty_member, total_revenue, segment, ltv_segment').eq('tenant_id', TENANT_ID).range(profFrom, profFrom + 999)
       if (!chunk || chunk.length === 0) break
       allProfiles.push(...(chunk as typeof allProfiles))
       if (chunk.length < 1000) break
@@ -213,6 +213,9 @@ export async function runProfileBatch(batch: number) {
 
     let subscribersOnly = 0, loyaltyOnly = 0, vipOnly = 0
     let subAndLoyalty = 0, subAndVip = 0, loyaltyAndVip = 0, allThree = 0
+    const segmentCounts: Record<string, number> = {}
+    const ltvStats: Record<string, { count: number; totalRevenue: number }> = {}
+
     for (const p of allProfiles) {
       const isSub = !!p.is_subscriber
       const isLoy = !!p.is_loyalty_member
@@ -224,6 +227,16 @@ export async function runProfileBatch(batch: number) {
       else if (isSub)               subscribersOnly++
       else if (isLoy)               loyaltyOnly++
       else if (isVip)               vipOnly++
+
+      // Segment counts
+      const seg = p.segment ?? 'unknown'
+      segmentCounts[seg] = (segmentCounts[seg] ?? 0) + 1
+
+      // LTV stats
+      const ltv = p.ltv_segment ?? 'unknown'
+      if (!ltvStats[ltv]) ltvStats[ltv] = { count: 0, totalRevenue: 0 }
+      ltvStats[ltv].count++
+      ltvStats[ltv].totalRevenue += Number(p.total_revenue)
     }
 
     await service.from('customer_overlap_cache').upsert({
@@ -236,6 +249,8 @@ export async function runProfileBatch(batch: number) {
       subscriber_and_vip: subAndVip,
       loyalty_and_vip: loyaltyAndVip,
       all_three: allThree,
+      segment_counts: segmentCounts,
+      ltv_stats: ltvStats,
       calculated_at: now.toISOString(),
     }, { onConflict: 'tenant_id' })
   }

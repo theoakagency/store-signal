@@ -37,23 +37,6 @@ export default async function CustomersPage({
   await createSupabaseServerClient()
   const service = createSupabaseServiceClient()
 
-  // ── Lightweight full-table fetch for counts (segment + ltv) ───────────────────
-  const allCounts: { segment: string; ltv_segment: string | null; total_revenue: number | null }[] = []
-  {
-    let from = 0
-    while (true) {
-      const { data } = await service
-        .from('customer_profiles')
-        .select('segment, ltv_segment, total_revenue')
-        .eq('tenant_id', TENANT_ID)
-        .range(from, from + 999)
-      if (!data || data.length === 0) break
-      allCounts.push(...(data as typeof allCounts))
-      if (data.length < 1000) break
-      from += 1000
-    }
-  }
-
   // ── Build the buyers query with server-side segment / venn filtering ───────────
   let buyersQ = service
     .from('customer_profiles')
@@ -105,28 +88,17 @@ export default async function CustomersPage({
     service.from('customer_overlap_cache').select('*').eq('tenant_id', TENANT_ID).maybeSingle(),
   ])
 
-  // ── Segment counts from all profiles ──────────────────────────────────────────
-  const segmentCounts = allCounts.reduce((acc, p) => {
-    acc[p.segment] = (acc[p.segment] ?? 0) + 1
-    return acc
-  }, {} as Record<string, number>)
+  // ── Segment + LTV counts from cache (precomputed during nightly rebuild) ────────
+  const segmentCounts = (overlapRaw?.segment_counts as Record<string, number> | null) ?? {}
 
-  // ── LTV counts from all profiles ──────────────────────────────────────────────
+  const cachedLtv = (overlapRaw?.ltv_stats as Record<string, { count: number; totalRevenue: number }> | null) ?? {}
   const ltvCounts: Record<string, { count: number; totalRevenue: number }> = {
-    Diamond: { count: 0, totalRevenue: 0 },
-    Gold:    { count: 0, totalRevenue: 0 },
-    Silver:  { count: 0, totalRevenue: 0 },
-    Bronze:  { count: 0, totalRevenue: 0 },
+    Diamond: cachedLtv['Diamond'] ?? { count: 0, totalRevenue: 0 },
+    Gold:    cachedLtv['Gold']    ?? { count: 0, totalRevenue: 0 },
+    Silver:  cachedLtv['Silver']  ?? { count: 0, totalRevenue: 0 },
+    Bronze:  cachedLtv['Bronze']  ?? { count: 0, totalRevenue: 0 },
   }
-  let totalRevenueAll = 0
-  for (const r of allCounts) {
-    const seg = r.ltv_segment as string
-    if (ltvCounts[seg]) {
-      ltvCounts[seg].count++
-      ltvCounts[seg].totalRevenue += Number(r.total_revenue)
-    }
-    totalRevenueAll += Number(r.total_revenue)
-  }
+  const totalRevenueAll = Object.values(ltvCounts).reduce((s, v) => s + v.totalRevenue, 0)
 
   const overlapData: OverlapData | null = overlapRaw ? {
     total_customers:        overlapRaw.total_customers        ?? 0,
