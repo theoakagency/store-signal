@@ -28,6 +28,8 @@ function toChannel(sourceName: string | null): string {
 }
 
 export async function POST(_req: NextRequest) {
+  // No user auth check — this route uses the service client only and is safe
+  // to call from the daily-analysis cron via internal fetch with CRON_SECRET.
   const supabase = createSupabaseServiceClient()
 
   const now = new Date()

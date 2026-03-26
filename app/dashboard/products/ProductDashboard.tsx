@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useSortableTable, SortIcon, thCls } from '@/hooks/useSortableTable'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -134,7 +134,7 @@ function ProductDetailPanel({
                     ? Math.round(Number(product.avg_days_to_repurchase)) + ' days'
                     : '—',
                 },
-                { label: 'Subscription Conversion', value: pct(product.subscription_conversion_rate) },
+                { label: 'Buyer→Sub Rate', value: pct(product.subscription_conversion_rate) },
               ].map(({ label, value }) => (
                 <div key={label} className="flex justify-between items-center py-2 border-b border-cream-2">
                   <span className="text-ink-3 text-xs">{label}</span>
@@ -214,7 +214,7 @@ function ProductPerformanceTab({
     ['Buyers', 'unique_customers'],
     ['Repeat Rate', 'repeat_purchase_rate'],
     ['Reorder Cycle', 'avg_days_to_repurchase'],
-    ['Sub Conv.', 'subscription_conversion_rate'],
+    ['Buyer→Sub Rate', 'subscription_conversion_rate'],
   ]
 
   return (
@@ -507,7 +507,7 @@ function RepurchaseIntelligenceTab({ products }: { products: ProductStat[] }) {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-cream-3 bg-cream">
-                  {([['Product', ''], ['Avg Days to Reorder', 'avg_days_to_repurchase'], ['Repeat Rate', 'repeat_purchase_rate'], ['Subscription Conv.', 'subscription_conversion_rate'], ['Unique Buyers', 'unique_customers']] as [string, string][]).map(([h, field]) => (
+                  {([['Product', ''], ['Avg Days to Reorder', 'avg_days_to_repurchase'], ['Repeat Rate', 'repeat_purchase_rate'], ['Buyer→Sub Rate', 'subscription_conversion_rate'], ['Unique Buyers', 'unique_customers']] as [string, string][]).map(([h, field]) => (
                     <th key={h} className={`text-left py-3 px-4 text-ink-3 text-[10px] font-data uppercase tracking-widest font-normal whitespace-nowrap ${field ? thCls(field, rrSort) : ''}`} onClick={field ? () => rrHandleSort(field) : undefined}>
                       {h}{field && <SortIcon column={field} sortColumn={rrSort} sortDirection={rrDir} />}
                     </th>
@@ -541,8 +541,18 @@ function RepurchaseIntelligenceTab({ products }: { products: ProductStat[] }) {
 
 // ── Tab 5: AI Product Insights ────────────────────────────────────────────────
 
-function AiInsightsTab() {
-  const [insight, setInsight] = useState<string | null>(null)
+const LS_INSIGHT_KEY = 'ss_product_insight'
+const LS_INSIGHT_AT_KEY = 'ss_product_insight_at'
+
+function AiInsightsTab({
+  insight,
+  insightAt,
+  onInsight,
+}: {
+  insight: string | null
+  insightAt: string | null
+  onInsight: (text: string, at: string) => void
+}) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -553,7 +563,8 @@ function AiInsightsTab() {
       const res = await fetch('/api/insights/products', { method: 'POST' })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Failed')
-      setInsight(data.insight)
+      const at = new Date().toISOString()
+      onInsight(data.insight, at)
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -561,19 +572,28 @@ function AiInsightsTab() {
     }
   }
 
+  const formattedAt = insightAt
+    ? new Date(insightAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
+    : null
+
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
-        <p className="text-ink-2 text-xs leading-relaxed max-w-xl">
-          Claude analyzes your product stats, affinity pairs, purchase sequences, and subscription gaps
-          to answer 6 targeted merchandising questions.
-        </p>
+        <div>
+          <p className="text-ink-2 text-xs leading-relaxed max-w-xl">
+            Claude analyzes your product stats, affinity pairs, purchase sequences, and subscription gaps
+            to answer 6 targeted merchandising questions.
+          </p>
+          {formattedAt && (
+            <p className="text-ink-3 text-[10px] mt-1">Generated {formattedAt}</p>
+          )}
+        </div>
         <button
           onClick={generate}
           disabled={loading}
           className="flex-shrink-0 px-4 py-2 bg-ink text-cream text-xs font-semibold rounded-lg hover:bg-ink/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
-          {loading ? 'Analyzing…' : 'Generate Insights'}
+          {loading ? 'Analyzing…' : insight ? 'Regenerate' : 'Generate Insights'}
         </button>
       </div>
 
@@ -678,6 +698,27 @@ export default function ProductDashboard({
   sequences: PurchaseSequence[]
 }) {
   const [activeTab, setActiveTab] = useState<Tab>('Product Performance')
+  const [insight, setInsight] = useState<string | null>(null)
+  const [insightAt, setInsightAt] = useState<string | null>(null)
+
+  // Load persisted insight from localStorage on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(LS_INSIGHT_KEY)
+      const savedAt = localStorage.getItem(LS_INSIGHT_AT_KEY)
+      if (saved) setInsight(saved)
+      if (savedAt) setInsightAt(savedAt)
+    } catch { /* localStorage unavailable (SSR / private mode) */ }
+  }, [])
+
+  function handleInsight(text: string, at: string) {
+    setInsight(text)
+    setInsightAt(at)
+    try {
+      localStorage.setItem(LS_INSIGHT_KEY, text)
+      localStorage.setItem(LS_INSIGHT_AT_KEY, at)
+    } catch { /* ignore */ }
+  }
 
   const calculatedAt = productStats[0]?.calculated_at
     ? new Date(productStats[0].calculated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
@@ -763,7 +804,9 @@ export default function ProductDashboard({
           {activeTab === 'Repurchase Intelligence' && (
             <RepurchaseIntelligenceTab products={productStats} />
           )}
-          {activeTab === 'AI Insights' && <AiInsightsTab />}
+          {activeTab === 'AI Insights' && (
+            <AiInsightsTab insight={insight} insightAt={insightAt} onInsight={handleInsight} />
+          )}
         </div>
       </div>
     </div>

@@ -1,11 +1,14 @@
 {
   "crons": [
-    { "path": "/api/cron/sync-shopify",  "schedule": "0 */2 * * *" },
-    { "path": "/api/cron/sync-klaviyo",  "schedule": "0 */6 * * *" },
-    { "path": "/api/cron/sync-ads",      "schedule": "30 */6 * * *" },
-    { "path": "/api/cron/sync-analytics","schedule": "0 */6 * * *" },
-    { "path": "/api/cron/sync-loyalty",  "schedule": "0 */6 * * *" },
-    { "path": "/api/cron/daily-rebuild", "schedule": "0 3 * * *" },
-    { "path": "/api/cron/sync-search",   "schedule": "0 4 * * *" }
+    { "path": "/api/cron/sync-shopify",   "schedule": "0 */2 * * *" },
+    { "path": "/api/cron/sync-klaviyo",   "schedule": "0 */6 * * *" },
+    { "path": "/api/cron/sync-ads",       "schedule": "30 */6 * * *" },
+    { "path": "/api/cron/sync-analytics", "schedule": "0 */6 * * *" },
+    { "path": "/api/cron/sync-recharge",  "schedule": "30 */6 * * *" },
+    { "path": "/api/cron/sync-loyalty",   "schedule": "0 */6 * * *" },
+    { "path": "/api/cron/sync-gsc",       "schedule": "30 4 * * *" },
+    { "path": "/api/cron/daily-rebuild",  "schedule": "0 3 * * *" },
+    { "path": "/api/cron/sync-search",    "schedule": "0 4 * * *" },
+    { "path": "/api/cron/daily-analysis", "schedule": "0 5 * * *" }
   ]
 }

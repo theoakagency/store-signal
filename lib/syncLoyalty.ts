@@ -117,18 +117,30 @@ export async function runLoyaltySync(token: string, secret: string | null) {
   const total_points_outstanding = customers.reduce((s, c) => s + (c.points_approved ?? 0), 0)
   const points_liability_value = total_points_outstanding * POINT_DOLLAR_VALUE
 
-  // ── Tier breakdown (join with Shopify customers for LTV) ──────────────────────
-  const { data: shopifyCustomers } = await service
-    .from('customers')
-    .select('email, total_spent')
-    .eq('tenant_id', TENANT_ID)
-
-  const spendByEmail = new Map(
-    (shopifyCustomers ?? []).map((c: { email: string | null; total_spent: number }) => [
-      (c.email ?? '').toLowerCase().trim(),
-      Number(c.total_spent),
-    ])
-  )
+  // ── Tier breakdown — LTV from orders table ───────────────────────────────────
+  // B2B/salon customers (Empire/Icon tiers) often use guest checkout and have no
+  // Shopify customer record. Summing paid orders by email captures all spend
+  // regardless of whether they have a logged-in account.
+  const spendByEmail = new Map<string, number>()
+  {
+    let from = 0
+    while (true) {
+      const { data } = await service
+        .from('orders')
+        .select('email, total_price')
+        .eq('store_id', STORE_ID)
+        .eq('financial_status', 'paid')
+        .range(from, from + 999)
+      if (!data || data.length === 0) break
+      for (const o of data) {
+        if (!o.email) continue
+        const email = (o.email as string).toLowerCase().trim()
+        spendByEmail.set(email, (spendByEmail.get(email) ?? 0) + Number(o.total_price))
+      }
+      if (data.length < 1000) break
+      from += 1000
+    }
+  }
 
   const tierMap: Record<string, { count: number; total_spent: number }> = {}
   for (const c of customers) {

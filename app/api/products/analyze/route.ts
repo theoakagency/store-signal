@@ -29,9 +29,13 @@ interface OrderRow {
 }
 
 export async function POST(_req: NextRequest) {
-  const supabase = await createSupabaseServerClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 })
+  // Allow cron auth bypass so the daily-analysis cron can call this route directly.
+  const isCron = _req.headers.get('Authorization') === `Bearer ${process.env.CRON_SECRET ?? ''}`
+  if (!isCron) {
+    const supabase = await createSupabaseServerClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 })
+  }
 
   const service = createSupabaseServiceClient()
 

@@ -108,8 +108,13 @@ function parseInsights(raw: RawInsights, campaign: { id: string; name: string; s
 async function metaGet(path: string, accessToken: string, params: Record<string, string> = {}): Promise<unknown> {
   const qs = new URLSearchParams({ access_token: accessToken, ...params })
   const res = await fetch(`${BASE_URL}/${path}?${qs}`)
-  const json = await res.json() as { error?: { message: string }; [key: string]: unknown }
-  if (json.error) throw new Error(`Meta API error: ${json.error.message}`)
+  const contentType = res.headers.get('content-type') ?? ''
+  if (!contentType.includes('application/json')) {
+    const text = await res.text()
+    throw new Error(`Meta API error ${res.status} (non-JSON response — token may be expired): ${text.slice(0, 300)}`)
+  }
+  const json = await res.json() as { error?: { message: string; code?: number }; [key: string]: unknown }
+  if (json.error) throw new Error(`Meta API error ${json.error.code ?? ''}: ${json.error.message}`)
   return json
 }
 
