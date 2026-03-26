@@ -65,16 +65,30 @@ async function fetchAllPages<T>(
   token: string,
   path: string,
   params: Record<string, string> = {},
-  secret?: string | null
+  secret?: string | null,
+  maxPages = 20
 ): Promise<T[]> {
   const results: T[] = []
   let cursor: string | null = null
+  let page = 0
 
   do {
     const query = new URLSearchParams({ per_page: '500', ...params })
     if (cursor) query.set('cursor', cursor)
 
-    const res = await fetch(`${BASE_URL}${path}?${query}`, { headers: headers(token, secret) })
+    // Abort individual page fetches after 30s to prevent silent hangs
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 30_000)
+
+    let res: Response
+    try {
+      res = await fetch(`${BASE_URL}${path}?${query}`, {
+        headers: headers(token, secret),
+        signal: controller.signal,
+      })
+    } finally {
+      clearTimeout(timer)
+    }
 
     if (!res.ok) {
       const body = await res.text()
@@ -85,18 +99,19 @@ async function fetchAllPages<T>(
       customers?: T[]
       activities?: T[]
       rewards?: T[]
+      campaigns?: T[]
       cursor?: { next: string | null }
     }
 
-    // Extract the array by guessing the key from the path
+    // Extract the array by matching the path segment to the response key
     const key = path.replace('/', '') as keyof typeof data
     const items = (data[key] as T[] | undefined) ?? []
 
     results.push(...items)
 
-    // LoyaltyLion uses cursor-based pagination
     cursor = data.cursor?.next ?? null
-  } while (cursor)
+    page++
+  } while (cursor && page < maxPages)
 
   return results
 }
