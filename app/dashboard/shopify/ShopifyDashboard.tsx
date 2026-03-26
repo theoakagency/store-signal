@@ -130,6 +130,51 @@ function StatusBadge({ status, type }: { status: string | null; type: 'payment' 
   )
 }
 
+// ── Order Value Distribution ──────────────────────────────────────────────────
+
+const ORDER_BUCKETS = [
+  { label: '<$25',    min: 0,   max: 25  },
+  { label: '$25–50',  min: 25,  max: 50  },
+  { label: '$50–100', min: 50,  max: 100 },
+  { label: '$100–200',min: 100, max: 200 },
+  { label: '$200–500',min: 200, max: 500 },
+  { label: '$500+',   min: 500, max: Infinity },
+]
+
+function OrderDistribution({ orders }: { orders: Order[] }) {
+  const paid = orders.filter((o) => o.financial_status === 'paid')
+  if (paid.length === 0) return null
+
+  const buckets = ORDER_BUCKETS.map((b) => ({
+    ...b,
+    count: paid.filter((o) => Number(o.total_price) >= b.min && Number(o.total_price) < b.max).length,
+  }))
+  const maxCount = Math.max(...buckets.map((b) => b.count), 1)
+
+  return (
+    <section className="rounded-2xl border border-cream-3 bg-white p-5 shadow-sm">
+      <h2 className="font-display text-sm font-semibold text-ink">Order Value Distribution</h2>
+      <p className="text-[10px] text-ink-3 mt-0.5">Last {paid.length} paid orders</p>
+      <div className="mt-4 flex items-end gap-2 h-24">
+        {buckets.map((b) => {
+          const pct = maxCount > 0 ? (b.count / maxCount) * 100 : 0
+          return (
+            <div key={b.label} className="flex-1 flex flex-col items-center gap-1">
+              <span className="font-data text-[10px] text-ink-2 font-medium">{b.count > 0 ? b.count : ''}</span>
+              <div className="w-full rounded-t" style={{ height: `${Math.max(pct, b.count > 0 ? 4 : 0)}%`, backgroundColor: b.count > 0 ? '#4BBFAD' : '#E8E6E1' }} />
+            </div>
+          )
+        })}
+      </div>
+      <div className="flex gap-2 mt-1">
+        {buckets.map((b) => (
+          <div key={b.label} className="flex-1 text-center font-data text-[9px] text-ink-3">{b.label}</div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
 // ── Bar Chart ─────────────────────────────────────────────────────────────────
 
 function MonthlyBarChart({ data }: { data: MonthlyData[] }) {
@@ -416,6 +461,9 @@ export default function ShopifyDashboard({
           <ChannelBreakdown channels={channels} />
         </section>
       </div>
+
+      {/* Order Value Distribution */}
+      <OrderDistribution orders={orders} />
 
       {/* Refunds */}
       {metrics.refundAmount30d > 0 && (
