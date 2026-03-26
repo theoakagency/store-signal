@@ -17,7 +17,7 @@ export default async function LoyaltyPage() {
   const [
     { data: store },
     { data: metricsCache },
-    { data: totalCustomers },
+    { count: totalCustomers },
   ] = await Promise.all([
     service.from('stores').select('loyaltylion_token').eq('id', STORE_ID).single(),
     service.from('loyalty_metrics_cache').select('*').eq('tenant_id', TENANT_ID).maybeSingle(),
@@ -31,7 +31,7 @@ export default async function LoyaltyPage() {
     <LoyaltyDashboard
       connected={connected}
       metrics={metricsCache}
-      totalCustomers={(totalCustomers as unknown as { count: number } | null)?.count ?? 0}
+      totalCustomers={totalCustomers ?? 0}
     />
   )
 }
