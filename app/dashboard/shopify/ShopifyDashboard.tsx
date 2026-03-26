@@ -329,32 +329,17 @@ export default function ShopifyDashboard({
   const [ordersPage, setOrdersPage] = useState(0)
   const [customersPage, setCustomersPage] = useState(0)
   const [orderSearch, setOrderSearch] = useState('')
-  const [sortField, setSortField] = useState<keyof Order>('processed_at')
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const PAGE = 20
 
-  const { sortedData: sortedCustomers, sortColumn: custSort, sortDirection: custDir, handleSort: custHandleSort } = useSortableTable(customers as unknown as Record<string, unknown>[], 'total_spent', 'desc')
+  const { sortedData: sortedOrders, sortColumn: orderSort, sortDirection: orderDir, handleSort: orderHandleSort } =
+    useSortableTable(orders as unknown as Record<string, unknown>[], 'processed_at', 'desc')
+  const { sortedData: sortedCustomers, sortColumn: custSort, sortDirection: custDir, handleSort: custHandleSort } =
+    useSortableTable(customers as unknown as Record<string, unknown>[], 'total_spent', 'desc')
 
-  function handleSort(field: keyof Order) {
-    if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
-    else { setSortField(field); setSortDir('desc') }
-  }
-
-  function SortIcon({ field }: { field: keyof Order }) {
-    if (sortField !== field) return <span className="text-ink-3 opacity-0 group-hover:opacity-100">↕</span>
-    return <span className="text-teal-deep">{sortDir === 'asc' ? '↑' : '↓'}</span>
-  }
-
-  const filteredOrders = orders
-    .filter((o) => !orderSearch || [o.order_number, o.email, o.financial_status, o.fulfillment_status].some((v) => v?.toLowerCase().includes(orderSearch.toLowerCase())))
-    .sort((a, b) => {
-      const av = a[sortField] as string | number | null
-      const bv = b[sortField] as string | number | null
-      if (av == null) return 1
-      if (bv == null) return -1
-      const cmp = av < bv ? -1 : av > bv ? 1 : 0
-      return sortDir === 'asc' ? cmp : -cmp
-    })
+  const filteredOrders = (sortedOrders as unknown as Order[]).filter(
+    (o) => !orderSearch || [o.order_number, o.email, o.financial_status, o.fulfillment_status]
+      .some((v) => v?.toLowerCase().includes(orderSearch.toLowerCase()))
+  )
 
   const pagedOrders = filteredOrders.slice(ordersPage * PAGE, (ordersPage + 1) * PAGE)
   const pagedCustomers = (sortedCustomers as unknown as Customer[]).slice(customersPage * PAGE, (customersPage + 1) * PAGE)
@@ -535,11 +520,11 @@ export default function ShopifyDashboard({
               <table className="min-w-full text-sm">
                 <thead>
                   <tr className="border-b border-cream-2 bg-cream/50 text-xs font-medium text-ink-3">
-                    {([['order_number','Order #'], ['processed_at','Date'], ['email','Customer'], ['financial_status','Payment'], ['fulfillment_status','Fulfillment'], ['total_price','Total']] as [keyof Order, string][]).map(([field, label]) => (
-                      <th key={field} className={`group px-5 py-2.5 text-left cursor-pointer select-none hover:bg-cream-2 ${sortField === field ? 'bg-cream-2' : ''} ${field === 'total_price' ? 'text-right' : ''}`} onClick={() => handleSort(field)}>
+                    {([['order_number','Order #'], ['processed_at','Date'], ['email','Customer'], ['financial_status','Payment'], ['fulfillment_status','Fulfillment'], ['total_price','Total']] as [string, string][]).map(([field, label]) => (
+                      <th key={field} className={`px-5 py-2.5 text-left cursor-pointer select-none ${thCls(field, orderSort)} ${field === 'total_price' ? 'text-right' : ''}`} onClick={() => orderHandleSort(field)}>
                         <span className="flex items-center gap-1 justify-between">
                           {label}
-                          <SortIcon field={field} />
+                          <HookSortIcon column={field} sortColumn={orderSort} sortDirection={orderDir} />
                         </span>
                       </th>
                     ))}
