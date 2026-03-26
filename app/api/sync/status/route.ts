@@ -10,12 +10,16 @@ const STORE_ID = '00000000-0000-0000-0000-000000000002'
 
 // Cron schedules in human-readable form + interval in hours for "next run" math
 const CRON_META: Record<string, { label: string; intervalHours: number; utcHour: number | null }> = {
-  'sync-shopify':  { label: 'Shopify',          intervalHours: 2,   utcHour: null },
-  'sync-klaviyo':  { label: 'Klaviyo',           intervalHours: 6,   utcHour: null },
-  'sync-ads':      { label: 'Ads (Meta + Google)', intervalHours: 6, utcHour: null },
-  'sync-analytics':{ label: 'Analytics (GA4)',   intervalHours: 6,   utcHour: null },
-  'sync-search':   { label: 'Search (SEMrush)',  intervalHours: 24,  utcHour: 4   },
-  'daily-rebuild': { label: 'Profile rebuild',   intervalHours: 24,  utcHour: 3   },
+  'sync-shopify':   { label: 'Shopify',            intervalHours: 2,  utcHour: null },
+  'sync-klaviyo':   { label: 'Klaviyo',             intervalHours: 6,  utcHour: null },
+  'sync-ads':       { label: 'Ads (Meta + Google)', intervalHours: 6,  utcHour: null },
+  'sync-analytics': { label: 'Analytics (GA4)',     intervalHours: 6,  utcHour: null },
+  'sync-recharge':  { label: 'Recharge',            intervalHours: 6,  utcHour: null },
+  'sync-loyalty':   { label: 'LoyaltyLion',         intervalHours: 6,  utcHour: null },
+  'sync-gsc':       { label: 'Search Console',      intervalHours: 24, utcHour: 4   },
+  'sync-search':    { label: 'SEMrush',             intervalHours: 24, utcHour: 4   },
+  'daily-rebuild':  { label: 'Profile rebuild',     intervalHours: 24, utcHour: 3   },
+  'daily-analysis': { label: 'Product analysis',    intervalHours: 24, utcHour: 5   },
 }
 
 function nextRunAt(intervalHours: number, utcHour: number | null, lastRunAt: string | null): string | null {
@@ -52,7 +56,7 @@ export async function GET() {
       .limit(20),
     service
       .from('stores')
-      .select('shopify_access_token, klaviyo_api_key, meta_access_token, google_ads_refresh_token, ga4_refresh_token, semrush_api_key, last_synced_at')
+      .select('shopify_access_token, klaviyo_api_key, meta_access_token, google_ads_refresh_token, ga4_refresh_token, semrush_api_key, recharge_api_token, loyaltylion_token, gsc_refresh_token, last_synced_at')
       .eq('id', STORE_ID)
       .single(),
   ])
@@ -87,12 +91,15 @@ export async function GET() {
     lastSyncedAt: store?.last_synced_at ?? null,
     recentRuns: recentRuns ?? [],
     integrations: {
-      shopify:    !!store?.shopify_access_token,
-      klaviyo:    !!store?.klaviyo_api_key,
-      meta:       !!store?.meta_access_token,
-      googleAds:  !!store?.google_ads_refresh_token,
-      ga4:        !!store?.ga4_refresh_token,
-      semrush:    !!store?.semrush_api_key,
+      shopify:      !!store?.shopify_access_token,
+      klaviyo:      !!store?.klaviyo_api_key,
+      meta:         !!store?.meta_access_token,
+      googleAds:    !!store?.google_ads_refresh_token,
+      ga4:          !!store?.ga4_refresh_token,
+      semrush:      !!store?.semrush_api_key,
+      recharge:     !!store?.recharge_api_token,
+      loyaltylion:  !!store?.loyaltylion_token,
+      gsc:          !!store?.gsc_refresh_token,
     },
     crons: status,
   })

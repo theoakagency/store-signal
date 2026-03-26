@@ -943,16 +943,23 @@ export default function IntegrationsClient({
     'sync-klaviyo':   '/api/klaviyo/sync',
     'sync-ads':       '/api/meta/sync',
     'sync-analytics': '/api/analytics/sync',
+    'sync-recharge':  '/api/recharge/sync',
+    'sync-loyalty':   '/api/loyaltylion/sync',
+    'sync-gsc':       '/api/gsc/sync',
     'sync-search':    '/api/semrush/sync',
   }
 
   const CRON_LABELS: Record<string, string> = {
-    'sync-shopify':   'Shopify',
-    'sync-klaviyo':   'Klaviyo',
-    'sync-ads':       'Ads (Meta + Google)',
-    'sync-analytics': 'Analytics (GA4)',
-    'sync-search':    'SEMrush',
-    'daily-rebuild':  'Profile rebuild',
+    'sync-shopify':    'Shopify',
+    'sync-klaviyo':    'Klaviyo',
+    'sync-ads':        'Ads (Meta + Google)',
+    'sync-analytics':  'Analytics (GA4)',
+    'sync-recharge':   'Recharge',
+    'sync-loyalty':    'LoyaltyLion',
+    'sync-gsc':        'Search Console',
+    'sync-search':     'SEMrush',
+    'daily-rebuild':   'Profile rebuild',
+    'daily-analysis':  'Product analysis',
   }
 
   async function triggerManualSync(cronName: string) {
@@ -1411,7 +1418,17 @@ export default function IntegrationsClient({
           {/* Manual trigger buttons */}
           <div className="mb-4 flex flex-wrap gap-2">
             {Object.entries(MANUAL_SYNC_ROUTES).map(([cronName, route]) => {
-              const intKey = cronName === 'sync-ads' ? 'meta' : cronName === 'sync-analytics' ? 'ga4' : cronName === 'sync-klaviyo' ? 'klaviyo' : cronName === 'sync-search' ? 'semrush' : 'shopify'
+              const INT_KEY_MAP: Record<string, string> = {
+                'sync-shopify':  'shopify',
+                'sync-klaviyo':  'klaviyo',
+                'sync-ads':      'meta',
+                'sync-analytics':'ga4',
+                'sync-recharge': 'recharge',
+                'sync-loyalty':  'loyaltylion',
+                'sync-gsc':      'gsc',
+                'sync-search':   'semrush',
+              }
+              const intKey = INT_KEY_MAP[cronName] ?? cronName
               const connected = syncStatus?.integrations[intKey] ?? false
               if (!connected) return null
               return (
