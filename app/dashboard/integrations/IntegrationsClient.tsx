@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, Fragment } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 
 interface Props {
@@ -981,6 +981,69 @@ export default function IntegrationsClient({
     return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(iso))
   }
 
+  function timeAgoShort(iso: string): string {
+    const ms = Date.now() - new Date(iso).getTime()
+    const m = Math.floor(ms / 60000)
+    if (m < 1) return 'just now'
+    if (m < 60) return `${m}m ago`
+    const h = Math.floor(m / 60)
+    if (h < 24) return `${h}h ago`
+    return `${Math.floor(h / 24)}d ago`
+  }
+
+  function cleanErrorMessage(err: string, cronName: string): string {
+    // SEMrush API units exhausted
+    if (/132|api.units.balance|UNITS.BALANCE/i.test(err)) {
+      return 'SEMrush API units exhausted — top up units at semrush.com/billing'
+    }
+    // Meta token expired / HTML response
+    if (/<!DOCTYPE|<html|non-json response|token.*expir|expir.*token/i.test(err)) {
+      if (cronName === 'sync-ads' || cronName.includes('meta')) {
+        return 'Meta Ads token may be expired — reconnect in Integrations'
+      }
+      const platform = CRON_LABELS[cronName] ?? cronName
+      return `Unexpected response from ${platform} — check sync logs`
+    }
+    // LoyaltyLion 502 / server errors
+    if ((cronName === 'sync-loyalty') && /502|bad.gateway|server.error/i.test(err)) {
+      return 'LoyaltyLion server error — will retry automatically'
+    }
+    // Strip any remaining HTML tags (show only text content)
+    if (/<[a-z]/i.test(err)) {
+      const stripped = err.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 300)
+      const platform = CRON_LABELS[cronName] ?? cronName
+      return stripped.length > 20 ? stripped : `Unexpected response from ${platform}`
+    }
+    return err
+  }
+
+  // Last run timestamp per cron (recentRuns is newest-first)
+  const lastRunByCron = (syncStatus?.recentRuns ?? []).reduce<Record<string, string>>((acc, run) => {
+    if (!acc[run.cron_name]) acc[run.cron_name] = run.started_at
+    return acc
+  }, {})
+
+  const [expandedRunId, setExpandedRunId] = useState<string | null>(null)
+  const [clearingLogs, setClearingLogs] = useState(false)
+
+  // Auto-refresh every 60 seconds
+  useEffect(() => {
+    const id = setInterval(fetchSyncStatus, 60_000)
+    return () => clearInterval(id)
+  }, [fetchSyncStatus])
+
+  async function handleClearLogs() {
+    setClearingLogs(true)
+    try {
+      const res = await fetch('/api/cron/clear-logs', { method: 'DELETE' })
+      const data = await res.json() as { deleted?: number; error?: string }
+      if (data.error) { showToast(`Error: ${data.error}`); return }
+      showToast(`Cleared ${data.deleted ?? 0} old log entries`)
+      await fetchSyncStatus()
+    } catch { showToast('Network error') }
+    finally { setClearingLogs(false) }
+  }
+
   const [showKlaviyoModal, setShowKlaviyoModal] = useState(false)
   const [showGscModal, setShowGscModal] = useState(false)
   const [showGa4Modal, setShowGa4Modal] = useState(false)
@@ -1408,136 +1471,178 @@ export default function IntegrationsClient({
 
         {/* Sync History */}
         <section>
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="font-display text-base font-semibold text-ink">Automated Sync History</h2>
-            <button
-              onClick={fetchSyncStatus}
-              className="text-xs font-medium text-teal hover:text-teal-dark transition"
-            >
-              Refresh
-            </button>
+          <div className="flex items-center justify-between mb-1">
+            <div>
+              <h2 className="font-display text-base font-semibold text-ink">Sync History</h2>
+              <p className="text-[11px] text-ink-3 mt-0.5">Last 50 runs · auto-refreshes every 60 seconds</p>
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handleClearLogs}
+                disabled={clearingLogs}
+                className="text-[11px] font-medium text-ink-3 hover:text-red-500 transition disabled:opacity-50"
+              >
+                {clearingLogs ? 'Clearing…' : 'Clear old logs'}
+              </button>
+              <button onClick={fetchSyncStatus} className="text-[11px] font-medium text-teal hover:text-teal-dark transition">
+                Refresh
+              </button>
+            </div>
           </div>
 
           {/* SYNC_ENABLED=false banner */}
           {syncStatus && !syncStatus.syncEnabled && (
-            <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 flex items-start gap-3">
+            <div className="mt-3 mb-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 flex items-start gap-3">
               <svg className="h-4 w-4 shrink-0 text-amber-600 mt-0.5" viewBox="0 0 20 20" fill="currentColor">
                 <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 10 5zm0 9a1 1 0 1 0 0-2 1 1 0 0 0 0 2z" clipRule="evenodd"/>
               </svg>
               <div>
                 <p className="text-xs font-semibold text-amber-800">Automated syncing is paused</p>
                 <p className="text-xs text-amber-700 mt-0.5">
-                  <code className="bg-amber-100 px-1 rounded">SYNC_ENABLED=false</code> is set in your environment variables. Remove this variable or set it to <code className="bg-amber-100 px-1 rounded">true</code> to resume automated cron jobs.
+                  <code className="bg-amber-100 px-1 rounded">SYNC_ENABLED=false</code> is set in your environment variables. Remove it or set it to <code className="bg-amber-100 px-1 rounded">true</code> to resume.
                 </p>
               </div>
             </div>
           )}
 
-          {/* Manual trigger buttons */}
-          <div className="mb-4 flex flex-wrap gap-2">
-            {Object.entries(MANUAL_SYNC_ROUTES).map(([cronName, route]) => {
+          {/* Manual sync buttons — compact, outlined, with last-synced label */}
+          <div className="mt-3 mb-4 flex flex-wrap gap-x-2 gap-y-3">
+            {Object.entries(MANUAL_SYNC_ROUTES).map(([cronName]) => {
               const INT_KEY_MAP: Record<string, string> = {
-                'sync-shopify':  'shopify',
-                'sync-klaviyo':  'klaviyo',
-                'sync-ads':      'meta',
-                'sync-analytics':'ga4',
-                'sync-recharge': 'recharge',
-                'sync-loyalty':  'loyaltylion',
-                'sync-gsc':      'gsc',
-                'sync-search':   'semrush',
+                'sync-shopify':   'shopify',
+                'sync-klaviyo':   'klaviyo',
+                'sync-ads':       'meta',
+                'sync-analytics': 'ga4',
+                'sync-recharge':  'recharge',
+                'sync-loyalty':   'loyaltylion',
+                'sync-gsc':       'gsc',
+                'sync-search':    'semrush',
               }
               const intKey = INT_KEY_MAP[cronName] ?? cronName
               const connected = syncStatus?.integrations[intKey] ?? false
               if (!connected) return null
+              const lastAt = lastRunByCron[cronName]
               return (
-                <button
-                  key={cronName}
-                  onClick={() => triggerManualSync(cronName)}
-                  disabled={manualSyncing[cronName]}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-cream-3 bg-white px-3 py-1.5 text-xs font-medium text-ink-2 hover:bg-cream-2 disabled:opacity-50 transition"
-                >
-                  {manualSyncing[cronName] ? (
-                    <span className="inline-block h-2.5 w-2.5 animate-spin rounded-full border-2 border-cream-3 border-t-teal" />
-                  ) : (
-                    <svg className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 0 1-9.201 2.466l-.312-.311h2.433a.75.75 0 0 0 0-1.5H3.989a.75.75 0 0 0-.75.75v4.242a.75.75 0 0 0 1.5 0v-2.43l.31.31a7 7 0 0 0 11.712-3.138.75.75 0 0 0-1.449-.39zm1.23-3.723a.75.75 0 0 0 .219-.53V2.929a.75.75 0 0 0-1.5 0V5.36l-.31-.31A7 7 0 0 0 3.239 8.188a.75.75 0 1 0 1.448.389A5.5 5.5 0 0 1 13.89 6.11l.311.31h-2.432a.75.75 0 0 0 0 1.5h4.243a.75.75 0 0 0 .53-.219z" clipRule="evenodd" />
-                    </svg>
+                <div key={cronName} className="flex flex-col items-start gap-0.5">
+                  <button
+                    onClick={() => triggerManualSync(cronName)}
+                    disabled={manualSyncing[cronName]}
+                    className="inline-flex items-center gap-1 rounded-md border border-cream-3 bg-white px-2.5 py-1 text-[11px] font-medium text-ink-2 hover:bg-cream-2 hover:border-ink-3 disabled:opacity-50 transition"
+                  >
+                    {manualSyncing[cronName] ? (
+                      <span className="inline-block h-2.5 w-2.5 animate-spin rounded-full border-2 border-cream-3 border-t-teal" />
+                    ) : (
+                      <svg className="h-2.5 w-2.5" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 0 1-9.201 2.466l-.312-.311h2.433a.75.75 0 0 0 0-1.5H3.989a.75.75 0 0 0-.75.75v4.242a.75.75 0 0 0 1.5 0v-2.43l.31.31a7 7 0 0 0 11.712-3.138.75.75 0 0 0-1.449-.39zm1.23-3.723a.75.75 0 0 0 .219-.53V2.929a.75.75 0 0 0-1.5 0V5.36l-.31-.31A7 7 0 0 0 3.239 8.188a.75.75 0 1 0 1.448.389A5.5 5.5 0 0 1 13.89 6.11l.311.31h-2.432a.75.75 0 0 0 0 1.5h4.243a.75.75 0 0 0 .53-.219z" clipRule="evenodd" />
+                      </svg>
+                    )}
+                    {CRON_LABELS[cronName]}
+                  </button>
+                  {lastAt && (
+                    <span className="pl-1 text-[10px] text-ink-3">{timeAgoShort(lastAt)}</span>
                   )}
-                  Sync {CRON_LABELS[cronName]}
-                </button>
+                </div>
               )
             })}
           </div>
 
-          {/* Failure alerts */}
-          {syncStatus?.recentRuns.filter((r) => r.status === 'failed').slice(0, 3).map((run) => (
-            <div key={run.id} className="mb-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
-              <p className="text-xs font-semibold text-red-800">
-                {CRON_LABELS[run.cron_name] ?? run.cron_name} failed — {fmtTime(run.started_at)}
-              </p>
-              {run.errors.length > 0 && (
-                <p className="mt-0.5 text-xs text-red-700">{run.errors[0]}</p>
-              )}
-            </div>
-          ))}
-
-          {/* Recent runs table */}
+          {/* Recent runs table — fixed 400px height, sticky header, expandable failed rows */}
           <div className="rounded-2xl border border-cream-3 bg-white shadow-sm overflow-hidden">
             {!syncStatus ? (
               <div className="flex items-center justify-center py-10 text-xs text-ink-3">Loading sync history…</div>
             ) : syncStatus.recentRuns.length === 0 ? (
               <div className="flex items-center justify-center py-10 text-xs text-ink-3">No cron runs yet — crons will start after deployment to Vercel.</div>
             ) : (
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-b border-cream-2 bg-cream-2/50">
-                    <th className="px-4 py-2.5 text-left font-semibold text-ink-2">Job</th>
-                    <th className="px-4 py-2.5 text-left font-semibold text-ink-2">Started</th>
-                    <th className="px-4 py-2.5 text-left font-semibold text-ink-2">Duration</th>
-                    <th className="px-4 py-2.5 text-left font-semibold text-ink-2">Records</th>
-                    <th className="px-4 py-2.5 text-left font-semibold text-ink-2">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-cream-2">
-                  {syncStatus.recentRuns.map((run) => {
-                    const durationMs = run.completed_at
-                      ? new Date(run.completed_at).getTime() - new Date(run.started_at).getTime()
-                      : null
-                    const durationStr = durationMs !== null
-                      ? durationMs < 1000 ? '<1s' : durationMs < 60000 ? `${Math.round(durationMs / 1000)}s` : `${Math.round(durationMs / 60000)}m`
-                      : '—'
-
-                    return (
-                      <tr key={run.id} className="hover:bg-cream-2/30 transition">
-                        <td className="px-4 py-2.5 font-medium text-ink">{CRON_LABELS[run.cron_name] ?? run.cron_name}</td>
-                        <td className="px-4 py-2.5 font-data text-ink-2">{fmtTime(run.started_at)}</td>
-                        <td className="px-4 py-2.5 font-data text-ink-3">{durationStr}</td>
-                        <td className="px-4 py-2.5 font-data text-ink-2">{run.records_synced > 0 ? run.records_synced.toLocaleString() : '—'}</td>
-                        <td className="px-4 py-2.5">
-                          {run.status === 'completed' && (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-teal-pale px-2 py-0.5 text-[10px] font-semibold text-teal-deep">
-                              <span className="h-1.5 w-1.5 rounded-full bg-teal" />
-                              Done
-                            </span>
+              <div style={{ height: 400, overflowY: 'auto' }}>
+                <table className="w-full text-xs">
+                  <thead className="sticky top-0 z-10 bg-white">
+                    <tr className="border-b border-cream-2">
+                      <th className="w-0.5 p-0" />
+                      <th className="px-4 py-2.5 text-left font-semibold text-ink-2">Job</th>
+                      <th className="px-4 py-2.5 text-left font-semibold text-ink-2">Started</th>
+                      <th className="px-4 py-2.5 text-left font-semibold text-ink-2">Duration</th>
+                      <th className="px-4 py-2.5 text-left font-semibold text-ink-2">Records</th>
+                      <th className="px-4 py-2.5 text-left font-semibold text-ink-2">Status</th>
+                      <th className="w-8 px-2" />
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-cream-2">
+                    {syncStatus.recentRuns.map((run) => {
+                      const isFailed = run.status === 'failed'
+                      const isExpanded = expandedRunId === run.id
+                      const durationMs = run.completed_at
+                        ? new Date(run.completed_at).getTime() - new Date(run.started_at).getTime()
+                        : null
+                      const durationStr = durationMs !== null
+                        ? durationMs < 1000 ? '<1s' : durationMs < 60000 ? `${Math.round(durationMs / 1000)}s` : `${Math.round(durationMs / 60000)}m`
+                        : '—'
+                      return (
+                        <Fragment key={run.id}>
+                          <tr
+                            onClick={isFailed ? () => setExpandedRunId(isExpanded ? null : run.id) : undefined}
+                            className={`transition ${isFailed ? 'cursor-pointer bg-red-50/50 hover:bg-red-50/80' : 'hover:bg-cream-2/30'}`}
+                          >
+                            {/* Colored left indicator strip */}
+                            <td className={`w-0.5 p-0 ${isFailed ? 'bg-red-400' : ''}`} />
+                            <td className="px-4 py-2.5 font-medium text-ink">{CRON_LABELS[run.cron_name] ?? run.cron_name}</td>
+                            <td className="px-4 py-2.5 font-data text-ink-2">{fmtTime(run.started_at)}</td>
+                            <td className="px-4 py-2.5 font-data text-ink-3">{durationStr}</td>
+                            <td className="px-4 py-2.5 font-data text-ink-2">{run.records_synced > 0 ? run.records_synced.toLocaleString() : '—'}</td>
+                            <td className="px-4 py-2.5">
+                              {run.status === 'completed' && (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-teal-pale px-2 py-0.5 text-[10px] font-semibold text-teal-deep">
+                                  ✓ Done
+                                </span>
+                              )}
+                              {run.status === 'failed' && (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-700">
+                                  ✗ Failed
+                                </span>
+                              )}
+                              {run.status === 'running' && (
+                                <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+                                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-400" />
+                                  Running
+                                </span>
+                              )}
+                              {run.status === 'skipped' && (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-cream-2 px-2 py-0.5 text-[10px] font-semibold text-ink-3">
+                                  Skipped
+                                </span>
+                              )}
+                            </td>
+                            {/* Chevron for expandable failed rows */}
+                            <td className="w-8 px-2 py-2.5 text-right">
+                              {isFailed && (
+                                <svg
+                                  className={`inline-block h-3 w-3 text-red-400 transition-transform duration-150 ${isExpanded ? 'rotate-180' : ''}`}
+                                  viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5"
+                                >
+                                  <path d="M2 4l4 4 4-4" strokeLinecap="round" strokeLinejoin="round" />
+                                </svg>
+                              )}
+                            </td>
+                          </tr>
+                          {/* Expandable error accordion */}
+                          {isFailed && isExpanded && run.errors.length > 0 && (
+                            <tr>
+                              <td colSpan={7} className="bg-cream px-0 py-0">
+                                <div className="border-l-2 border-red-400 ml-0.5 px-5 py-3 space-y-1.5">
+                                  {run.errors.map((err, i) => (
+                                    <p key={i} className="font-mono text-[11px] leading-relaxed text-red-700 break-words whitespace-pre-wrap">
+                                      {cleanErrorMessage(err, run.cron_name)}
+                                    </p>
+                                  ))}
+                                </div>
+                              </td>
+                            </tr>
                           )}
-                          {run.status === 'failed' && (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-semibold text-red-700">
-                              <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
-                              Failed
-                            </span>
-                          )}
-                          {run.status === 'running' && (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
-                              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-400" />
-                              Running
-                            </span>
-                          )}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
+                        </Fragment>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
         </section>
