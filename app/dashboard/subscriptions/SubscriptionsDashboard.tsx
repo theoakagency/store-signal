@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { useSortableTable, SortIcon, thCls } from '@/hooks/useSortableTable'
+import type { CohortRow } from './page'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -70,6 +71,7 @@ interface Props {
   metrics: Metrics | null
   recentCancellations: Cancellation[]
   topSubscriptions: Subscription[]
+  cohorts: CohortRow[]
 }
 
 // ── Formatting helpers ─────────────────────────────────────────────────────────
@@ -119,7 +121,7 @@ function NotConnected() {
 
 // ── Main dashboard ─────────────────────────────────────────────────────────────
 
-export default function SubscriptionsDashboard({ connected, metrics, recentCancellations, topSubscriptions }: Props) {
+export default function SubscriptionsDashboard({ connected, metrics, recentCancellations, topSubscriptions, cohorts }: Props) {
   const [aiInsight, setAiInsight] = useState('')
   const [aiLoading, setAiLoading] = useState(false)
   const [syncing, setSyncing] = useState(false)
@@ -399,7 +401,57 @@ export default function SubscriptionsDashboard({ connected, metrics, recentCance
             </div>
           )}
 
-          {/* Section 6: Adhesive Conversion Opportunity */}
+          {/* Section 6: Subscriber Cohorts */}
+          {cohorts.length > 0 && (
+            <div className="rounded-2xl border border-cream-3 bg-white p-6 shadow-sm">
+              <div className="mb-4">
+                <h2 className="font-display text-base font-semibold text-ink">Subscriber Cohorts</h2>
+                <p className="mt-0.5 text-xs text-ink-3">Subscribers grouped by start month — shows how many are still active today</p>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-cream-2 text-left">
+                      <th className="pb-2 pr-4 text-xs font-data font-medium uppercase tracking-wider text-ink-3">Cohort Month</th>
+                      <th className="pb-2 pr-4 text-xs font-data font-medium uppercase tracking-wider text-ink-3 text-right">Started</th>
+                      <th className="pb-2 pr-4 text-xs font-data font-medium uppercase tracking-wider text-ink-3 text-right">Still Active</th>
+                      <th className="pb-2 text-xs font-data font-medium uppercase tracking-wider text-ink-3">Retention</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-cream-2">
+                    {cohorts.map((c) => {
+                      const [yr, mo] = c.month.split('-')
+                      const label = new Date(Number(yr), Number(mo) - 1, 1).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+                      const pct = c.retentionRate
+                      const color = pct >= 0.7 ? 'bg-teal' : pct >= 0.4 ? 'bg-amber-400' : 'bg-red-400'
+                      return (
+                        <tr key={c.month} className="hover:bg-cream/50 transition">
+                          <td className="py-2.5 pr-4 font-medium text-ink">{label}</td>
+                          <td className="py-2.5 pr-4 text-right text-ink-2">{c.total.toLocaleString()}</td>
+                          <td className="py-2.5 pr-4 text-right text-ink-2">{c.active.toLocaleString()}</td>
+                          <td className="py-2.5">
+                            <div className="flex items-center gap-2">
+                              <div className="h-1.5 w-24 rounded-full bg-cream-2 overflow-hidden">
+                                <div className={`h-full rounded-full ${color}`} style={{ width: `${Math.round(pct * 100)}%` }} />
+                              </div>
+                              <span className={`text-xs font-semibold ${pct >= 0.7 ? 'text-teal-deep' : pct >= 0.4 ? 'text-amber-700' : 'text-red-600'}`}>
+                                {Math.round(pct * 100)}%
+                              </span>
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <p className="mt-3 text-[10px] text-ink-3">
+                Retention = subscribers from that month still active today. Recent months will appear high until subscribers have time to churn.
+              </p>
+            </div>
+          )}
+
+          {/* Section 7: Adhesive Conversion Opportunity */}
           <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6">
             <div className="flex items-start gap-3">
               <div className="mt-0.5 shrink-0 h-8 w-8 rounded-full bg-amber-100 flex items-center justify-center">
