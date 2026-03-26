@@ -109,7 +109,7 @@ export async function POST(req: NextRequest) {
   // ── Store info ──────────────────────────────────────────────────────────────
   const { data: store } = await service
     .from('stores')
-    .select('shopify_domain, name, klaviyo_api_key, gsc_refresh_token, meta_access_token, google_ads_refresh_token, ga4_refresh_token')
+    .select('shopify_domain, name, klaviyo_api_key, gsc_refresh_token, meta_access_token, google_ads_refresh_token, ga4_refresh_token, recharge_api_token, loyaltylion_token')
     .eq('id', STORE_ID)
     .single()
 
@@ -121,6 +121,8 @@ export async function POST(req: NextRequest) {
     meta_access_token: string | null
     google_ads_refresh_token: string | null
     ga4_refresh_token: string | null
+    recharge_api_token: string | null
+    loyaltylion_token: string | null
   } | null
 
   const connected: string[] = ['Shopify']
@@ -129,6 +131,8 @@ export async function POST(req: NextRequest) {
   if (s?.meta_access_token) connected.push('Meta Ads')
   if (s?.google_ads_refresh_token) connected.push('Google Ads')
   if (s?.ga4_refresh_token) connected.push('Google Analytics 4')
+  if (s?.recharge_api_token) connected.push('Recharge (Subscriptions)')
+  if (s?.loyaltylion_token) connected.push('LoyaltyLion')
 
   const systemPrompt = `You are the Store Signal AI — a business intelligence analyst for ${s?.name ?? 'this store'} (${s?.shopify_domain ?? 'their Shopify store'}).
 
@@ -142,12 +146,16 @@ Your job is to answer business questions clearly and directly, using real data. 
 - Use plain language: the audience is a business owner, not a data analyst
 - Format numbers as currency where appropriate ($1,234)
 - When showing lists of customers or campaigns, format them clearly
+- For subscription questions use get_subscription_data; for loyalty use get_loyalty_data; for SEO use get_seo_intelligence
+- For product bundle/affinity questions use get_product_affinities; for individual customer profiles use get_customer_profile
 
 About this business:
 - Store: ${s?.shopify_domain ?? 'lashboxla.myshopify.com'}
 - Industry: Professional eyelash extension supplies (B2B-adjacent)
 - Customer type: Professional lash artists and estheticians — need-based, professional buyers
 - Key insight: Customers restock based on inventory needs, not promotional incentives. Urgency-based promotions underperform; product-focused and professional-validation messaging outperforms.
+- Subscription product: Adhesive (lash glue) is the #1 subscription product — customers deplete on a predictable cadence (every 3–6 weeks)
+- Loyalty program: Multi-tier (Glow, Allure, Icon, Empire) with 56,000+ members; top tiers are B2B salon buyers
 - Connected platforms: ${connected.join(', ')}
 
 When you don't have data for something (e.g. a platform isn't connected), say so clearly and explain what connecting it would enable.${contextSnippet}`

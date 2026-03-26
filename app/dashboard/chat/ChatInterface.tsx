@@ -26,14 +26,14 @@ interface ToolStatus {
 }
 
 const SUGGESTED_PROMPTS = [
-  'Why are sales declining?',
-  'Who are my top 10 customers?',
-  'Which email campaigns are working?',
-  'What should I do with my ad budget?',
-  'Which promotions are worth running?',
-  'How is my organic search performing?',
-  'Which customers are at risk of churning?',
-  "What's my most profitable product?",
+  'Which customers buy adhesive but aren\'t on subscription?',
+  'What are my top 10 customers by lifetime value?',
+  'Which email flows are generating the most revenue?',
+  'Which products are most commonly bought together?',
+  'Who are my at-risk customers I should win back?',
+  'How is my organic search traffic trending?',
+  'What\'s my subscription churn rate and how can I reduce it?',
+  'Which ad campaigns have the best ROAS?',
 ]
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -182,6 +182,41 @@ function renderInline(text: string): React.ReactNode {
         return part
       })}
     </>
+  )
+}
+
+// ── Copy button ───────────────────────────────────────────────────────────────
+
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false)
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(text)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+  return (
+    <button
+      onClick={handleCopy}
+      className="flex items-center gap-1 text-[10px] font-medium text-ink-3 hover:text-ink-2 transition"
+      title="Copy to clipboard"
+    >
+      {copied ? (
+        <>
+          <svg className="h-3 w-3 text-teal" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M2 6l3 3 5-5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          Copied
+        </>
+      ) : (
+        <>
+          <svg className="h-3 w-3" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
+            <rect x="4" y="4" width="7" height="7" rx="1" />
+            <path d="M8 4V2a1 1 0 00-1-1H2a1 1 0 00-1 1v5a1 1 0 001 1h2" />
+          </svg>
+          Copy
+        </>
+      )}
+    </button>
   )
 }
 
@@ -571,6 +606,11 @@ export default function ChatInterface({
                         ? renderMarkdown(msg.content)
                         : msg.content
                       }
+                      {msg.role === 'assistant' && (
+                        <div className="mt-2 flex items-center gap-2 pt-1 border-t border-cream-2">
+                          <CopyButton text={msg.content} />
+                        </div>
+                      )}
                     </div>
                   </div>
 
