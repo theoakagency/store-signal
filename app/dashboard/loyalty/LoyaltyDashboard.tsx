@@ -154,6 +154,7 @@ export default function LoyaltyDashboard({ connected, metrics, totalCustomers }:
   const redeemers = m?.top_redeemers ?? []
   const rewards = m?.rewards_catalog ?? []
   const { sortedData: sortedPromos, sortColumn: promoSort, sortDirection: promoDir, handleSort: promoHandleSort } = useSortableTable(promos as unknown as Record<string, unknown>[], 'lift_pct', 'desc')
+  const { sortedData: sortedRewards, sortColumn: rwSort, sortDirection: rwDir, handleSort: rwHandleSort } = useSortableTable(rewards as unknown as Record<string, unknown>[], 'redemptions_count', 'desc')
   const enrollmentPct = totalCustomers > 0 && m ? (m.enrolled_customers ?? 0) / totalCustomers : 0
   const lowRedemption = m ? (m.redemption_rate ?? 0) < 0.1 : false
 
@@ -406,15 +407,15 @@ export default function LoyaltyDashboard({ connected, metrics, totalCustomers }:
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-cream-2 text-left">
-                      <th className="pb-2 pr-4 text-xs font-data font-medium uppercase tracking-wider text-ink-3">Reward</th>
-                      <th className="pb-2 pr-3 text-xs font-data font-medium uppercase tracking-wider text-ink-3 text-right">Points Cost</th>
-                      <th className="pb-2 pr-3 text-xs font-data font-medium uppercase tracking-wider text-ink-3 text-right">Dollar Value</th>
+                      <th className={`pb-2 pr-4 text-xs font-data font-medium uppercase tracking-wider text-ink-3 ${thCls('name', rwSort)}`} onClick={() => rwHandleSort('name')}>Reward<SortIcon column="name" sortColumn={rwSort} sortDirection={rwDir} /></th>
+                      <th className={`pb-2 pr-3 text-xs font-data font-medium uppercase tracking-wider text-ink-3 text-right ${thCls('points_price', rwSort)}`} onClick={() => rwHandleSort('points_price')}>Points Cost<SortIcon column="points_price" sortColumn={rwSort} sortDirection={rwDir} /></th>
+                      <th className={`pb-2 pr-3 text-xs font-data font-medium uppercase tracking-wider text-ink-3 text-right ${thCls('dollar_value', rwSort)}`} onClick={() => rwHandleSort('dollar_value')}>Dollar Value<SortIcon column="dollar_value" sortColumn={rwSort} sortDirection={rwDir} /></th>
                       <th className="pb-2 pr-3 text-xs font-data font-medium uppercase tracking-wider text-ink-3 text-right">Discount</th>
-                      <th className="pb-2 text-xs font-data font-medium uppercase tracking-wider text-ink-3 text-right">Redemptions</th>
+                      <th className={`pb-2 text-xs font-data font-medium uppercase tracking-wider text-ink-3 text-right ${thCls('redemptions_count', rwSort)}`} onClick={() => rwHandleSort('redemptions_count')}>Redemptions<SortIcon column="redemptions_count" sortColumn={rwSort} sortDirection={rwDir} /></th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-cream-2">
-                    {rewards.sort((a, b) => b.redemptions_count - a.redemptions_count).map((r) => (
+                    {(sortedRewards as unknown as RewardRow[]).map((r) => (
                       <tr key={r.id} className="hover:bg-cream/50 transition">
                         <td className="py-2.5 pr-4 font-medium text-ink">{r.name}</td>
                         <td className="py-2.5 pr-3 text-right font-data text-ink-2">{fmt(r.points_price)} pts</td>
@@ -429,6 +430,36 @@ export default function LoyaltyDashboard({ connected, metrics, totalCustomers }:
                     ))}
                   </tbody>
                 </table>
+              </div>
+            </div>
+          )}
+
+          {/* Section 7: Win-back opportunity callout */}
+          {lowRedemption && (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6">
+              <div className="flex items-start gap-3">
+                <div className="mt-0.5 shrink-0 h-8 w-8 rounded-full bg-amber-100 flex items-center justify-center">
+                  <svg className="h-4 w-4 text-amber-700" viewBox="0 0 20 20" fill="currentColor">
+                    <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/>
+                  </svg>
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-display font-semibold text-amber-900">Low Engagement — Points Win-Back Opportunity</h3>
+                  <p className="mt-1 text-sm text-amber-800">
+                    Only <strong>{fmtPct(m.redemption_rate)}</strong> of issued points are being redeemed.
+                    Members with large unredeemed balances are at risk of disengaging — remind them before they forget.
+                  </p>
+                  <p className="mt-2 text-xs text-amber-700">
+                    Avg points balance: <strong>{fmt(m.avg_points_balance)} pts</strong> ({fmtUsd(m.points_liability_value)} unredeemed value).
+                    A targeted Klaviyo campaign to members with 500+ points could drive significant re-engagement.
+                  </p>
+                  <Link
+                    href="/dashboard/chat?q=My+loyalty+redemption+rate+is+low.+What+Klaviyo+win-back+campaigns+should+I+run+for+members+with+large+unredeemed+point+balances%3F"
+                    className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-amber-700 px-4 py-2 text-xs font-semibold text-white hover:bg-amber-800 transition"
+                  >
+                    Ask AI for win-back strategy →
+                  </Link>
+                </div>
               </div>
             </div>
           )}
