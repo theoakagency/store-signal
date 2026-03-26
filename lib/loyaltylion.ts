@@ -66,7 +66,7 @@ async function fetchAllPages<T>(
   path: string,
   params: Record<string, string> = {},
   secret?: string | null,
-  maxPages = 20
+  maxPages = 200
 ): Promise<T[]> {
   const results: T[] = []
   let cursor: string | null = null
