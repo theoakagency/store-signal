@@ -1,5 +1,5 @@
 import { createSupabaseServiceClient } from '@/lib/supabase'
-import { getCustomers, getActivities, getRewards, getCampaigns } from '@/lib/loyaltylion'
+import { getCustomers, getActivities, getRewards, getCampaigns, type LoyaltyActivity } from '@/lib/loyaltylion'
 
 const TENANT_ID = '00000000-0000-0000-0000-000000000001'
 const STORE_ID  = '00000000-0000-0000-0000-000000000002'
@@ -24,26 +24,30 @@ interface PromotionResult {
 export async function runLoyaltySync(token: string, secret: string | null) {
   const service = createSupabaseServiceClient()
 
-  const thirtyDaysAgoISO = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
-  const twelveMonthsAgoISO = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString()
   const now = new Date().toISOString()
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
 
-  // ── Step 1: Fetch customers, rewards, campaigns in parallel (fast) ────────────
+  // ── Step 1: Fetch customers, rewards, campaigns in parallel ───────────────────
   const [customers, rewards, campaigns] = await Promise.all([
     getCustomers(token, secret),
     getRewards(token, secret).catch(() => []),
     getCampaigns(token, secret).catch(() => []),
   ])
 
-  // ── Step 2: Fetch activities — 30d for metrics, 12mo only if needed ───────────
-  // The activities endpoint may return cross-merchant data, which causes excessive
-  // pagination when fetching 12 months. Only go back 12 months if there are
-  // completed campaigns that need lift analysis.
+  // ── Step 2: Fetch activities ONLY for campaign lift analysis ──────────────────
+  // The activities endpoint paginates through cross-merchant data — fetching it
+  // unconditionally causes 504 timeouts. Core metrics are derived from customer
+  // balance fields (points_approved, points_spent) which are already on Step 1.
   const completedCampaigns = campaigns.filter(
     (c) => c.started_at && c.ended_at && new Date(c.ended_at) < new Date()
   )
-  const activityFrom = completedCampaigns.length > 0 ? twelveMonthsAgoISO : thirtyDaysAgoISO
-  const activities = await getActivities(token, { from: activityFrom, to: now }, secret)
+  let activities: LoyaltyActivity[] = []
+  if (completedCampaigns.length > 0) {
+    const earliestCampStart = completedCampaigns
+      .map((c) => c.started_at!)
+      .sort()[0]
+    activities = await getActivities(token, { from: earliestCampStart, to: now }, secret)
+  }
 
   // ── Upsert loyalty_customers ─────────────────────────────────────────────────
   if (customers.length > 0) {
@@ -89,31 +93,22 @@ export async function runLoyaltySync(token: string, secret: string | null) {
     }
   }
 
-  // ── Compute core metrics ──────────────────────────────────────────────────────
-  // Filter to only our enrolled customers' emails to avoid cross-merchant activity noise.
-  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
-
-  const ownActivities30d = activities.filter((a) => {
-    const email = a.customer?.email?.toLowerCase().trim()
-    return email && enrolledEmails.has(email) && new Date(a.created_at) >= thirtyDaysAgo
-  })
-
-  // Include all states (approved + pending) so purchase points count toward issued.
-  // Pending purchase activities (state = "pending") represent real points in-flight.
-  const points_issued_30d = ownActivities30d
-    .filter((a) => a.value > 0)
-    .reduce((s, a) => s + a.value, 0)
-
-  const points_redeemed_30d = ownActivities30d
-    .filter((a) => a.value < 0)
-    .reduce((s, a) => s + Math.abs(a.value), 0)
+  // ── Compute core metrics from customer balance fields ─────────────────────────
+  // points_approved = current unredeemed balance; points_spent = lifetime redeemed.
+  // For customers enrolled in the last 30d, total issued = approved + spent.
+  // This avoids hitting the activities endpoint for routine metric computation.
+  const enrolledLast30d = customers.filter(
+    (c) => c.enrolled_at && new Date(c.enrolled_at) >= thirtyDaysAgo
+  )
+  const points_issued_30d = enrolledLast30d.reduce(
+    (s, c) => s + (c.points_approved ?? 0) + (c.points_spent ?? 0), 0
+  )
+  const points_redeemed_30d = enrolledLast30d.reduce(
+    (s, c) => s + (c.points_spent ?? 0), 0
+  )
+  const active_redeemers_30d = customers.filter((c) => (c.points_spent ?? 0) > 0).length
 
   const redemption_rate = points_issued_30d > 0 ? points_redeemed_30d / points_issued_30d : 0
-
-  const redeemerEmails30d = new Set(
-    ownActivities30d.filter((a) => a.value < 0).map((a) => a.customer?.email?.toLowerCase().trim())
-  )
-  const active_redeemers_30d = redeemerEmails30d.size
 
   const avg_points_balance = customers.length > 0
     ? customers.reduce((s, c) => s + (c.points_approved ?? 0), 0) / customers.length
