@@ -271,6 +271,18 @@ export default function NavLinks({
         Integrations
       </Link>
 
+      <Link
+        href="/dashboard/data-audit"
+        onClick={onNavigate}
+        className={`nav-link ${isActive('/dashboard/data-audit') ? 'active' : ''}`}
+      >
+        <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+          <path d="M13 2H3a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1z" />
+          <path d="M5 8l2 2 4-4" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        Data Audit
+      </Link>
+
     </nav>
   )
 }
