@@ -1646,7 +1646,143 @@ export default function IntegrationsClient({
             )}
           </div>
         </section>
+
+        {/* ── Data Notes ─────────────────────────────────────────────────────── */}
+        <DataNotes />
       </div>
     </>
+  )
+}
+
+// ── Data Notes collapsible ─────────────────────────────────────────────────────
+
+function DataNotes() {
+  const [open, setOpen] = useState(false)
+
+  const notes: { title: string; items: string[] }[] = [
+    {
+      title: 'Shopify',
+      items: [
+        'Orders and customers are synced incrementally every 2 hours. New orders may be up to 2 hours delayed.',
+        'Order history is capped at 24 months. Revenue, AOV, repeat-purchase rates, and LTV figures only cover orders placed in the last 24 months — they are understated for customers with longer purchase histories.',
+        'The "Total Customers" count reflects unique email addresses with at least one paid order.',
+      ],
+    },
+    {
+      title: 'Klaviyo',
+      items: [
+        'Campaign and flow metrics are synced every 6 hours and cover the last 12 months (Klaviyo API limit). Older campaigns are not included.',
+        'Revenue attribution follows Klaviyo\'s default 5-day click / 1-day open attribution window.',
+        'Unsubscribe cost is estimated as unsubscribes × average 12-month Shopify LTV — it may overstate the true cost if some unsubscribers would have churned anyway.',
+      ],
+    },
+    {
+      title: 'Meta Ads',
+      items: [
+        'Campaign data covers the last 90 days. Older campaigns are not shown.',
+        'ROAS is calculated as purchase_value ÷ spend from Meta\'s own attribution. This differs from GA4-attributed revenue and should not be compared directly.',
+        'When the Meta access token expires, syncs will fail silently. Reconnect via Integrations.',
+      ],
+    },
+    {
+      title: 'Google Ads',
+      items: [
+        'If Google Ads API developer token is pending approval, spend data will not be available and campaign revenue is sourced from GA4 instead.',
+        'Google Ads and GA4 use separate OAuth scopes. Connecting one does not connect the other.',
+        'Campaign data covers the last 90 days.',
+      ],
+    },
+    {
+      title: 'Google Analytics (GA4)',
+      items: [
+        'Sessions, conversions, and ecommerce metrics cover the last 90 days.',
+        'Revenue reported by GA4 may differ from Shopify revenue due to attribution model differences (GA4 uses last-click by default).',
+      ],
+    },
+    {
+      title: 'Google Search Console',
+      items: [
+        'Keyword and page data covers the last 90 days (GSC API limit). Monthly click trend covers 12 months.',
+        'GSC data is typically delayed 2–3 days. Very recent traffic will not appear.',
+        'Only the top 50 keywords and top 100 pages by clicks are synced.',
+      ],
+    },
+    {
+      title: 'SEMrush',
+      items: [
+        'Organic keyword rankings are a current snapshot, not a time series. Position changes show movement vs. the previous snapshot.',
+        'Keyword gap data shows terms where competitors rank but we do not — this is also a point-in-time snapshot.',
+        'Each sync consumes SEMrush API units. If the account runs out of units, syncs are skipped automatically.',
+      ],
+    },
+    {
+      title: 'Recharge (Subscriptions)',
+      items: [
+        'Active subscriber count and MRR reflect current state at the time of last sync.',
+        'Churn rate is calculated over a rolling 30-day window.',
+        'Subscriber vs. non-subscriber LTV comparison uses Shopify order history (24-month cap) — understated for long-standing customers.',
+      ],
+    },
+    {
+      title: 'LoyaltyLion',
+      items: [
+        'The LoyaltyLion API returns approximately 20,000 recently-active members regardless of pagination settings. The actual enrolled count is 56,824+ — redemption rates and tier LTV figures are understated.',
+        'Tier LTV is derived from Shopify order history (24-month cap), not from LoyaltyLion\'s own revenue tracking.',
+        'Active redeemers and redemption rate cover the last 30 days.',
+      ],
+    },
+    {
+      title: 'Customer Intelligence',
+      items: [
+        'Customer profiles (segments, LTV tiers, engagement scores) are rebuilt nightly at 3am. Same-day order changes will not appear until the next rebuild.',
+        'LTV segments (Diamond / Gold / Silver / Bronze) are based on 24-month Shopify revenue — understated for customers with longer histories.',
+        'Segment counts (VIP / Active / At Risk / Lapsed / New) require at least one full profile build after migration 022 to be populated.',
+      ],
+    },
+    {
+      title: 'Product Intelligence',
+      items: [
+        'Product stats, affinity pairs, and purchase sequences are rebuilt daily at 5am and read all paid orders in Shopify history (up to 24 months).',
+        'Affinity pairs require at least 5 co-purchases to appear. Purchase sequences require at least 3 occurrences.',
+        'The "first_purchase_leads_to_second" metric currently duplicates repeat_purchase_rate — a more precise version is planned.',
+      ],
+    },
+  ]
+
+  return (
+    <section className="mt-8 rounded-2xl border border-cream-3 bg-white shadow-sm overflow-hidden">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center justify-between px-6 py-4 text-left hover:bg-cream/50 transition"
+      >
+        <span className="font-display text-sm font-semibold text-ink">Data Notes &amp; Known Limitations</span>
+        <svg
+          className={`h-4 w-4 text-ink-3 transition-transform ${open ? 'rotate-180' : ''}`}
+          fill="none"
+          viewBox="0 0 16 16"
+          stroke="currentColor"
+          strokeWidth={2}
+        >
+          <path d="M4 6l4 4 4-4" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+      {open && (
+        <div className="border-t border-cream-3 px-6 py-5 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          {notes.map((section) => (
+            <div key={section.title}>
+              <p className="font-display text-xs font-semibold text-ink mb-2">{section.title}</p>
+              <ul className="space-y-1.5">
+                {section.items.map((item, i) => (
+                  <li key={i} className="flex gap-2 text-[11px] text-ink-3 leading-relaxed">
+                    <span className="mt-1 h-1 w-1 shrink-0 rounded-full bg-ink-3" />
+                    {item}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
   )
 }
