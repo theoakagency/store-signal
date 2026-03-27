@@ -87,52 +87,60 @@ export async function POST(_req: NextRequest) {
   // Build context
   const sections: string[] = []
 
+  // Build date labels for context
+  const now = new Date()
+  const d90Start = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000)
+  const d30Start = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+  const fmtDate = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  const window30 = `${fmtDate(d30Start)} – ${fmtDate(now)}`
+  const window90 = `${fmtDate(d90Start)} – ${fmtDate(now)}`
+
   if (Object.keys(shopify).length > 0) {
-    sections.push(`SHOPIFY (30d vs prior 30d):
-- Revenue: $${(shopify['revenue_30d'] ?? 0).toFixed(0)} (prior: $${(shopify['revenue_30d_prior'] ?? 0).toFixed(0)})
-- Orders: ${(shopify['order_count_30d'] ?? 0).toFixed(0)} (prior: ${(shopify['order_count_30d_prior'] ?? 0).toFixed(0)})
-- AOV: $${(shopify['aov_30d'] ?? 0).toFixed(2)}
-- Customers: ${(shopify['customer_count'] ?? 0).toFixed(0)}
-- Avg LTV: $${(shopify['avg_ltv'] ?? 0).toFixed(2)}`)
+    sections.push(`SHOPIFY — last 30 days (${window30}):
+- Revenue (last 30d): $${(shopify['revenue_30d'] ?? 0).toFixed(0)} vs $${(shopify['revenue_30d_prior'] ?? 0).toFixed(0)} prior 30d
+- Orders (last 30d): ${(shopify['order_count_30d'] ?? 0).toFixed(0)} vs ${(shopify['order_count_30d_prior'] ?? 0).toFixed(0)} prior 30d
+- AOV (last 30d): $${(shopify['aov_30d'] ?? 0).toFixed(2)}
+- Total unique customers (24-month history): ${(shopify['customer_count'] ?? 0).toFixed(0)}
+- Avg LTV (24-month Shopify history — understated for long-standing customers): $${(shopify['avg_ltv'] ?? 0).toFixed(2)}`)
   }
 
   if (channelCache && channelCache.length > 0) {
     const total = channelCache.reduce((s, c) => s + c.revenue, 0)
-    sections.push(`SALES CHANNELS (30d):
-${channelCache.sort((a, b) => b.revenue - a.revenue).map((c) => `- ${c.channel_name}: $${c.revenue.toFixed(0)} (${total > 0 ? ((c.revenue / total) * 100).toFixed(0) : 0}%)`).join('\n')}`)
+    sections.push(`SHOPIFY SALES CHANNELS — last 30 days (${window30}):
+${channelCache.sort((a, b) => b.revenue - a.revenue).map((c) => `- ${c.channel_name}: $${c.revenue.toFixed(0)} (${total > 0 ? ((c.revenue / total) * 100).toFixed(0) : 0}% of revenue)`).join('\n')}`)
   }
 
   if (Object.keys(klaviyo).length > 0) {
-    sections.push(`EMAIL / KLAVIYO:
-- Total email revenue: $${(klaviyo['total_email_flow_revenue'] ?? 0 + (klaviyo['total_campaign_revenue'] ?? 0)).toFixed(0)}
-- Avg campaign open rate: ${((klaviyo['avg_campaign_open_rate'] ?? 0) * 100).toFixed(1)}%
-- Email campaigns: ${(klaviyo['email_campaign_count'] ?? 0).toFixed(0)}
-- SMS campaigns: ${(klaviyo['sms_campaign_count'] ?? 0).toFixed(0)}
-- Flow revenue: $${(klaviyo['total_email_flow_revenue'] ?? 0).toFixed(0)}`)
+    sections.push(`EMAIL / KLAVIYO — last 12 months (Klaviyo attribution limit):
+- Total email + flow revenue (last 12 months, Klaviyo attribution): $${(klaviyo['total_email_flow_revenue'] ?? 0 + (klaviyo['total_campaign_revenue'] ?? 0)).toFixed(0)}
+- Avg campaign open rate (last 12 months): ${((klaviyo['avg_campaign_open_rate'] ?? 0) * 100).toFixed(1)}%
+- Email campaigns sent (last 12 months): ${(klaviyo['email_campaign_count'] ?? 0).toFixed(0)}
+- SMS campaigns sent (last 12 months): ${(klaviyo['sms_campaign_count'] ?? 0).toFixed(0)}
+- Flow revenue (last 12 months, Klaviyo attribution): $${(klaviyo['total_email_flow_revenue'] ?? 0).toFixed(0)}`)
   }
 
   if (Object.keys(meta).length > 0) {
-    sections.push(`META ADS (30d):
-- Spend: $${(meta['total_ad_spend_30d'] ?? 0).toFixed(0)}
-- ROAS: ${(meta['total_roas_30d'] ?? 0).toFixed(2)}×
-- Cost per purchase: $${(meta['cost_per_purchase_30d'] ?? 0).toFixed(0)}
-- Purchases: ${(meta['total_purchases_30d'] ?? 0).toFixed(0)}
+    sections.push(`META ADS — last 90 days (${window90}):
+- Spend (last 90 days): $${(meta['total_ad_spend_30d'] ?? 0).toFixed(0)}
+- ROAS (last 90 days): ${(meta['total_roas_30d'] ?? 0).toFixed(2)}×
+- Cost per purchase (last 90 days): $${(meta['cost_per_purchase_30d'] ?? 0).toFixed(0)}
+- Purchases (last 90 days): ${(meta['total_purchases_30d'] ?? 0).toFixed(0)}
 - Campaigns below 1× ROAS: ${(meta['campaigns_below_1x_roas'] ?? 0).toFixed(0)}`)
   }
 
   if (Object.keys(google).length > 0) {
-    sections.push(`GOOGLE ADS (30d):
-- Spend: $${(google['total_ad_spend_30d'] ?? 0).toFixed(0)}
-- ROAS: ${(google['total_roas_30d'] ?? 0).toFixed(2)}×
-- Cost per conversion: $${(google['cost_per_conversion_30d'] ?? 0).toFixed(0)}
-- Conversions: ${(google['total_conversions_30d'] ?? 0).toFixed(0)}
+    sections.push(`GOOGLE ADS — last 90 days (${window90}):
+- Spend (last 90 days): $${(google['total_ad_spend_30d'] ?? 0).toFixed(0)}
+- ROAS (last 90 days): ${(google['total_roas_30d'] ?? 0).toFixed(2)}×
+- Cost per conversion (last 90 days): $${(google['cost_per_conversion_30d'] ?? 0).toFixed(0)}
+- Conversions (last 90 days): ${(google['total_conversions_30d'] ?? 0).toFixed(0)}
 - Campaigns below 1× ROAS: ${(google['campaigns_below_1x_roas'] ?? 0).toFixed(0)}`)
   }
 
   if (gscTotal90 > 0 || (gscKeywords?.length ?? 0) > 0) {
-    sections.push(`ORGANIC SEARCH (GSC):
-- Traffic trend: ${gscTrendPct != null ? `${gscTrendPct >= 0 ? '+' : ''}${gscTrendPct.toFixed(1)}% vs prior 90 days` : 'insufficient data'}
-- Top keywords: ${(gscKeywords ?? []).map((k) => `"${k.query}" (pos ${(k.position ?? 0).toFixed(1)}, ${k.clicks} clicks)`).join(', ')}`)
+    sections.push(`ORGANIC SEARCH / GSC — last 90 days (${window90}):
+- Click trend (last 90 days vs prior 90 days): ${gscTrendPct != null ? `${gscTrendPct >= 0 ? '+' : ''}${gscTrendPct.toFixed(1)}%` : 'insufficient data'}
+- Top keywords by clicks (current snapshot): ${(gscKeywords ?? []).map((k) => `"${k.query}" (pos ${(k.position ?? 0).toFixed(1)}, ${k.clicks} clicks/90d)`).join(', ')}`)
   }
 
   // GA4 traffic intelligence
@@ -145,12 +153,12 @@ ${channelCache.sort((a, b) => b.revenue - a.revenue).map((c) => `- ${c.channel_n
     const topChannels = (ga4Sessions ?? []).slice(0, 4)
     const totalSessions = (ga4Sessions ?? []).reduce((s, r) => s + r.sessions, 0)
 
-    sections.push(`GOOGLE ANALYTICS 4 (90d):
-- Total sessions: ${(ga4['ga4_sessions_90d'] ?? totalSessions).toFixed(0)}
-- Ecommerce conversion rate: ${(ga4['ga4_conversion_rate_90d'] ?? 0).toFixed(2)}%
-- GA4 revenue: $${(ga4['ga4_revenue_90d'] ?? 0).toFixed(0)} (${(ga4['ga4_transactions_90d'] ?? 0).toFixed(0)} transactions)
-- Month-over-month sessions: ${momPct != null ? `${momPct >= 0 ? '+' : ''}${momPct.toFixed(1)}%` : 'insufficient data'}
-- Channel breakdown: ${topChannels.map((r) => `${r.channel} ${totalSessions > 0 ? Math.round((r.sessions / totalSessions) * 100) : 0}%`).join(', ')}`)
+    sections.push(`GOOGLE ANALYTICS 4 — last 90 days (${window90}):
+- Total sessions (last 90 days): ${(ga4['ga4_sessions_90d'] ?? totalSessions).toFixed(0)}
+- Ecommerce conversion rate (last 90 days): ${(ga4['ga4_conversion_rate_90d'] ?? 0).toFixed(2)}%
+- GA4-attributed revenue (last 90 days): $${(ga4['ga4_revenue_90d'] ?? 0).toFixed(0)} (${(ga4['ga4_transactions_90d'] ?? 0).toFixed(0)} transactions)
+- Month-over-month session change: ${momPct != null ? `${momPct >= 0 ? '+' : ''}${momPct.toFixed(1)}%` : 'insufficient data'}
+- Channel mix (last 90 days): ${topChannels.map((r) => `${r.channel} ${totalSessions > 0 ? Math.round((r.sessions / totalSessions) * 100) : 0}%`).join(', ')}`)
   }
 
   if (sections.length === 0) {
@@ -159,7 +167,16 @@ ${channelCache.sort((a, b) => b.revenue - a.revenue).map((c) => `- ${c.channel_n
 
   const dataStr = sections.join('\n\n')
 
-  const systemPrompt = `You are analyzing cross-platform business intelligence for LashBox LA (lashboxla.com), a professional eyelash extension supply store. You have data from Shopify, Klaviyo email, Meta Ads, Google Ads, Google Search Console, and Google Analytics 4. Your job is to find insights that connect data ACROSS platforms — things you can only see by looking at all the data together. Do not repeat single-platform summaries. Focus on relationships, inefficiencies, and opportunities that cross platforms. When GA4 data is available, use channel breakdown and conversion rate to identify traffic quality issues or channel mix opportunities.`
+  const systemPrompt = `You are analyzing cross-platform business intelligence for LashBox LA (lashboxla.com), a professional eyelash extension supply store. You have data from Shopify, Klaviyo email, Meta Ads, Google Ads, Google Search Console, and Google Analytics 4.
+
+IMPORTANT DATA CONTEXT — read before analyzing:
+- Shopify revenue figures use a 30-day window; LTV uses a 24-month window and is UNDERSTATED for long-standing customers
+- Klaviyo revenue attribution is limited to the last 12 months by their API — do not compare directly to Shopify revenue without noting this
+- Meta Ads, Google Ads, GSC, and GA4 data all cover the last 90 days — these are directly comparable to each other
+- When comparing ad spend to email revenue, acknowledge the different attribution windows explicitly
+- Never state that two metrics are comparable if they come from different time windows
+
+Your job is to find insights that connect data ACROSS platforms — things you can only see by looking at all the data together. Do not repeat single-platform summaries. Focus on relationships, inefficiencies, and opportunities that cross platforms. When you reference a metric, always note its source platform and time window in your description.`
 
   const userPrompt = `${dataStr}
 
