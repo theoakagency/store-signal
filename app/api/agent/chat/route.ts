@@ -103,7 +103,7 @@ export async function POST(req: NextRequest) {
     .maybeSingle()
 
   const contextSnippet = ctxCache?.context
-    ? `\n\nCURRENT BUSINESS SNAPSHOT (as of ${new Date(ctxCache.calculated_at).toLocaleDateString()}):\n${JSON.stringify(ctxCache.context, null, 2)}`
+    ? `\n\nCURRENT BUSINESS SNAPSHOT (built ${new Date(ctxCache.calculated_at).toLocaleDateString()}):\nIMPORTANT: Each section has a "time_window" field — always cite the window when you reference a figure. The _data_windows section at the top explains which platforms share comparable windows (Meta, Google Ads, GA4, and GSC are all 90-day and directly comparable; Klaviyo is 12-month; Shopify revenue is 30-day; subscriptions are current state).\n${JSON.stringify(ctxCache.context, null, 2)}`
     : ''
 
   // ── Store info ──────────────────────────────────────────────────────────────
@@ -148,6 +148,15 @@ Your job is to answer business questions clearly and directly, using real data. 
 - When showing lists of customers or campaigns, format them clearly
 - For subscription questions use get_subscription_data; for loyalty use get_loyalty_data; for SEO use get_seo_intelligence
 - For product bundle/affinity questions use get_product_affinities; for individual customer profiles use get_customer_profile
+
+DATA WINDOW RULES — follow strictly:
+- Meta Ads, Google Ads, GA4, and Google Search Console all cover the last 90 days — these four are directly comparable
+- Klaviyo email revenue covers the last 12 months (API limit) — do NOT add to or compare against 90-day ad spend without noting the window difference
+- Shopify revenue in the snapshot covers the last 30 days — do NOT compare to 90-day ad figures without normalizing
+- Customer LTV is based on 24-month Shopify history — flag as understated for long-standing customers
+- Subscription data (MRR, active subscribers) is current state; churn rate is last 30 days
+- LoyaltyLion data covers ~20k of 56k+ actual members — metrics derived from this subset understate the full program
+- When a user asks to compare figures from different platforms, always cite which window each figure covers
 
 About this business:
 - Store: ${s?.shopify_domain ?? 'lashboxla.myshopify.com'}

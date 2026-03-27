@@ -34,12 +34,21 @@ export async function runAgentContextRebuild() {
 
   const s = store as { shopify_domain: string; name: string; klaviyo_api_key: string | null; gsc_refresh_token: string | null; meta_access_token: string | null; google_ads_refresh_token: string | null; ga4_refresh_token: string | null; last_synced_at: string | null; recharge_api_token: string | null; loyaltylion_token: string | null } | null
 
-  const now = Date.now()
+  const nowTs = Date.now()
+  const nowDate = new Date()
   const MS_90 = 90 * 24 * 60 * 60 * 1000
+  const fmtDate = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  const d30Start = new Date(nowTs - 30 * 24 * 60 * 60 * 1000)
+  const d90Start = new Date(nowTs - MS_90)
+  const d12mStart = new Date(nowTs - 365 * 24 * 60 * 60 * 1000)
+  const window30 = `${fmtDate(d30Start)} – ${fmtDate(nowDate)}`
+  const window90 = `${fmtDate(d90Start)} – ${fmtDate(nowDate)}`
+  const window12m = `${fmtDate(d12mStart)} – ${fmtDate(nowDate)}`
+
   const revenue30d = (recentOrders ?? []).reduce((sum, o) => sum + Number(o.total_price), 0)
   const orderCount30d = (recentOrders ?? []).length
   const allCustomers = customers ?? []
-  const lapsedCount = allCustomers.filter((c) => now - new Date(c.updated_at).getTime() > MS_90).length
+  const lapsedCount = allCustomers.filter((c) => nowTs - new Date(c.updated_at).getTime() > MS_90).length
   const vipCount = allCustomers.filter((c) => Number(c.total_spent) >= 1000 && c.orders_count >= 5).length
   const metaSpend = (metaCampaigns ?? []).reduce((a, c) => a + Number(c.spend), 0)
   const metaRevenue = (metaCampaigns ?? []).reduce((a, c) => a + Number(c.purchase_value), 0)
@@ -49,6 +58,16 @@ export async function runAgentContextRebuild() {
     + (klaviyoFlows ?? []).reduce((a, c) => a + Number(c.revenue_attributed), 0)
 
   const context = {
+    _data_windows: {
+      note: 'Each snapshot section below has a time_window field. Do NOT compare figures from different windows directly. The cross_platform_window (90d) is used for Meta, Google Ads, GA4, and GSC — these four are directly comparable.',
+      cross_platform_window: `last 90 days (${window90})`,
+      shopify_revenue_window: `last 30 days (${window30})`,
+      shopify_history_window: 'last 24 months (Shopify order history cap)',
+      klaviyo_window: `last 12 months (${window12m}) — Klaviyo API limit`,
+      recharge_window: 'current state + last 30d churn',
+      loyaltylion_window: `last 12 months — NOTE: only ~20k of 56k+ actual members returned by API`,
+      context_built_at: nowDate.toISOString(),
+    },
     business: {
       name: s?.name ?? 'Store',
       domain: s?.shopify_domain ?? '',
@@ -65,37 +84,49 @@ export async function runAgentContextRebuild() {
       },
     },
     revenue_snapshot: {
-      last_30d: Math.round(revenue30d * 100) / 100,
+      time_window: `last 30 days (${window30})`,
+      revenue_30d: Math.round(revenue30d * 100) / 100,
       order_count_30d: orderCount30d,
-      avg_order_value: orderCount30d > 0 ? Math.round((revenue30d / orderCount30d) * 100) / 100 : 0,
+      avg_order_value_30d: orderCount30d > 0 ? Math.round((revenue30d / orderCount30d) * 100) / 100 : 0,
+      ltv_note: 'Customer LTV figures are based on 24-month Shopify history — understated for long-standing customers',
     },
     customer_snapshot: {
-      total: allCustomers.length,
-      vip: vipCount,
-      lapsed: lapsedCount,
+      time_window: 'all profiled customers (24-month Shopify history)',
+      total_customers: allCustomers.length,
+      vip_customers: vipCount,
+      lapsed_customers: lapsedCount,
       lapsed_rate: allCustomers.length > 0 ? ((lapsedCount / allCustomers.length) * 100).toFixed(1) + '%' : 'N/A',
+      lapsed_definition: 'no order in last 90 days',
     },
     email_snapshot: s?.klaviyo_api_key ? {
+      time_window: `last 12 months (${window12m}) — Klaviyo API limit`,
       top_campaigns: (klaviyoCampaigns ?? []).map((c) => ({ name: c.name, revenue: Number(c.revenue_attributed) })),
       top_flows: (klaviyoFlows ?? []).map((f) => ({ name: f.name, revenue: Number(f.revenue_attributed) })),
-      total_email_revenue: Math.round(emailRevenue * 100) / 100,
+      total_email_revenue_12m: Math.round(emailRevenue * 100) / 100,
+      cross_platform_note: 'Do not add email revenue to Meta/Google revenue — different attribution windows and models',
     } : null,
     search_snapshot: s?.gsc_refresh_token ? {
+      time_window: `last 90 days (${window90})`,
       top_keywords: (gscKeywords ?? []).map((k) => ({ keyword: k.keyword, clicks: k.clicks, position: Number(k.position).toFixed(1) })),
     } : null,
     ads_snapshot: s?.meta_access_token ? {
+      time_window: `last 90 days (${window90}) — directly comparable to GA4 and GSC`,
       meta_spend_90d: Math.round(metaSpend * 100) / 100,
-      meta_roas: Math.round(metaRoas * 100) / 100,
+      meta_roas_90d: Math.round(metaRoas * 100) / 100,
       google_revenue_90d: Math.round(googleRevenue * 100) / 100,
     } : null,
     top_promotions: (promotions ?? []).map((p) => ({ name: p.name, score: p.score })),
     subscription_snapshot: rechargeMetrics ? {
+      time_window: 'current state (active subscribers as of last sync)',
+      churn_window: 'last 30 days',
       active_subscribers: rechargeMetrics.active_subscribers,
       mrr: rechargeMetrics.mrr,
       arr: rechargeMetrics.arr,
       churn_rate_30d: rechargeMetrics.churn_rate_30d,
     } : null,
     loyalty_snapshot: loyaltyMetrics ? {
+      time_window: `last 12 months (${window12m})`,
+      data_coverage_note: '~20k of 56k+ actual enrolled members — LoyaltyLion API limitation',
       enrolled_customers: loyaltyMetrics.enrolled_customers,
       redemption_rate: loyaltyMetrics.redemption_rate,
       points_liability_value: loyaltyMetrics.points_liability_value,
