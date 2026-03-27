@@ -299,6 +299,7 @@ function LtvSegments({
           <span className="text-ink-2">Run "Build Profiles" to update</span>
         </p>
       )}
+      <p className="mt-1 text-[11px] text-ink-3">LTV based on 24 months of Shopify order history — understated for customers acquired before that window.</p>
     </div>
   )
 }

@@ -433,7 +433,7 @@ export default function KlaviyoDashboard({ connected, campaigns, flows, metrics 
             <MetricCard
               label="Est. Unsubscribe Cost"
               value={usd(estUnsubCost)}
-              sub="unsubs × avg LTV · 12 months"
+              sub="unsubs × avg LTV (24mo Shopify) · 12 months"
             />
           </div>
 

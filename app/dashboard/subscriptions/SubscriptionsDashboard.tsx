@@ -341,6 +341,7 @@ export default function SubscriptionsDashboard({ connected, metrics, recentCance
                   </div>
                 ))}
               </div>
+              <p className="mt-3 text-[11px] text-ink-3">LTV based on 24 months of Shopify order history — understated for customers acquired before that window.</p>
             </div>
           )}
 
