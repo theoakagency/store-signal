@@ -11,6 +11,11 @@ export async function POST(req: NextRequest) {
 
   const { metrics } = await req.json() as { metrics: Record<string, unknown> }
 
+  const now = new Date()
+  const d30Start = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+  const d12mStart = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000)
+  const fmtDate = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-6',
@@ -19,6 +24,13 @@ export async function POST(req: NextRequest) {
       role: 'user',
       content: `You are a loyalty program analyst for a professional eyelash extension supply company.
 Analyze these loyalty program metrics and answer these key business questions.
+
+DATA CONTEXT — time windows for each metric type:
+- enrolled_count, tier_breakdown, points_balance: current snapshot (~20k of 56k+ actual members — LoyaltyLion API limitation)
+- active_redeemers, redemption_rate: last 30 days (${fmtDate(d30Start)} – ${fmtDate(now)})
+- promotion_response_rate, campaign lift: last 12 months (${fmtDate(d12mStart)} – ${fmtDate(now)})
+- tier LTV figures: derived from Shopify order history (last 12 months, understated for long-standing customers)
+- Do NOT cross-compare figures from different time windows
 
 Metrics:
 ${JSON.stringify(metrics, null, 2)}

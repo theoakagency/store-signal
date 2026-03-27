@@ -47,24 +47,32 @@ export async function POST(_req: NextRequest) {
     ? ((latestTraffic - priorTraffic) / priorTraffic * 100).toFixed(1) + '%'
     : 'N/A'
 
+  const now = new Date()
+  const d30Start = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+  const d90Start = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000)
+  const fmtDate = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  const window30 = `${fmtDate(d30Start)} – ${fmtDate(now)}`
+  const window90 = `${fmtDate(d90Start)} – ${fmtDate(now)}`
+
   const context = `
-SEO DATA SUMMARY:
+SEO DATA SUMMARY — LashBox LA (lashboxla.com)
+DATA NOTE: Keyword rankings are current snapshot. Traffic trend covers last 90 days (${window90}). Gained/lost counts cover last 30 days (${window30}).
 - Organic keywords ranking: ${metrics.organic_keywords_total?.toLocaleString() ?? 'unknown'}
 - Est. monthly organic traffic: ${metrics.organic_traffic_estimate?.toLocaleString() ?? 'unknown'}
-- Traffic change (last 3 months): ${trafficChange}
-- Keywords lost in last 30 days: ${metrics.lost_keywords_30d ?? 0}
-- Keywords gained in last 30 days: ${metrics.gained_keywords_30d ?? 0}
+- Traffic change (last 90 days, ${window90}): ${trafficChange}
+- Keywords lost (last 30 days, ${window30}): ${metrics.lost_keywords_30d ?? 0}
+- Keywords gained (last 30 days, ${window30}): ${metrics.gained_keywords_30d ?? 0}
 
-TOP COMPETITORS:
+TOP COMPETITORS (current snapshot):
 ${(competitors ?? []).map((c) => `- ${c.domain}: ${c.common_keywords} common keywords, ~${c.organic_traffic?.toLocaleString()} organic traffic`).join('\n')}
 
-LOST RANKINGS (top by search volume):
+LOST RANKINGS — last 30 days (${window30}), top by search volume:
 ${(lostKeywords ?? []).map((k) => `- "${k.keyword}": was #${k.previous_position}, now #${k.position} (dropped ${k.position_change}, ${k.search_volume?.toLocaleString()} monthly searches)`).join('\n')}
 
-KEYWORD GAPS (competitor ranking, we're not):
+KEYWORD GAPS — competitor ranking, we're not (current snapshot):
 ${(gaps ?? []).map((g) => `- "${g.keyword}": ${g.competitor_domain} ranks #${g.competitor_position}, we rank ${g.our_position ? '#' + g.our_position : 'not at all'} (${g.search_volume?.toLocaleString()} monthly searches)`).join('\n')}
 
-QUICK WIN OPPORTUNITIES (positions 4-10):
+QUICK WIN OPPORTUNITIES — positions 4-10 (current snapshot):
 ${((metrics.keyword_opportunities as Array<{ keyword: string; position: number; search_volume: number }> | null) ?? []).slice(0, 5).map((k) => `- "${k.keyword}": position #${k.position}, ${k.search_volume?.toLocaleString()} monthly searches`).join('\n')}
 `.trim()
 

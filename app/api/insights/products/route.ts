@@ -48,17 +48,27 @@ export async function POST(_req: NextRequest) {
     return Response.json({ error: 'No product data — run analysis first' }, { status: 400 })
   }
 
-  const context = `
-TOP PRODUCTS BY REVENUE:
-${(topProducts).map((p) => `- "${p.product_title}": $${Number(p.total_revenue).toLocaleString()} all-time revenue ($${Number(p.revenue_12m).toLocaleString()} last 12m), ${p.unique_customers} buyers, ${(Number(p.repeat_purchase_rate) * 100).toFixed(0)}% repeat rate, ${p.avg_days_to_repurchase ? Math.round(Number(p.avg_days_to_repurchase)) + ' avg days to repurchase' : 'no repurchase data'}, ${(Number(p.subscription_conversion_rate) * 100).toFixed(0)}% subscribe`).join('\n')}
+  const now = new Date()
+  const d12mStart = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000)
+  const d90Start = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000)
+  const fmtDate = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  const window90 = `${fmtDate(d90Start)} – ${fmtDate(now)}`
+  const window12m = `${fmtDate(d12mStart)} – ${fmtDate(now)}`
 
-TOP AFFINITY PAIRS (frequently bought together, sorted by lift):
+  const context = `
+PRODUCT INTELLIGENCE — LashBox LA
+DATA NOTE: "all-time" revenue = up to 24 months of Shopify history (understated for products sold before that window). Revenue trends cover last 12 months (${window12m}). Purchase sequences track second purchase within 90 days (${window90}).
+
+TOP PRODUCTS BY ALL-TIME REVENUE (up to 24 months Shopify history):
+${(topProducts).map((p) => `- "${p.product_title}": $${Number(p.total_revenue).toLocaleString()} all-time, $${Number(p.revenue_12m).toLocaleString()} last 12 months (${window12m}), ${p.unique_customers} buyers, ${(Number(p.repeat_purchase_rate) * 100).toFixed(0)}% repeat rate, ${p.avg_days_to_repurchase ? Math.round(Number(p.avg_days_to_repurchase)) + ' avg days to repurchase' : 'no repurchase data'}, ${(Number(p.subscription_conversion_rate) * 100).toFixed(0)}% subscribe`).join('\n')}
+
+TOP AFFINITY PAIRS — frequently bought together, all-time (sorted by lift):
 ${(topAffinities ?? []).map((a) => `- "${a.product_a}" + "${a.product_b}": ${a.co_purchase_count} co-purchases, ${(Number(a.co_purchase_rate) * 100).toFixed(1)}% of orders contain both, ${Number(a.lift).toFixed(1)}× lift`).join('\n')}
 
-TOP PURCHASE SEQUENCES (first purchase → second purchase within 90 days):
-${(topSequences ?? []).map((s) => `- "${s.first_product}" → "${s.second_product}": ${s.sequence_count} customers, avg ${Math.round(Number(s.avg_days_between))} days between, avg customer LTV $${Number(s.ltv_of_customers_in_sequence).toLocaleString()}`).join('\n')}
+TOP PURCHASE SEQUENCES — first purchase → second purchase within 90 days (${window90}):
+${(topSequences ?? []).map((s) => `- "${s.first_product}" → "${s.second_product}": ${s.sequence_count} customers, avg ${Math.round(Number(s.avg_days_between))} days between, avg customer LTV $${Number(s.ltv_of_customers_in_sequence).toLocaleString()} (24-month history)`).join('\n')}
 
-SUBSCRIPTION OPPORTUNITIES (high repeat purchase rate, low subscription conversion):
+SUBSCRIPTION OPPORTUNITIES — high repeat rate, low subscription conversion (all-time):
 ${(subOpps ?? []).map((p) => `- "${p.product_title}": ${(Number(p.repeat_purchase_rate) * 100).toFixed(0)}% repeat rate, only ${(Number(p.subscription_conversion_rate) * 100).toFixed(0)}% convert to subscription, ${p.unique_customers} total buyers, reorder every ~${p.avg_days_to_repurchase ? Math.round(Number(p.avg_days_to_repurchase)) : '?'} days`).join('\n')}
 `.trim()
 

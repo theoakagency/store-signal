@@ -24,6 +24,11 @@ export async function POST(_req: NextRequest) {
     return Response.json({ insight: 'No ad platform data available. Connect Meta Ads or Google Ads and run a sync first.' })
   }
 
+  const now = new Date()
+  const d90Start = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000)
+  const fmtDate = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  const window90 = `${fmtDate(d90Start)} – ${fmtDate(now)}`
+
   // Meta rollup
   const metaSpend = (metaCampaigns ?? []).reduce((s, c) => s + c.spend, 0)
   const metaRevenue = (metaCampaigns ?? []).reduce((s, c) => s + c.purchase_value, 0)
@@ -40,7 +45,7 @@ export async function POST(_req: NextRequest) {
   const googleSpend = (googleCampaigns ?? []).reduce((s, c) => s + c.spend, 0)
 
   const metaSection = metaSpend > 0 ? `
-META ADS (90d):
+META ADS — last 90 days (${window90}):
 - Total spend: $${metaSpend.toFixed(0)}
 - Total revenue: $${metaRevenue.toFixed(0)}
 - ROAS: ${metaRoas.toFixed(2)}×
@@ -51,13 +56,13 @@ Top campaigns by spend:
 ${(metaCampaigns ?? []).slice(0, 8).map((c) => `  "${c.name}" — $${c.spend.toFixed(0)} spend, ${c.roas?.toFixed(2) ?? '0'}× ROAS, ${c.purchases} purchases [${c.status}]`).join('\n')}` : 'Meta: not connected'
 
   const googleSection = googleIsGa4 ? `
-GOOGLE ADS (GA4 data — spend pending API approval):
+GOOGLE ADS — GA4 data, last 90 days (${window90}) — direct spend pending API approval:
 - Revenue attributed to Google campaigns (from GA4): $${googleRevenue.toFixed(0)}
 - Conversions: ${googleConversions.toFixed(0)}
 - Spend: unknown (Google Ads API developer token pending approval)
 Top campaigns by revenue:
 ${(googleCampaigns ?? []).slice(0, 5).map((c) => `  "${c.name}" — $${(c.conversion_value ?? 0).toFixed(0)} revenue, ${(c.conversions ?? 0).toFixed(0)} conversions [GA4]`).join('\n')}` : googleSpend > 0 ? `
-GOOGLE ADS (90d):
+GOOGLE ADS — last 90 days (${window90}):
 - Spend: $${googleSpend.toFixed(0)}
 - Revenue: $${googleRevenue.toFixed(0)}
 - Conversions: ${googleConversions.toFixed(0)}
@@ -66,6 +71,7 @@ ${(googleCampaigns ?? []).slice(0, 5).map((c) => `  "${c.name}" — $${c.spend.t
 
   const context = `
 ADVERTISING PERFORMANCE — LashBox LA (lashboxla.com)
+DATA NOTE: All figures cover the last 90 days (${window90}). Do not compare these figures to metrics from other time windows.
 ${metaSection}
 ${googleSection}
 `.trim()

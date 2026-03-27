@@ -11,6 +11,11 @@ export async function POST(req: NextRequest) {
 
   const { metrics } = await req.json() as { metrics: Record<string, unknown> }
 
+  const now = new Date()
+  const d30Start = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+  const d12mStart = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000)
+  const fmtDate = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-6',
@@ -19,6 +24,13 @@ export async function POST(req: NextRequest) {
       role: 'user',
       content: `You are a subscription business analyst for a professional eyelash extension supply company.
 Analyze these subscription metrics and provide actionable insights.
+
+DATA CONTEXT — time windows for each metric type:
+- active_subscribers, mrr, arr: current state (as of today, ${fmtDate(now)})
+- churn_rate, cancellations: last 30 days (${fmtDate(d30Start)} – ${fmtDate(now)})
+- interval_breakdown, product_breakdown: current active subscriptions only
+- subscriber_vs_nonsubscriber_ltv: last 12 months Shopify history (${fmtDate(d12mStart)} – ${fmtDate(now)}) — understated for long-standing customers
+- Do NOT cross-compare figures from different time windows
 
 Metrics:
 ${JSON.stringify(metrics, null, 2)}
