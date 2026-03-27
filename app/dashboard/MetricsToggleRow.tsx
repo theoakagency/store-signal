@@ -77,10 +77,10 @@ export default function MetricsToggleRow({ data30d, data7d, currency, totalCusto
         </div>
       </div>
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <MetricCard label={`Revenue (${label})`} value={fmt(d.revenue, currency)} delta={d.revDelta} sub="vs prior period" />
-        <MetricCard label={`Orders (${label})`} value={d.orders.toLocaleString()} delta={d.orderDelta} sub="vs prior period" />
-        <MetricCard label="Total Customers" value={totalCustomers !== null ? totalCustomers.toLocaleString() : '—'} delta={null} sub="unique buyers" noAnimation />
-        <MetricCard label={mrr !== null ? 'MRR' : `AOV (${label})`} value={mrr !== null ? fmt(mrr) : fmt(d.aov, currency)} delta={mrr !== null ? null : d.aovDelta} sub={mrr !== null ? 'subscriptions' : 'per order'} />
+        <MetricCard label={`Revenue (${label})`} value={fmt(d.revenue, currency)} delta={d.revDelta} sub={`vs prior ${label} · Shopify`} />
+        <MetricCard label={`Orders (${label})`} value={d.orders.toLocaleString()} delta={d.orderDelta} sub={`vs prior ${label} · Shopify`} />
+        <MetricCard label="Total Customers" value={totalCustomers !== null ? totalCustomers.toLocaleString() : '—'} delta={null} sub="all-time unique buyers · 24mo history" noAnimation />
+        <MetricCard label={mrr !== null ? 'MRR' : `AOV (${label})`} value={mrr !== null ? fmt(mrr) : fmt(d.aov, currency)} delta={mrr !== null ? null : d.aovDelta} sub={mrr !== null ? 'current active subscriptions · Recharge' : `per order · ${label}`} />
       </div>
     </div>
   )

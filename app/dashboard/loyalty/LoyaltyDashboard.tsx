@@ -234,7 +234,7 @@ export default function LoyaltyDashboard({ connected, metrics, totalCustomers }:
               value={fmt(m.enrolled_customers)}
               sub={`${fmtPct(enrollmentPct)} of customer base (API subset only)`}
             />
-            <KpiCard label="Active Redeemers (30d)" value={fmt(m.active_redeemers_30d)} />
+            <KpiCard label="Active Redeemers (30d)" value={fmt(m.active_redeemers_30d)} sub="unique members · last 30 days" />
             <KpiCard
               label="Redemption Rate"
               value={fmtPct(m.redemption_rate)}

@@ -418,22 +418,22 @@ export default function KlaviyoDashboard({ connected, campaigns, flows, metrics 
             <MetricCard
               label="Total Email Revenue"
               value={usd(totalEmailRevenue)}
-              sub="campaigns + flows"
+              sub="campaigns + flows · last 12 months"
             />
             <MetricCard
               label="Avg Open Rate"
               value={pct(avgOpenRate)}
-              sub="across all campaigns"
+              sub="all campaigns · last 12 months"
             />
             <MetricCard
               label="Avg Click Rate"
               value={pct(avgClickRate)}
-              sub="across all campaigns"
+              sub="all campaigns · last 12 months"
             />
             <MetricCard
               label="Est. Unsubscribe Cost"
               value={usd(estUnsubCost)}
-              sub={`unsubs × avg LTV`}
+              sub="unsubs × avg LTV · 12 months"
             />
           </div>
 

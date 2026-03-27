@@ -383,22 +383,22 @@ export default function AnalyticsDashboard({
         <MetricCard
           label="Transactions"
           value={m('ga4_transactions_90d').toLocaleString()}
-          sub="ecommerce purchases"
+          sub="ecommerce purchases · last 90 days"
         />
         <MetricCard
           label="Revenue (GA4)"
           value={fmt(m('ga4_revenue_90d'))}
-          sub="purchase revenue"
+          sub="GA4-attributed · last 90 days"
         />
         <MetricCard
           label="Conversion Rate"
           value={`${m('ga4_conversion_rate_90d').toFixed(2)}%`}
-          sub="sessions → purchase"
+          sub="sessions → purchase · last 90 days"
         />
         <MetricCard
           label="Avg Order Value"
           value={m('ga4_aov_90d') > 0 ? fmt(m('ga4_aov_90d')) : '—'}
-          sub="from GA4"
+          sub="GA4 ecommerce · last 90 days"
         />
       </div>
 

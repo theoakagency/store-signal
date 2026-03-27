@@ -261,13 +261,13 @@ export default function SubscriptionsDashboard({ connected, metrics, recentCance
 
           {/* Section 1: Health KPIs */}
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-            <KpiCard label="Active Subscribers" value={fmt(m.active_subscribers)} accent />
-            <KpiCard label="MRR" value={fmtUsd(m.mrr)} sub="Monthly recurring revenue" />
-            <KpiCard label="ARR" value={fmtUsd(m.arr)} sub="Annualized" />
+            <KpiCard label="Active Subscribers" value={fmt(m.active_subscribers)} sub="current state · Recharge" accent />
+            <KpiCard label="MRR" value={fmtUsd(m.mrr)} sub="current active subscriptions" />
+            <KpiCard label="ARR" value={fmtUsd(m.arr)} sub="annualized from current MRR" />
             <KpiCard
               label="Churn Rate (30d)"
               value={fmtPct(m.churn_rate_30d)}
-              sub={`${fmt(m.churn_rate_30d * m.active_subscribers)} subscribers/mo at risk`}
+              sub={`${fmt(m.churn_rate_30d * m.active_subscribers)} subscribers/mo at risk · last 30 days`}
             />
           </div>
 
