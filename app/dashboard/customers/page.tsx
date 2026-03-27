@@ -1,5 +1,6 @@
 import { createSupabaseServerClient, createSupabaseServiceClient } from '@/lib/supabase'
 import CustomerTable, { type BuyerProfile, type OverlapData } from './CustomerTable'
+import DataCoverageBar, { COVERAGE } from '../_components/DataCoverageBar'
 
 export const metadata = { title: 'Customer Intelligence — Store Signal' }
 
@@ -113,17 +114,20 @@ export default async function CustomersPage({
   } : null
 
   return (
-    <CustomerTable
-      buyers={(pageRows ?? []) as BuyerProfile[]}
-      page={page}
-      totalPages={Math.ceil((count ?? 0) / pageSize)}
-      totalCount={count ?? 0}
-      segmentCounts={segmentCounts}
-      overlapData={overlapData}
-      ltvCounts={ltvCounts}
-      totalRevenueAll={totalRevenueAll}
-      activeSegment={activeSegment ?? 'all'}
-      activeVenn={activeVenn}
-    />
+    <>
+      <div className="mb-1"><DataCoverageBar platforms={[COVERAGE.shopify, COVERAGE.loyaltylion, COVERAGE.recharge]} /></div>
+      <CustomerTable
+        buyers={(pageRows ?? []) as BuyerProfile[]}
+        page={page}
+        totalPages={Math.ceil((count ?? 0) / pageSize)}
+        totalCount={count ?? 0}
+        segmentCounts={segmentCounts}
+        overlapData={overlapData}
+        ltvCounts={ltvCounts}
+        totalRevenueAll={totalRevenueAll}
+        activeSegment={activeSegment ?? 'all'}
+        activeVenn={activeVenn}
+      />
+    </>
   )
 }

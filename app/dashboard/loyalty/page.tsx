@@ -1,6 +1,7 @@
 import { createSupabaseServerClient, createSupabaseServiceClient } from '@/lib/supabase'
 import { redirect } from 'next/navigation'
 import LoyaltyDashboard from './LoyaltyDashboard'
+import DataCoverageBar, { COVERAGE } from '../_components/DataCoverageBar'
 
 export const metadata = { title: 'Loyalty Program — Store Signal' }
 export const maxDuration = 300
@@ -29,10 +30,13 @@ export default async function LoyaltyPage() {
   const connected = !!s?.loyaltylion_token
 
   return (
-    <LoyaltyDashboard
-      connected={connected}
-      metrics={metricsCache}
-      totalCustomers={totalCustomers ?? 0}
-    />
+    <>
+      {connected && <div className="mb-1"><DataCoverageBar platforms={[COVERAGE.loyaltylion]} /></div>}
+      <LoyaltyDashboard
+        connected={connected}
+        metrics={metricsCache}
+        totalCustomers={totalCustomers ?? 0}
+      />
+    </>
   )
 }

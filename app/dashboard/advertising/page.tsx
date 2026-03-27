@@ -1,5 +1,6 @@
 import { createSupabaseServerClient, createSupabaseServiceClient } from '@/lib/supabase'
 import AdvertisingOverview from './AdvertisingOverview'
+import DataCoverageBar, { COVERAGE } from '../_components/DataCoverageBar'
 
 export const metadata = { title: 'Advertising Overview — Store Signal' }
 
@@ -33,14 +34,22 @@ export default async function AdvertisingPage() {
   const googleM: Record<string, number> = {}
   for (const r of googleMetrics ?? []) googleM[r.metric_name] = Number(r.metric_value)
 
+  const coveragePlatforms = [
+    ...(metaConnected ? [COVERAGE.meta_ads] : []),
+    ...(googleConnected ? [COVERAGE.google_ads] : []),
+  ]
+
   return (
-    <AdvertisingOverview
-      metaConnected={metaConnected}
-      googleConnected={googleConnected}
-      metaCampaigns={metaCampaigns ?? []}
-      googleCampaigns={googleCampaigns ?? []}
-      metaMetrics={metaM}
-      googleMetrics={googleM}
-    />
+    <>
+      {coveragePlatforms.length > 0 && <div className="mb-1"><DataCoverageBar platforms={coveragePlatforms} /></div>}
+      <AdvertisingOverview
+        metaConnected={metaConnected}
+        googleConnected={googleConnected}
+        metaCampaigns={metaCampaigns ?? []}
+        googleCampaigns={googleCampaigns ?? []}
+        metaMetrics={metaM}
+        googleMetrics={googleM}
+      />
+    </>
   )
 }

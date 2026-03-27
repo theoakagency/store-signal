@@ -6,6 +6,7 @@ import BusinessHealthScore, { type HealthComponent } from './BusinessHealthScore
 import PlatformHealthRow, { type PlatformCard } from './PlatformHealthRow'
 import KeyAlertsPanel, { type Alert } from './KeyAlertsPanel'
 import MetricsToggleRow from './MetricsToggleRow'
+import DataCoverageBar, { COVERAGE } from './_components/DataCoverageBar'
 
 export const metadata = { title: 'Executive Summary — Store Signal' }
 
@@ -546,8 +547,19 @@ export default async function DashboardPage() {
     ga4Connected, totalSessions, convRate,
   })
 
+  const execCoveragePlatforms = [
+    COVERAGE.shopify,
+    ...(klaviyoConnected ? [COVERAGE.klaviyo_12m] : []),
+    ...(metaConnected ? [COVERAGE.meta_ads] : []),
+    ...(googleAdsConnected ? [COVERAGE.google_ads] : []),
+    ...(ga4Connected ? [COVERAGE.ga4] : []),
+    ...(gscConnected ? [COVERAGE.gsc] : []),
+    ...(rechargeConnected ? [COVERAGE.recharge] : []),
+  ]
+
   return (
     <div className="space-y-5">
+      <DataCoverageBar platforms={execCoveragePlatforms} />
       {/* 1. Business Health Score */}
       <BusinessHealthScore
         score={healthScore}

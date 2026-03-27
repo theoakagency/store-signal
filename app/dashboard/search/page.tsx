@@ -1,5 +1,6 @@
 import { createSupabaseServerClient, createSupabaseServiceClient } from '@/lib/supabase'
 import SearchDashboard, { type GscInsight } from './SearchDashboard'
+import DataCoverageBar, { COVERAGE } from '../_components/DataCoverageBar'
 
 export const metadata = { title: 'Search Intelligence — Store Signal' }
 
@@ -63,16 +64,26 @@ export default async function SearchPage() {
     }
   }
 
+  const gscConnected = !!store?.gsc_refresh_token
+  const semrushConnected = !!store?.semrush_api_key
+  const coveragePlatforms = [
+    ...(gscConnected ? [COVERAGE.gsc] : []),
+    ...(semrushConnected ? [COVERAGE.semrush] : []),
+  ]
+
   return (
-    <SearchDashboard
-      connected={!!store?.gsc_refresh_token}
-      propertyUrl={store?.gsc_property_url ?? null}
-      keywords={keywords ?? []}
-      pages={pages ?? []}
-      monthlyClicks={monthlyClicks ?? []}
-      cachedInsights={(insightsCache?.insights as GscInsight[] | null) ?? null}
-      insightsCalculatedAt={insightsCache?.calculated_at ?? null}
-      semrushData={!!store?.semrush_api_key ? semrushMap : null}
-    />
+    <>
+      {coveragePlatforms.length > 0 && <div className="mb-1"><DataCoverageBar platforms={coveragePlatforms} /></div>}
+      <SearchDashboard
+        connected={gscConnected}
+        propertyUrl={store?.gsc_property_url ?? null}
+        keywords={keywords ?? []}
+        pages={pages ?? []}
+        monthlyClicks={monthlyClicks ?? []}
+        cachedInsights={(insightsCache?.insights as GscInsight[] | null) ?? null}
+        insightsCalculatedAt={insightsCache?.calculated_at ?? null}
+        semrushData={semrushConnected ? semrushMap : null}
+      />
+    </>
   )
 }

@@ -1,5 +1,6 @@
 import { createSupabaseServiceClient } from '@/lib/supabase'
 import ProductDashboard from './ProductDashboard'
+import DataCoverageBar, { COVERAGE } from '../_components/DataCoverageBar'
 
 export const metadata = { title: 'Product Intelligence — Store Signal' }
 
@@ -34,10 +35,13 @@ export default async function ProductsPage() {
   ])
 
   return (
-    <ProductDashboard
-      productStats={productStats ?? []}
-      affinities={affinities ?? []}
-      sequences={sequences ?? []}
-    />
+    <>
+      <div className="mb-1"><DataCoverageBar platforms={[COVERAGE.shopify]} /></div>
+      <ProductDashboard
+        productStats={productStats ?? []}
+        affinities={affinities ?? []}
+        sequences={sequences ?? []}
+      />
+    </>
   )
 }

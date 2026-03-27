@@ -1,5 +1,6 @@
 import { createSupabaseServerClient } from '@/lib/supabase'
 import KlaviyoDashboard from './KlaviyoDashboard'
+import DataCoverageBar, { COVERAGE } from '../_components/DataCoverageBar'
 
 export const metadata = {
   title: 'Email Intelligence — Store Signal',
@@ -52,11 +53,14 @@ export default async function KlaviyoPage() {
   }
 
   return (
-    <KlaviyoDashboard
-      connected={connected}
+    <>
+      {connected && <div className="mb-1"><DataCoverageBar platforms={[COVERAGE.klaviyo_12m, COVERAGE.klaviyo_flows]} /></div>}
+      <KlaviyoDashboard
+        connected={connected}
       campaigns={campaigns ?? []}
       flows={flows ?? []}
       metrics={metrics}
-    />
+      />
+    </>
   )
 }

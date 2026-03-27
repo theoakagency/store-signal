@@ -1,5 +1,6 @@
 import { createSupabaseServerClient, createSupabaseServiceClient } from '@/lib/supabase'
 import AnalyticsDashboard from './AnalyticsDashboard'
+import DataCoverageBar, { COVERAGE } from '../_components/DataCoverageBar'
 
 export const metadata = { title: 'Analytics — Store Signal' }
 
@@ -32,14 +33,17 @@ export default async function AnalyticsPage() {
   for (const r of metricsRows ?? []) metrics[r.metric_name] = Number(r.metric_value)
 
   return (
-    <AnalyticsDashboard
-      connected={connected}
-      propertyId={store?.ga4_property_id ?? null}
-      sessions={sessions ?? []}
-      pages={pages ?? []}
-      monthly={monthly ?? []}
-      adCampaigns={adCampaigns ?? []}
-      metrics={metrics}
-    />
+    <>
+      {connected && <div className="mb-1"><DataCoverageBar platforms={[COVERAGE.ga4]} /></div>}
+      <AnalyticsDashboard
+        connected={connected}
+        propertyId={store?.ga4_property_id ?? null}
+        sessions={sessions ?? []}
+        pages={pages ?? []}
+        monthly={monthly ?? []}
+        adCampaigns={adCampaigns ?? []}
+        metrics={metrics}
+      />
+    </>
   )
 }

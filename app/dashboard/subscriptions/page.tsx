@@ -1,6 +1,7 @@
 import { createSupabaseServerClient, createSupabaseServiceClient } from '@/lib/supabase'
 import { redirect } from 'next/navigation'
 import SubscriptionsDashboard from './SubscriptionsDashboard'
+import DataCoverageBar, { COVERAGE } from '../_components/DataCoverageBar'
 
 export const metadata = { title: 'Subscription Program — Store Signal' }
 export const maxDuration = 300
@@ -85,12 +86,15 @@ export default async function SubscriptionsPage() {
   const connected = !!(store as { recharge_api_token: string | null } | null)?.recharge_api_token
 
   return (
-    <SubscriptionsDashboard
-      connected={connected}
-      metrics={metricsCache}
-      recentCancellations={recentCancellations ?? []}
-      topSubscriptions={topSubscriptions ?? []}
-      cohorts={cohorts}
-    />
+    <>
+      {connected && <div className="mb-1"><DataCoverageBar platforms={[COVERAGE.shopify, COVERAGE.recharge]} /></div>}
+      <SubscriptionsDashboard
+        connected={connected}
+        metrics={metricsCache}
+        recentCancellations={recentCancellations ?? []}
+        topSubscriptions={topSubscriptions ?? []}
+        cohorts={cohorts}
+      />
+    </>
   )
 }
