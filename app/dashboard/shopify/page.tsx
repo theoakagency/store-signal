@@ -1,5 +1,6 @@
 import { createSupabaseServerClient, createSupabaseServiceClient } from '@/lib/supabase'
 import ShopifyDashboard from './ShopifyDashboard'
+import DataCoverageBar, { COVERAGE } from '../_components/DataCoverageBar'
 
 export const metadata = { title: 'Shopify — Store Signal' }
 
@@ -78,7 +79,9 @@ export default async function ShopifyPage() {
   }
 
   return (
-    <ShopifyDashboard
+    <>
+      <div className="mb-1"><DataCoverageBar platforms={[COVERAGE.shopify]} /></div>
+      <ShopifyDashboard
       metrics={{ revenue30d, revDelta: delta(revenue30d, prevRevenue), orders30d, ordersDelta: delta(orders30d, prevOrders30), aov30d, aovDelta: delta(aov30d, prevAov), newCustomers30d: Math.max(0, newCustomers30d), returningRate, currency: 'USD', refundAmount30d, refundRate }}
       orders={(orders ?? []) as OrderRow[]}
       customers={customers ?? []}
@@ -90,5 +93,6 @@ export default async function ShopifyPage() {
       storeDomain={(storeRow as { domain?: string | null } | null)?.domain ?? null}
       lastSyncedAt={(storeRow as { last_synced_at?: string | null } | null)?.last_synced_at ?? null}
     />
+    </>
   )
 }

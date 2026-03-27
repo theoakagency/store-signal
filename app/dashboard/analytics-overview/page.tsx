@@ -1,6 +1,7 @@
 import { createSupabaseServerClient, createSupabaseServiceClient } from '@/lib/supabase'
 import { redirect } from 'next/navigation'
 import AnalyticsOverviewDashboard from './AnalyticsOverviewDashboard'
+import DataCoverageBar, { COVERAGE } from '../_components/DataCoverageBar'
 
 export const metadata = { title: 'Analytics Overview — Store Signal' }
 
@@ -42,8 +43,15 @@ export default async function AnalyticsOverviewPage() {
   const ga4Metrics: Record<string, number> = {}
   for (const r of metricsRows ?? []) ga4Metrics[r.metric_name] = Number(r.metric_value)
 
+  const aoCoveragePlatforms = [
+    ...(ga4Connected ? [COVERAGE.ga4] : []),
+    ...(semrushConnected ? [COVERAGE.semrush] : []),
+  ]
+
   return (
-    <AnalyticsOverviewDashboard
+    <>
+      {aoCoveragePlatforms.length > 0 && <div className="mb-1"><DataCoverageBar platforms={aoCoveragePlatforms} /></div>}
+      <AnalyticsOverviewDashboard
       ga4Connected={ga4Connected}
       semrushConnected={semrushConnected}
       domain={store?.semrush_domain ?? null}
@@ -56,6 +64,7 @@ export default async function AnalyticsOverviewPage() {
       semrushMetrics={semrushMetrics ?? null}
       keywords={keywords ?? []}
       keywordGaps={keywordGaps ?? []}
-    />
+      />
+    </>
   )
 }

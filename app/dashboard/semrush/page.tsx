@@ -1,6 +1,7 @@
 import { createSupabaseServerClient, createSupabaseServiceClient } from '@/lib/supabase'
 import { redirect } from 'next/navigation'
 import SemrushDashboard from './SemrushDashboard'
+import DataCoverageBar, { COVERAGE } from '../_components/DataCoverageBar'
 
 export const maxDuration = 300
 
@@ -58,14 +59,17 @@ export default async function SemrushPage() {
   const domain = storeData?.semrush_domain ?? null
 
   return (
-    <SemrushDashboard
-      connected={connected}
-      domain={domain}
-      metrics={metricsCache}
-      keywords={keywords ?? []}
-      competitors={competitors ?? []}
-      keywordGaps={keywordGaps ?? []}
-      backlinks={backlinks}
-    />
+    <>
+      {connected && <div className="mb-1"><DataCoverageBar platforms={[COVERAGE.semrush]} /></div>}
+      <SemrushDashboard
+        connected={connected}
+        domain={domain}
+        metrics={metricsCache}
+        keywords={keywords ?? []}
+        competitors={competitors ?? []}
+        keywordGaps={keywordGaps ?? []}
+        backlinks={backlinks}
+      />
+    </>
   )
 }

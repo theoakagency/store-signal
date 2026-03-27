@@ -1,5 +1,6 @@
 import { createSupabaseServerClient, createSupabaseServiceClient } from '@/lib/supabase'
 import MetaDashboard from './MetaDashboard'
+import DataCoverageBar, { COVERAGE } from '../_components/DataCoverageBar'
 
 export const metadata = { title: 'Meta Ads — Store Signal' }
 
@@ -22,10 +23,13 @@ export default async function MetaPage() {
   for (const r of metricsRows ?? []) metrics[r.metric_name] = Number(r.metric_value)
 
   return (
-    <MetaDashboard
-      connected={connected}
-      campaigns={campaigns ?? []}
-      metrics={metrics}
-    />
+    <>
+      {connected && <div className="mb-1"><DataCoverageBar platforms={[COVERAGE.meta_ads]} /></div>}
+      <MetaDashboard
+        connected={connected}
+        campaigns={campaigns ?? []}
+        metrics={metrics}
+      />
+    </>
   )
 }

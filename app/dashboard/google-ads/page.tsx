@@ -1,5 +1,6 @@
 import { createSupabaseServerClient, createSupabaseServiceClient } from '@/lib/supabase'
 import GoogleAdsDashboard from './GoogleAdsDashboard'
+import DataCoverageBar, { COVERAGE } from '../_components/DataCoverageBar'
 
 export const metadata = { title: 'Google Ads — Store Signal' }
 
@@ -23,11 +24,14 @@ export default async function GoogleAdsPage() {
   for (const r of metricsRows ?? []) metrics[r.metric_name] = Number(r.metric_value)
 
   return (
-    <GoogleAdsDashboard
-      connected={connected}
-      campaigns={campaigns ?? []}
-      metrics={metrics}
-      dataSource={dataSource}
-    />
+    <>
+      {connected && <div className="mb-1"><DataCoverageBar platforms={[COVERAGE.google_ads]} /></div>}
+      <GoogleAdsDashboard
+        connected={connected}
+        campaigns={campaigns ?? []}
+        metrics={metrics}
+        dataSource={dataSource}
+      />
+    </>
   )
 }
