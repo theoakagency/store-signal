@@ -1,23 +1,9 @@
 -- Migration 025: Enable RLS on tables that were missing it
 -- Fixes Supabase security alert: rls_disabled_in_public
--- Affected tables: ll_audit_customers, ll_audit_activities (migration 016),
---                  cron_logs (migration 020)
-
--- ── ll_audit_customers ────────────────────────────────────────────────────────
-alter table ll_audit_customers enable row level security;
-
--- Audit tables are internal-only; only authenticated tenant users may read them.
--- No direct insert policy needed — writes go through the service role key only.
-create policy "Tenant users can read ll audit customers"
-  on ll_audit_customers for select
-  using (auth.role() = 'authenticated');
-
--- ── ll_audit_activities ───────────────────────────────────────────────────────
-alter table ll_audit_activities enable row level security;
-
-create policy "Tenant users can read ll audit activities"
-  on ll_audit_activities for select
-  using (auth.role() = 'authenticated');
+--
+-- cron_logs (migration 020) was created without RLS.
+-- ll_audit_customers / ll_audit_activities (migration 016) were marked
+-- TEMPORARY and never applied to production — handled below with DO block.
 
 -- ── cron_logs ─────────────────────────────────────────────────────────────────
 alter table cron_logs enable row level security;
@@ -27,3 +13,25 @@ alter table cron_logs enable row level security;
 create policy "Authenticated users can read cron logs"
   on cron_logs for select
   using (auth.role() = 'authenticated');
+
+-- ── ll_audit_customers / ll_audit_activities (conditional) ───────────────────
+-- These tables were never applied to production. Enable RLS only if they exist.
+do $$ begin
+  if exists (select 1 from information_schema.tables where table_name = 'll_audit_customers' and table_schema = 'public') then
+    alter table ll_audit_customers enable row level security;
+    execute $p$
+      create policy "Tenant users can read ll audit customers"
+        on ll_audit_customers for select
+        using (auth.role() = 'authenticated')
+    $p$;
+  end if;
+
+  if exists (select 1 from information_schema.tables where table_name = 'll_audit_activities' and table_schema = 'public') then
+    alter table ll_audit_activities enable row level security;
+    execute $p$
+      create policy "Tenant users can read ll audit activities"
+        on ll_audit_activities for select
+        using (auth.role() = 'authenticated')
+    $p$;
+  end if;
+end $$;
