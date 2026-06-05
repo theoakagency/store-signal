@@ -73,12 +73,16 @@ function isUrlInput(value: string) {
 function ProductFocusInput({
   value,
   onChange,
+  onSelect,
+  displayName,
   products,
   className,
 }: {
   value: string
   onChange: (v: string) => void
-  products: { title: string; total_revenue: number }[]
+  onSelect: (url: string, displayName: string) => void
+  displayName: string
+  products: { title: string; handle: string }[]
   className: string
 }) {
   const [open, setOpen] = useState(false)
@@ -120,10 +124,13 @@ function ProductFocusInput({
         autoComplete="off"
       />
 
-      {/* URL detected badge */}
+      {/* URL detected — show product name if selected from typeahead, otherwise generic badge */}
       {isUrl && (
         <p className="mt-1.5 text-[11px] font-medium text-teal-deep">
-          Product data will be fetched at generation time
+          {displayName
+            ? <>{displayName} &mdash; full product details will be fetched at generation time</>
+            : 'Product data will be fetched at generation time'
+          }
         </p>
       )}
 
@@ -144,7 +151,7 @@ function ProductFocusInput({
               className="w-full text-left px-3 py-2 text-sm text-ink hover:bg-cream transition-colors border-b border-cream-2 last:border-0"
               onMouseDown={(e) => {
                 e.preventDefault() // prevent input blur before click registers
-                onChange(p.title)
+                onSelect(`https://lashboxla.com/products/${p.handle}`, p.title)
                 setOpen(false)
               }}
             >
@@ -365,7 +372,7 @@ export default function ContentStudio({
   segments,
 }: {
   history: ContentGeneration[]
-  products: { title: string; total_revenue: number }[]
+  products: { title: string; handle: string }[]
   segments: { segment: string; count: number }[]
 }) {
   const [form, setForm] = useState<FormState>({
@@ -375,6 +382,7 @@ export default function ContentStudio({
     audience: '',
     talkingPoints: '',
   })
+  const [productDisplayName, setProductDisplayName] = useState('')
   const [selectedTones, setSelectedTones] = useState<Set<string>>(new Set(['Educational']))
   const [isLoading, setIsLoading] = useState(false)
   const [result, setResult] = useState<GenerationResult | null>(null)
@@ -414,6 +422,7 @@ export default function ContentStudio({
       audience: row.audience ?? '',
       talkingPoints: row.talking_points ?? '',
     })
+    setProductDisplayName('') // history stores URL; no separate display name needed
     setSelectedTones(new Set(row.tones ?? ['Educational']))
     setResult(row.versions)
     setError(null)
@@ -522,7 +531,9 @@ export default function ContentStudio({
               <label className={labelCls}>Product Focus</label>
               <ProductFocusInput
                 value={form.productFocus}
-                onChange={(v) => setField('productFocus', v)}
+                onChange={(v) => { setField('productFocus', v); setProductDisplayName('') }}
+                onSelect={(url, name) => { setField('productFocus', url); setProductDisplayName(name) }}
+                displayName={productDisplayName}
                 products={products}
                 className={inputCls}
               />

@@ -9,6 +9,20 @@ export const metadata = {
 const TENANT_ID = '00000000-0000-0000-0000-000000000001'
 const STORE_ID = '00000000-0000-0000-0000-000000000002'
 
+// Mirrors Shopify's handle generation algorithm.
+// NOTE: product_stats has no handle column so we derive it.
+// Known edge cases to verify manually against actual Shopify URLs:
+//   "FAVORITE - Cashmere FauxMink..."  → favorite-cashmere-fauxmink-...
+//   "OMega - Fast Lash Extension..."   → omega-fast-lash-extension-...
+//   "Pretty Little Y's - YY, Fairy..." → pretty-little-y-s-yy-fairy-...
+// If any derived handle 404s in Shopify, store the real handle in product_stats.
+function titleToHandle(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+}
+
 export default async function ContentStudioPage() {
   const supabase = await createSupabaseServerClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -55,11 +69,11 @@ export default async function ContentStudioPage() {
 
   // Deduplicate products by title (multiple variants share a title)
   const seenTitles = new Set<string>()
-  const products: { title: string; total_revenue: number }[] = []
+  const products: { title: string; handle: string }[] = []
   for (const row of productRows ?? []) {
     if (!seenTitles.has(row.product_title)) {
       seenTitles.add(row.product_title)
-      products.push({ title: row.product_title, total_revenue: Number(row.total_revenue) })
+      products.push({ title: row.product_title, handle: titleToHandle(row.product_title) })
     }
   }
 
