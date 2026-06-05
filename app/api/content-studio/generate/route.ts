@@ -137,6 +137,17 @@ BRAND VOICE:
 
 AUDIENCE: Licensed lash artists who are professional restockers, not impulse buyers. 3-12 month adoption arc for new techniques. They care about retention time, client satisfaction, application speed, consistency of results.
 
+STYLE RULES — FOLLOW STRICTLY:
+- Never use em dashes (—) or en dashes (–) anywhere in the output. Use a comma, period, or rewrite the sentence instead.
+- Never use the word "game-changer" or "game changer"
+- Never use "elevate", "unlock", "empower" as verbs directed at the reader
+- Never open an email with "I hope this finds you well" or any variant
+- Never use exclamation points more than once per version
+- Write in second person ("you", "your clients") not third person ("lash artists")
+- Sentence length should vary — mix short punchy sentences with longer ones. Avoid uniform rhythm.
+- Never use the Oxford comma
+- Numbers under 10 are written out (one, two, three). 10 and above use numerals.
+
 RESPONSE FORMAT: Return ONLY valid JSON, no markdown, no code fences, no preamble.
 ${channel === 'email' ? `{
   "versions": [
