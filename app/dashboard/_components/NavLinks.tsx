@@ -127,6 +127,18 @@ export default function NavLinks({
         Promotions
       </Link>
 
+      <Link
+        href="/dashboard/content-studio"
+        onClick={onNavigate}
+        className={`nav-link ${isActive('/dashboard/content-studio') ? 'active' : ''}`}
+      >
+        <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+          <path d="M11 2l3 3-7 7H4v-3L11 2z" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M9 4l3 3" strokeLinecap="round" />
+        </svg>
+        Content Studio
+      </Link>
+
       {/* ── CHANNELS ───────────────────────────────────────────────────────── */}
       <SectionLabel>Channels</SectionLabel>
 
