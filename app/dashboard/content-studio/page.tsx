@@ -15,7 +15,6 @@ const STORE_ID = '00000000-0000-0000-0000-000000000002'
 //   "FAVORITE - Cashmere FauxMink..."  → favorite-cashmere-fauxmink-...
 //   "OMega - Fast Lash Extension..."   → omega-fast-lash-extension-...
 //   "Pretty Little Y's - YY, Fairy..." → pretty-little-y-s-yy-fairy-...
-// If any derived handle 404s in Shopify, store the real handle in product_stats.
 function titleToHandle(title: string): string {
   return title
     .toLowerCase()
@@ -30,10 +29,10 @@ export default async function ContentStudioPage() {
 
   const service = createSupabaseServiceClient()
 
-  const [{ data: history }, { data: productRows }, { data: profileRows }] = await Promise.all([
+  const [{ data: history }, { data: productRows }] = await Promise.all([
     service
       .from('content_generations')
-      .select('id, channel, topic, product_focus, audience, tones, talking_points, versions, created_at')
+      .select('id, channel, topic, product_focus, audience, custom_audience, tones, talking_points, versions, created_at')
       .eq('store_id', STORE_ID)
       .order('created_at', { ascending: false })
       .limit(20),
@@ -49,23 +48,7 @@ export default async function ContentStudioPage() {
       .not('product_title', 'ilike', '%shipping%')
       .not('product_title', 'ilike', '%insurance%')
       .order('total_revenue', { ascending: false }),
-
-    service
-      .from('customer_profiles')
-      .select('segment')
-      .eq('tenant_id', TENANT_ID)
-      .not('segment', 'is', null),
   ])
-
-  // Group profile rows into segment counts
-  const segmentMap: Record<string, number> = {}
-  for (const row of profileRows ?? []) {
-    const seg = row.segment as string
-    segmentMap[seg] = (segmentMap[seg] ?? 0) + 1
-  }
-  const segments = Object.entries(segmentMap)
-    .map(([segment, count]) => ({ segment, count }))
-    .sort((a, b) => b.count - a.count)
 
   // Deduplicate products by title (multiple variants share a title)
   const seenTitles = new Set<string>()
@@ -81,7 +64,6 @@ export default async function ContentStudioPage() {
     <ContentStudio
       history={history ?? []}
       products={products}
-      segments={segments}
     />
   )
 }

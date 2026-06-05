@@ -9,6 +9,18 @@ export const maxDuration = 60
 const TENANT_ID = '00000000-0000-0000-0000-000000000001'
 const STORE_ID  = '00000000-0000-0000-0000-000000000002'
 
+const AUDIENCE_MAP: Record<string, string> = {
+  'all-lash-artists':        'Broad audience of working lash artists. Assume professional, licensed, and actively seeing clients. Write for someone who knows their craft.',
+  'new-lash-artists':         'Artists in their first 1-2 years. Still building confidence, clientele, and systems. Respond to reassurance, education, and community. May be price-conscious.',
+  'established-lash-artists': 'Experienced artists with a full book. Value efficiency, consistency, and quality over price. They know what works and why.',
+  'volume-specialists':       'Speed-focused artists doing 3+ clients per day. Care deeply about set time, retention, and consistency across long days. Every second counts.',
+  'lash-lift-specialists':    'Artists offering or actively considering lash lift services. Care about technique, chemical safety, client results, and differentiating their menu.',
+  'salon-owners':             'Managing a team of artists. Think in terms of staff training, bulk purchasing, margin, and standardizing products across their business.',
+  'students':                 'Pre-licensed or recently licensed. Not yet making professional purchases at scale. Respond to education, inspiration, and brand familiarity.',
+  'lapsed-customers':         'Have not ordered in 90+ days. May have switched suppliers or gone quiet. Need a reason to return — relevance, value, or something new.',
+  'subscribers':              'Active Recharge subscribers. Already committed to the brand. Reward loyalty, offer exclusives, and reinforce the value of staying subscribed.',
+}
+
 // ── Product / collection resolver ─────────────────────────────────────────────
 
 interface ResolvedProduct {
@@ -110,11 +122,12 @@ export async function POST(req: NextRequest) {
   const service = createSupabaseServiceClient()
 
   const body = await req.json()
-  const { channel, topic, productFocus, audience, tones, talkingPoints } = body as {
+  const { channel, topic, productFocus, audience, customAudience, tones, talkingPoints } = body as {
     channel: 'email' | 'sms' | 'push'
     topic: string
     productFocus?: string | null
     audience?: string | null
+    customAudience?: string | null
     tones?: string[]
     talkingPoints?: string | null
   }
@@ -254,6 +267,10 @@ export async function POST(req: NextRequest) {
       : '',
   ].filter(Boolean).join('\n\n')
 
+  // ── Audience guidance ─────────────────────────────────────────────────────
+
+  const audienceGuidance = AUDIENCE_MAP[audience ?? ''] ?? AUDIENCE_MAP['all-lash-artists']
+
   // ── Prompts ───────────────────────────────────────────────────────────────
 
   const systemPrompt = `You are the in-house copywriter for LashBox LA (lashboxla.com), a professional lash and lash lift supply company serving licensed lash artists and salon owners. You have deep knowledge of the lash industry.
@@ -274,7 +291,9 @@ BRAND VOICE:
 - Avoid: "game-changer", "elevate your business", "unlock your potential"
 - Write like someone who understands what it means to be behind the bed managing 6+ clients a day
 
-AUDIENCE: Licensed lash artists who are professional restockers, not impulse buyers. 3-12 month adoption arc for new techniques. They care about retention time, client satisfaction, application speed, consistency of results.
+AUDIENCE CONTEXT:
+${audienceGuidance}
+${customAudience ? `Additional specificity: ${customAudience}. Factor this into the tone and references used.` : ''}
 ${styleBlock ? '\n' + styleBlock + '\n' : ''}
 FORMATTING CONSTRAINTS — APPLY TO EVERY FIELD INCLUDING SUBJECTS AND PREHEADERS:
 - Never use em dashes (—) or en dashes (–) anywhere in the output. Use a comma, period, or rewrite the clause instead.
@@ -341,17 +360,18 @@ Write 3 distinct versions, each taking a different angle suited to the tone(s) r
   const { data: saved, error: dbErr } = await service
     .from('content_generations')
     .insert({
-      store_id:      STORE_ID,
-      user_id:       user.id,
+      store_id:        STORE_ID,
+      user_id:         user.id,
       channel,
       topic,
-      product_focus: productFocus ?? null,
-      audience:      audience ?? null,
-      tones:         tones ?? [],
-      talking_points: talkingPoints ?? null,
-      versions:      parsed,
+      product_focus:   productFocus ?? null,
+      audience:        audience ?? null,
+      custom_audience: customAudience ?? null,
+      tones:           tones ?? [],
+      talking_points:  talkingPoints ?? null,
+      versions:        parsed,
     })
-    .select('id, channel, topic, product_focus, audience, tones, talking_points, versions, created_at')
+    .select('id, channel, topic, product_focus, audience, custom_audience, tones, talking_points, versions, created_at')
     .single()
 
   if (dbErr) {

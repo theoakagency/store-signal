@@ -31,6 +31,7 @@ export interface ContentGeneration {
   topic: string
   product_focus: string | null
   audience: string | null
+  custom_audience: string | null
   tones: string[] | null
   talking_points: string | null
   versions: GenerationResult
@@ -59,6 +60,18 @@ const CHANNEL_TABS: { id: Channel; label: string }[] = [
   { id: 'email', label: 'Email' },
   { id: 'sms',   label: 'SMS' },
   { id: 'push',  label: 'Push' },
+]
+
+const PERSONA_OPTIONS = [
+  { value: 'all-lash-artists',        label: 'All Lash Artists' },
+  { value: 'new-lash-artists',         label: 'New Lash Artists (0-2 years, building clientele)' },
+  { value: 'established-lash-artists', label: 'Established Lash Artists (3+ years, efficiency focused)' },
+  { value: 'volume-specialists',       label: 'Volume Specialists (high client load, speed and consistency)' },
+  { value: 'lash-lift-specialists',    label: 'Lash Lift Specialists (offering or exploring lift services)' },
+  { value: 'salon-owners',             label: 'Salon Owners (managing staff, buying in bulk)' },
+  { value: 'students',                 label: 'Students / Pre-Licensed (in training)' },
+  { value: 'lapsed-customers',         label: 'Lapsed Customers (90+ days since last order)' },
+  { value: 'subscribers',              label: 'Active Subscribers (Recharge, loyalty-focused)' },
 ]
 
 // ── Product focus input ───────────────────────────────────────────────────────
@@ -369,26 +382,74 @@ function LoadingSkeleton() {
 export default function ContentStudio({
   history,
   products,
-  segments,
 }: {
   history: ContentGeneration[]
   products: { title: string; handle: string }[]
-  segments: { segment: string; count: number }[]
 }) {
   const [form, setForm] = useState<FormState>({
     channel: 'email',
     topic: '',
     productFocus: '',
-    audience: '',
+    audience: 'all-lash-artists',
     talkingPoints: '',
   })
   const [productDisplayName, setProductDisplayName] = useState('')
+  const [customAudience, setCustomAudience] = useState('')
   const [selectedTones, setSelectedTones] = useState<Set<string>>(new Set(['Educational']))
   const [isLoading, setIsLoading] = useState(false)
   const [result, setResult] = useState<GenerationResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null)
   const [liveHistory, setLiveHistory] = useState<ContentGeneration[]>(history)
+
+  // ── Topic suggestions ─────────────────────────────────────────────────────
+  const [topicSuggestions, setTopicSuggestions] = useState<string[]>([])
+  const [topicSuggestionsLoading, setTopicSuggestionsLoading] = useState(false)
+  const [showTopicSuggestions, setShowTopicSuggestions] = useState(false)
+
+  // ── Talking point suggestions ─────────────────────────────────────────────
+  const [talkingPointSuggestions, setTalkingPointSuggestions] = useState<string[]>([])
+  const [talkingPointSuggestionsLoading, setTalkingPointSuggestionsLoading] = useState(false)
+  const [selectedTalkingPoints, setSelectedTalkingPoints] = useState<Set<number>>(new Set())
+  const [showTalkingPointSuggestions, setShowTalkingPointSuggestions] = useState(false)
+  const [talkingPointsFromProduct, setTalkingPointsFromProduct] = useState(false)
+  const [topicRequiredMsg, setTopicRequiredMsg] = useState(false)
+
+  // ── Auto-trigger talking points when product + topic are both set ─────────
+  const lastAutoTriggerKey = useRef('')
+  useEffect(() => {
+    const topicReady = form.topic.length > 5
+    const key = productDisplayName && topicReady ? `${productDisplayName}` : ''
+    if (
+      key &&
+      key !== lastAutoTriggerKey.current &&
+      !showTalkingPointSuggestions &&
+      !talkingPointSuggestionsLoading
+    ) {
+      lastAutoTriggerKey.current = key
+      setTalkingPointsFromProduct(true)
+      setTalkingPointSuggestionsLoading(true)
+      fetch('/api/content-studio/suggest-talking-points', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ productFocus: form.productFocus, topic: form.topic, channel: form.channel }),
+      })
+        .then((r) => r.json())
+        .then((data: { talkingPoints?: string[] }) => {
+          if (data.talkingPoints?.length) {
+            setTalkingPointSuggestions(data.talkingPoints)
+            setShowTalkingPointSuggestions(true)
+            setSelectedTalkingPoints(new Set())
+          }
+        })
+        .catch(() => {})
+        .finally(() => setTalkingPointSuggestionsLoading(false))
+    }
+    if (!productDisplayName) {
+      lastAutoTriggerKey.current = ''
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [productDisplayName, form.topic, showTalkingPointSuggestions, talkingPointSuggestionsLoading])
 
   function setField<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((f) => ({ ...f, [key]: value }))
@@ -414,6 +475,62 @@ export default function ContentStudio({
     })
   }, [])
 
+  async function fetchTopicSuggestions() {
+    setTopicSuggestionsLoading(true)
+    setShowTopicSuggestions(false)
+    try {
+      const res = await fetch('/api/content-studio/suggest-topics', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ productFocus: form.productFocus || null }),
+      })
+      const data = await res.json() as { topics?: string[] }
+      if (data.topics?.length) {
+        setTopicSuggestions(data.topics)
+        setShowTopicSuggestions(true)
+      }
+    } catch { /* ignore */ } finally {
+      setTopicSuggestionsLoading(false)
+    }
+  }
+
+  async function fetchTalkingPointSuggestions() {
+    if (!form.topic) {
+      setTopicRequiredMsg(true)
+      setTimeout(() => setTopicRequiredMsg(false), 2500)
+      return
+    }
+    setTalkingPointSuggestionsLoading(true)
+    setTalkingPointsFromProduct(false)
+    try {
+      const res = await fetch('/api/content-studio/suggest-talking-points', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ productFocus: form.productFocus || null, topic: form.topic, channel: form.channel }),
+      })
+      const data = await res.json() as { talkingPoints?: string[] }
+      if (data.talkingPoints?.length) {
+        setTalkingPointSuggestions(data.talkingPoints)
+        setShowTalkingPointSuggestions(true)
+        setSelectedTalkingPoints(new Set())
+      }
+    } catch { /* ignore */ } finally {
+      setTalkingPointSuggestionsLoading(false)
+    }
+  }
+
+  function addSelectedToNotes() {
+    if (selectedTalkingPoints.size === 0) return
+    const lines = talkingPointSuggestions
+      .filter((_, i) => selectedTalkingPoints.has(i))
+      .map((p) => `- ${p}`)
+      .join('\n')
+    const current = form.talkingPoints.trim()
+    setField('talkingPoints', current ? `${current}\n${lines}` : lines)
+    setShowTalkingPointSuggestions(false)
+    setSelectedTalkingPoints(new Set())
+  }
+
   function loadFromHistory(row: ContentGeneration) {
     setForm({
       channel: row.channel,
@@ -422,8 +539,13 @@ export default function ContentStudio({
       audience: row.audience ?? '',
       talkingPoints: row.talking_points ?? '',
     })
-    setProductDisplayName('') // history stores URL; no separate display name needed
+    setProductDisplayName('')
+    setCustomAudience(row.custom_audience ?? '')
     setSelectedTones(new Set(row.tones ?? ['Educational']))
+    setShowTopicSuggestions(false)
+    setShowTalkingPointSuggestions(false)
+    setSelectedTalkingPoints(new Set())
+    lastAutoTriggerKey.current = ''
     setResult(row.versions)
     setError(null)
     window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -445,6 +567,7 @@ export default function ContentStudio({
           topic: form.topic,
           productFocus: form.productFocus || null,
           audience: form.audience || null,
+          customAudience: customAudience || null,
           tones: Array.from(selectedTones),
           talkingPoints: form.talkingPoints || null,
         }),
@@ -468,19 +591,6 @@ export default function ContentStudio({
 
   const inputCls = 'w-full rounded-lg border border-cream-3 bg-white px-3 py-2 text-sm text-ink focus:border-teal focus:outline-none focus:ring-1 focus:ring-teal transition'
   const labelCls = 'block text-xs font-medium text-ink-2 mb-1'
-
-  // Build audience options from real segment data + static options
-  const audienceOptions = [
-    ...(segments.length > 0
-      ? segments.map((s) => ({
-          value: s.segment,
-          label: `${s.segment} Customers (${s.count.toLocaleString()})`,
-        }))
-      : []),
-    { value: 'All Lash Artists', label: 'All Lash Artists' },
-    { value: 'New Customers', label: 'New Customers' },
-    { value: 'Lapsed Customers', label: 'Lapsed Customers (90+ days)' },
-  ]
 
   return (
     <div className="space-y-6">
@@ -516,7 +626,24 @@ export default function ContentStudio({
 
             {/* Topic */}
             <div>
-              <label className={labelCls}>Topic / Theme *</label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-medium text-ink-2">Topic / Theme *</label>
+                <button
+                  type="button"
+                  onClick={fetchTopicSuggestions}
+                  disabled={topicSuggestionsLoading}
+                  className="flex items-center gap-1 text-xs text-teal-deep hover:text-teal disabled:opacity-50 transition"
+                >
+                  {topicSuggestionsLoading ? (
+                    <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-teal/30 border-t-teal" />
+                  ) : (
+                    <svg className="h-3 w-3" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
+                      <path d="M6 1v2M6 9v2M1 6h2M9 6h2M2.5 2.5l1.5 1.5M8 8l1.5 1.5M8 4l1.5-1.5M2.5 9.5L4 8" strokeLinecap="round"/>
+                    </svg>
+                  )}
+                  {form.topic ? 'Refresh suggestions' : 'Suggest topics'}
+                </button>
+              </div>
               <input
                 required
                 value={form.topic}
@@ -524,6 +651,29 @@ export default function ContentStudio({
                 placeholder="e.g. Restock reminder for CC curl lashes"
                 className={inputCls}
               />
+              {showTopicSuggestions && topicSuggestions.length > 0 && (
+                <div className="mt-2 space-y-2">
+                  <div className="flex flex-wrap gap-1.5">
+                    {topicSuggestions.map((s, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => { setField('topic', s); setShowTopicSuggestions(false) }}
+                        className="rounded-full border border-cream-3 bg-cream px-3 py-1 text-xs text-ink hover:bg-teal hover:text-white hover:border-teal transition cursor-pointer"
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowTopicSuggestions(false)}
+                    className="text-[10px] text-ink-3 hover:text-ink-2 transition"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Product Focus */}
@@ -547,11 +697,22 @@ export default function ContentStudio({
                 onChange={(e) => setField('audience', e.target.value)}
                 className={inputCls}
               >
-                <option value="">— Select audience —</option>
-                {audienceOptions.map((o) => (
+                {PERSONA_OPTIONS.map((o) => (
                   <option key={o.value} value={o.value}>{o.label}</option>
                 ))}
               </select>
+            </div>
+
+            {/* Custom Audience Detail */}
+            <div>
+              <label className={labelCls}>Custom Audience Detail <span className="font-normal text-ink-3">(optional)</span></label>
+              <input
+                type="text"
+                value={customAudience}
+                onChange={(e) => setCustomAudience(e.target.value)}
+                placeholder="e.g. Artists who attended the Miko webinar, CC curl early adopters, Texas-based artists"
+                className={inputCls}
+              />
             </div>
 
             {/* Tone */}
@@ -562,7 +723,27 @@ export default function ContentStudio({
 
             {/* Key Talking Points */}
             <div>
-              <label className={labelCls}>Key Talking Points</label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-medium text-ink-2">Key Talking Points</label>
+                <button
+                  type="button"
+                  onClick={fetchTalkingPointSuggestions}
+                  disabled={talkingPointSuggestionsLoading}
+                  className="flex items-center gap-1 text-xs text-teal-deep hover:text-teal disabled:opacity-50 transition"
+                >
+                  {talkingPointSuggestionsLoading ? (
+                    <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-teal/30 border-t-teal" />
+                  ) : (
+                    <svg className="h-3 w-3" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
+                      <path d="M6 1v2M6 9v2M1 6h2M9 6h2M2.5 2.5l1.5 1.5M8 8l1.5 1.5M8 4l1.5-1.5M2.5 9.5L4 8" strokeLinecap="round"/>
+                    </svg>
+                  )}
+                  Suggest
+                </button>
+              </div>
+              {topicRequiredMsg && (
+                <p className="mb-1 text-[11px] text-amber-600">Add a topic first</p>
+              )}
               <textarea
                 value={form.talkingPoints}
                 onChange={(e) => setField('talkingPoints', e.target.value)}
@@ -570,6 +751,48 @@ export default function ContentStudio({
                 className={inputCls + ' resize-none'}
                 style={{ minHeight: '80px' }}
               />
+              {showTalkingPointSuggestions && talkingPointSuggestions.length > 0 && (
+                <div className="mt-2 rounded-lg border border-cream-3 bg-cream p-3 space-y-2">
+                  <p className="text-[10px] font-data uppercase tracking-widest text-ink-3">
+                    {talkingPointsFromProduct ? 'Suggested from product description' : 'Suggested talking points'}
+                  </p>
+                  {talkingPointSuggestions.map((point, i) => (
+                    <label key={i} className="flex items-start gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={selectedTalkingPoints.has(i)}
+                        onChange={(e) => {
+                          setSelectedTalkingPoints((prev) => {
+                            const next = new Set(prev)
+                            if (e.target.checked) next.add(i)
+                            else next.delete(i)
+                            return next
+                          })
+                        }}
+                        className="mt-0.5 h-3.5 w-3.5 accent-teal flex-shrink-0"
+                      />
+                      <span className="text-xs text-ink-2 leading-relaxed">{point}</span>
+                    </label>
+                  ))}
+                  <div className="flex items-center gap-4 pt-1 border-t border-cream-2">
+                    <button
+                      type="button"
+                      onClick={addSelectedToNotes}
+                      disabled={selectedTalkingPoints.size === 0}
+                      className="text-xs font-medium text-teal-deep hover:text-teal disabled:opacity-40 disabled:cursor-not-allowed transition"
+                    >
+                      Add selected to notes
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setShowTalkingPointSuggestions(false); setSelectedTalkingPoints(new Set()) }}
+                      className="text-xs text-ink-3 hover:text-ink-2 transition"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
             {error && (
