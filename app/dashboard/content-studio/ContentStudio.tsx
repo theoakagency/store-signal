@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useMemo, useRef, useEffect } from 'react'
 import Link from 'next/link'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -60,6 +60,102 @@ const CHANNEL_TABS: { id: Channel; label: string }[] = [
   { id: 'sms',   label: 'SMS' },
   { id: 'push',  label: 'Push' },
 ]
+
+// ── Product focus input ───────────────────────────────────────────────────────
+
+const JUNK_PATTERNS = ['return', 'protection', 'package', 'shipping', 'insurance']
+
+function isUrlInput(value: string) {
+  const lower = value.toLowerCase()
+  return lower.startsWith('http') || lower.startsWith('lashboxla.com')
+}
+
+function ProductFocusInput({
+  value,
+  onChange,
+  products,
+  className,
+}: {
+  value: string
+  onChange: (v: string) => void
+  products: { title: string; total_revenue: number }[]
+  className: string
+}) {
+  const [open, setOpen] = useState(false)
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  const suggestions = useMemo(() => {
+    if (!value.trim() || isUrlInput(value)) return []
+    const lower = value.toLowerCase()
+    return products
+      .filter((p) => {
+        const t = p.title.toLowerCase()
+        return t.includes(lower) && !JUNK_PATTERNS.some((pat) => t.includes(pat))
+      })
+      .slice(0, 8)
+  }, [value, products])
+
+  useEffect(() => {
+    function onMouseDown(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onMouseDown)
+    return () => document.removeEventListener('mousedown', onMouseDown)
+  }, [])
+
+  const isUrl = isUrlInput(value)
+  const showSuggestions = open && suggestions.length > 0 && !isUrl
+
+  return (
+    <div ref={containerRef} className="relative">
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => { onChange(e.target.value); setOpen(true) }}
+        onFocus={() => setOpen(true)}
+        placeholder="Paste a product URL or type a product name"
+        className={className}
+        autoComplete="off"
+      />
+
+      {/* URL detected badge */}
+      {isUrl && (
+        <p className="mt-1.5 text-[11px] font-medium text-teal-deep">
+          Product data will be fetched at generation time
+        </p>
+      )}
+
+      {/* Hint line when empty */}
+      {!value && (
+        <p className="mt-1 text-[11px] text-ink-3">
+          e.g. lashboxla.com/products/omega-adhesive or just &ldquo;OMega adhesive&rdquo;
+        </p>
+      )}
+
+      {/* Typeahead suggestions */}
+      {showSuggestions && (
+        <div className="absolute z-20 left-0 right-0 top-full mt-1 max-h-56 overflow-y-auto rounded-lg border border-cream-3 bg-white shadow-lg">
+          {suggestions.map((p) => (
+            <button
+              key={p.title}
+              type="button"
+              className="w-full text-left px-3 py-2 text-sm text-ink hover:bg-cream transition-colors border-b border-cream-2 last:border-0"
+              onMouseDown={(e) => {
+                e.preventDefault() // prevent input blur before click registers
+                onChange(p.title)
+                setOpen(false)
+              }}
+            >
+              {p.title}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
@@ -424,16 +520,12 @@ export default function ContentStudio({
             {/* Product Focus */}
             <div>
               <label className={labelCls}>Product Focus</label>
-              <select
+              <ProductFocusInput
                 value={form.productFocus}
-                onChange={(e) => setField('productFocus', e.target.value)}
+                onChange={(v) => setField('productFocus', v)}
+                products={products}
                 className={inputCls}
-              >
-                <option value="">— No specific product —</option>
-                {products.map((p) => (
-                  <option key={p.title} value={p.title}>{p.title}</option>
-                ))}
-              </select>
+              />
             </div>
 
             {/* Target Audience */}

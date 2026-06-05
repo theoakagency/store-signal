@@ -9,6 +9,99 @@ export const maxDuration = 60
 const TENANT_ID = '00000000-0000-0000-0000-000000000001'
 const STORE_ID  = '00000000-0000-0000-0000-000000000002'
 
+// ── Product / collection resolver ─────────────────────────────────────────────
+
+interface ResolvedProduct {
+  type: 'product' | 'collection' | 'text'
+  title: string
+  description: string | null
+  variants: string | null
+  productType: string | null
+  tags: string | null
+}
+
+async function resolveProduct(
+  productFocus: string,
+  shopifyStore: string,
+  shopifyToken: string,
+): Promise<ResolvedProduct | null> {
+  if (!productFocus.trim()) return null
+
+  const isUrl =
+    productFocus.includes('lashboxla.com/products/') ||
+    productFocus.includes('lashboxla.com/collections/')
+
+  if (!isUrl) {
+    return { type: 'text', title: productFocus, description: null, variants: null, productType: null, tags: null }
+  }
+
+  const match = productFocus.match(/\/(products|collections)\/([^/?#]+)/)
+  if (!match) return null
+
+  const [, type, handle] = match
+
+  try {
+    if (type === 'products') {
+      const res = await fetch(
+        `https://${shopifyStore}/admin/api/2024-10/products.json?handle=${handle}&fields=title,body_html,variants,product_type,tags`,
+        { headers: { 'X-Shopify-Access-Token': shopifyToken } },
+      )
+      if (!res.ok) return null
+      const data = await res.json() as { products?: { title: string; body_html: string; variants: { title: string }[]; product_type: string; tags: string }[] }
+      const product = data.products?.[0]
+      if (!product) return null
+
+      const description = product.body_html
+        ?.replace(/<[^>]*>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 1000) || null
+
+      const variants = product.variants
+        ?.map((v) => v.title)
+        .filter((t) => t !== 'Default Title')
+        .slice(0, 10)
+        .join(', ') || null
+
+      return {
+        type: 'product',
+        title: product.title,
+        description,
+        variants,
+        productType: product.product_type || null,
+        tags: product.tags || null,
+      }
+    }
+
+    if (type === 'collections') {
+      // Try custom collections first, then smart collections
+      const headers = { 'X-Shopify-Access-Token': shopifyToken }
+      const url = (kind: string) =>
+        `https://${shopifyStore}/admin/api/2024-10/${kind}.json?handle=${handle}&fields=title,body_html`
+
+      const [customRes, smartRes] = await Promise.all([
+        fetch(url('custom_collections'), { headers }).then((r) => r.json() as Promise<{ custom_collections?: { title: string; body_html: string }[] }>),
+        fetch(url('smart_collections'),  { headers }).then((r) => r.json() as Promise<{ smart_collections?:  { title: string; body_html: string }[] }>),
+      ])
+
+      const collection = customRes.custom_collections?.[0] ?? smartRes.smart_collections?.[0]
+      if (!collection) return null
+
+      const description = collection.body_html
+        ?.replace(/<[^>]*>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 500) || null
+
+      return { type: 'collection', title: collection.title, description, variants: null, productType: null, tags: null }
+    }
+  } catch {
+    // Shopify fetch failed — fall through to text fallback
+  }
+
+  return { type: 'text', title: productFocus, description: null, variants: null, productType: null, tags: null }
+}
+
 export async function POST(req: NextRequest) {
   const supabase = await createSupabaseServerClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -36,7 +129,7 @@ export async function POST(req: NextRequest) {
     { data: topProducts },
     { data: klaviyoCampaigns },
     { data: profileRows },
-    { data: focusProduct },
+    { data: shopifyStoreRow },
     { data: styleRules },
   ] = await Promise.all([
     service
@@ -60,16 +153,11 @@ export async function POST(req: NextRequest) {
       .eq('tenant_id', TENANT_ID)
       .not('segment', 'is', null),
 
-    productFocus
-      ? service
-          .from('product_stats')
-          .select('product_title, total_revenue, total_quantity_sold, repeat_purchase_rate')
-          .eq('tenant_id', TENANT_ID)
-          .ilike('product_title', `%${productFocus}%`)
-          .order('total_revenue', { ascending: false })
-          .limit(1)
-          .maybeSingle()
-      : Promise.resolve({ data: null }),
+    service
+      .from('stores')
+      .select('shopify_domain, shopify_access_token')
+      .eq('id', STORE_ID)
+      .single(),
 
     service
       .from('style_guide_rules')
@@ -78,6 +166,15 @@ export async function POST(req: NextRequest) {
       .eq('active', true)
       .order('sort_order'),
   ])
+
+  // Resolve product/collection if a focus was provided
+  const resolvedProduct = productFocus
+    ? await resolveProduct(
+        productFocus,
+        shopifyStoreRow?.shopify_domain ?? process.env.SHOPIFY_RETAIL_STORE ?? '',
+        shopifyStoreRow?.shopify_access_token ?? '',
+      )
+    : null
 
   // Aggregate email stats
   const campaigns = klaviyoCampaigns ?? []
@@ -106,18 +203,26 @@ export async function POST(req: NextRequest) {
     .map(([seg, count]) => `  • ${seg}: ${count.toLocaleString()} customers`)
     .join('\n')
 
-  // Specific product block (if selected)
-  const fp = focusProduct as {
-    product_title: string
-    total_revenue: number
-    total_quantity_sold: number
-    repeat_purchase_rate: number
-  } | null
-  const focusProductBlock = fp
-    ? `Selected product stats: "${fp.product_title}", ${fp.total_quantity_sold?.toLocaleString()} units sold, $${Number(fp.total_revenue).toLocaleString('en-US', { maximumFractionDigits: 0 })} total revenue, ${(Number(fp.repeat_purchase_rate) * 100).toFixed(0)}% repeat purchase rate`
-    : productFocus
-    ? `Selected product: "${productFocus}" (no detailed stats available)`
-    : null
+  // Resolved product / collection context block
+  const productBlock = resolvedProduct
+    ? [
+        'PRODUCT / COLLECTION FOCUS:',
+        resolvedProduct.type === 'product' ? [
+          `- Name: ${resolvedProduct.title}`,
+          resolvedProduct.productType ? `- Type: ${resolvedProduct.productType}` : '',
+          resolvedProduct.variants   ? `- Variants available: ${resolvedProduct.variants}` : '',
+          resolvedProduct.description ? `- Product description: ${resolvedProduct.description}` : '',
+          resolvedProduct.tags        ? `- Tags: ${resolvedProduct.tags}` : '',
+          'Use specific details from this product description in the copy — reference actual specs, use cases, and differentiators rather than generic language.',
+        ].filter(Boolean).join('\n') : '',
+        resolvedProduct.type === 'collection' ? [
+          `- Collection: ${resolvedProduct.title}`,
+          resolvedProduct.description ? `- Collection description: ${resolvedProduct.description}` : '',
+          'Write copy that speaks to the breadth of this collection and helps the reader navigate to what\'s right for them.',
+        ].filter(Boolean).join('\n') : '',
+        resolvedProduct.type === 'text' ? `- Product reference: ${resolvedProduct.title}` : '',
+      ].filter(Boolean).join('\n')
+    : ''
 
   const emailPerfBlock = avgOpenRate !== null
     ? `Current email performance baseline: ${(avgOpenRate * 100).toFixed(1)}% avg open rate, ${avgClickRate !== null ? (avgClickRate * 100).toFixed(1) + '%' : 'N/A'} avg click rate`
@@ -157,7 +262,7 @@ ${topProductLines || '  (no product data synced yet)'}
 ${emailPerfBlock}
 Customer segments:
 ${segmentLines || '  (no segment data synced yet)'}
-${focusProductBlock ? focusProductBlock : ''}
+${productBlock ? '\n' + productBlock : ''}
 
 BRAND VOICE:
 - Educational and empowering — teach, don't just sell

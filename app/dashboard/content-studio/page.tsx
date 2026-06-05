@@ -28,8 +28,13 @@ export default async function ContentStudioPage() {
       .from('product_stats')
       .select('product_title, total_revenue')
       .eq('tenant_id', TENANT_ID)
-      .order('total_revenue', { ascending: false })
-      .limit(10),
+      .gt('revenue_90d', 0)
+      .not('product_title', 'ilike', '%return%')
+      .not('product_title', 'ilike', '%protection%')
+      .not('product_title', 'ilike', '%package%')
+      .not('product_title', 'ilike', '%shipping%')
+      .not('product_title', 'ilike', '%insurance%')
+      .order('total_revenue', { ascending: false }),
 
     service
       .from('customer_profiles')
