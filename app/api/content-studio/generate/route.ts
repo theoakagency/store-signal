@@ -231,6 +231,8 @@ export async function POST(req: NextRequest) {
   // ── Dynamic style rules block ─────────────────────────────────────────────
 
   const rules = styleRules ?? []
+  console.log('[content-studio/generate] styleRules from DB:', rules.length, '| store_id:', STORE_ID)
+
   const avoidRules   = rules.filter((r) => r.category === 'avoid')
   const enforceRules = rules.filter((r) => r.category === 'enforce')
   const vocabRules   = rules.filter((r) => r.category === 'vocabulary')

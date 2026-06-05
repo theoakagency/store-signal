@@ -13,17 +13,17 @@ const DEFAULT_RULES: { category: 'avoid' | 'enforce' | 'vocabulary' | 'examples'
   { category: 'avoid', rule: "Never use 'revolutionary', 'cutting-edge', or 'state-of-the-art'" },
 
   // enforce
-  { category: 'enforce', rule: "Write in second person — 'you' and 'your clients', not 'lash artists' in third person" },
-  { category: 'enforce', rule: "Vary sentence length — mix short punchy sentences with longer ones. Avoid uniform rhythm." },
+  { category: 'enforce', rule: "Write in second person - 'you' and 'your clients', not 'lash artists' in third person" },
+  { category: 'enforce', rule: "Vary sentence length - mix short punchy sentences with longer ones. Avoid uniform rhythm." },
   { category: 'enforce', rule: "Numbers under 10 are written out (one, two, three). 10 and above use numerals." },
-  { category: 'enforce', rule: "Speak to the business reality — reference client retention, restock timing, appointment books" },
+  { category: 'enforce', rule: "Speak to the business reality - reference client retention, restock timing, appointment books" },
   { category: 'enforce', rule: "Write like a peer who understands being behind the bed managing 6+ clients a day" },
 
   // vocabulary
   { category: 'vocabulary', rule: "Say 'lash artist' not 'technician' or 'stylist'" },
   { category: 'vocabulary', rule: "Say 'your clients' not 'customers' when referring to the artist's own clientele" },
-  { category: 'vocabulary', rule: "Say 'retention' as a technical term for adhesive bond longevity — don't use it loosely" },
-  { category: 'vocabulary', rule: "Use 'lash lift' not 'lash perm' — these are different services" },
+  { category: 'vocabulary', rule: "Say 'retention' as a technical term for adhesive bond longevity - don't use it loosely" },
+  { category: 'vocabulary', rule: "Use 'lash lift' not 'lash perm' - these are different services" },
 ]
 
 export async function POST() {
