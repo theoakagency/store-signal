@@ -276,6 +276,11 @@ BRAND VOICE:
 
 AUDIENCE: Licensed lash artists who are professional restockers, not impulse buyers. 3-12 month adoption arc for new techniques. They care about retention time, client satisfaction, application speed, consistency of results.
 ${styleBlock ? '\n' + styleBlock + '\n' : ''}
+FORMATTING CONSTRAINTS — APPLY TO EVERY FIELD INCLUDING SUBJECTS AND PREHEADERS:
+- Never use em dashes (—) or en dashes (–) anywhere in the output. Use a comma, period, or rewrite the clause instead.
+- Never use more than one exclamation point across all three versions combined.
+- Never use "game-changer", "elevate", "unlock", "revolutionary", "cutting-edge", or "state-of-the-art".
+
 RESPONSE FORMAT: Return ONLY valid JSON, no markdown, no code fences, no preamble.
 ${channel === 'email' ? `{
   "versions": [
