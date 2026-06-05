@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useCallback } from 'react'
+import Link from 'next/link'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -383,7 +384,19 @@ export default function ContentStudio({
 
         {/* ── Input Form ── */}
         <section className="rounded-2xl border border-cream-3 bg-white p-6 shadow-sm">
-          <h2 className="font-display text-lg font-semibold text-ink mb-5">Generate Content</h2>
+          <div className="flex items-center justify-between mb-5">
+            <h2 className="font-display text-lg font-semibold text-ink">Generate Content</h2>
+            <Link
+              href="/dashboard/content-studio/settings"
+              className="flex items-center gap-1.5 rounded-lg border border-cream-3 px-2.5 py-1.5 text-xs font-medium text-ink-3 hover:border-teal/50 hover:text-teal transition"
+            >
+              <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <path d="M11 2l3 3-7 7H4v-3L11 2z" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M9 4l3 3" strokeLinecap="round" />
+              </svg>
+              Style Guide
+            </Link>
+          </div>
 
           <form onSubmit={handleGenerate} className="space-y-4">
 

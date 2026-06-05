@@ -37,6 +37,7 @@ export async function POST(req: NextRequest) {
     { data: klaviyoCampaigns },
     { data: profileRows },
     { data: focusProduct },
+    { data: styleRules },
   ] = await Promise.all([
     service
       .from('product_stats')
@@ -69,6 +70,13 @@ export async function POST(req: NextRequest) {
           .limit(1)
           .maybeSingle()
       : Promise.resolve({ data: null }),
+
+    service
+      .from('style_guide_rules')
+      .select('category, rule')
+      .eq('store_id', STORE_ID)
+      .eq('active', true)
+      .order('sort_order'),
   ])
 
   // Aggregate email stats
@@ -115,6 +123,30 @@ export async function POST(req: NextRequest) {
     ? `Current email performance baseline: ${(avgOpenRate * 100).toFixed(1)}% avg open rate, ${avgClickRate !== null ? (avgClickRate * 100).toFixed(1) + '%' : 'N/A'} avg click rate`
     : 'Email performance data not yet synced'
 
+  // ── Dynamic style rules block ─────────────────────────────────────────────
+
+  const rules = styleRules ?? []
+  const avoidRules   = rules.filter((r) => r.category === 'avoid')
+  const enforceRules = rules.filter((r) => r.category === 'enforce')
+  const vocabRules   = rules.filter((r) => r.category === 'vocabulary')
+  const exampleRules = rules.filter((r) => r.category === 'examples')
+
+  const styleBlock = rules.length === 0 ? '' : [
+    'STYLE RULES — FOLLOW STRICTLY:',
+    avoidRules.length > 0
+      ? `Never do these:\n${avoidRules.map((r) => `- ${r.rule}`).join('\n')}`
+      : '',
+    enforceRules.length > 0
+      ? `Always do these:\n${enforceRules.map((r) => `- ${r.rule}`).join('\n')}`
+      : '',
+    vocabRules.length > 0
+      ? `Vocabulary:\n${vocabRules.map((r) => `- ${r.rule}`).join('\n')}`
+      : '',
+    exampleRules.length > 0
+      ? `Write in the style of these examples:\n${exampleRules.map((r) => `- ${r.rule}`).join('\n')}`
+      : '',
+  ].filter(Boolean).join('\n\n')
+
   // ── Prompts ───────────────────────────────────────────────────────────────
 
   const systemPrompt = `You are the in-house copywriter for LashBox LA (lashboxla.com), a professional lash and lash lift supply company serving licensed lash artists and salon owners. You have deep knowledge of the lash industry.
@@ -136,18 +168,7 @@ BRAND VOICE:
 - Write like someone who understands what it means to be behind the bed managing 6+ clients a day
 
 AUDIENCE: Licensed lash artists who are professional restockers, not impulse buyers. 3-12 month adoption arc for new techniques. They care about retention time, client satisfaction, application speed, consistency of results.
-
-STYLE RULES — FOLLOW STRICTLY:
-- Never use em dashes (—) or en dashes (–) anywhere in the output. Use a comma, period, or rewrite the sentence instead.
-- Never use the word "game-changer" or "game changer"
-- Never use "elevate", "unlock", "empower" as verbs directed at the reader
-- Never open an email with "I hope this finds you well" or any variant
-- Never use exclamation points more than once per version
-- Write in second person ("you", "your clients") not third person ("lash artists")
-- Sentence length should vary — mix short punchy sentences with longer ones. Avoid uniform rhythm.
-- Never use the Oxford comma
-- Numbers under 10 are written out (one, two, three). 10 and above use numerals.
-
+${styleBlock ? '\n' + styleBlock + '\n' : ''}
 RESPONSE FORMAT: Return ONLY valid JSON, no markdown, no code fences, no preamble.
 ${channel === 'email' ? `{
   "versions": [

@@ -130,13 +130,24 @@ export default function NavLinks({
       <Link
         href="/dashboard/content-studio"
         onClick={onNavigate}
-        className={`nav-link ${isActive('/dashboard/content-studio') ? 'active' : ''}`}
+        className={`nav-link ${isActive('/dashboard/content-studio', true) ? 'active' : ''}`}
       >
         <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
           <path d="M11 2l3 3-7 7H4v-3L11 2z" strokeLinecap="round" strokeLinejoin="round" />
           <path d="M9 4l3 3" strokeLinecap="round" />
         </svg>
         Content Studio
+      </Link>
+
+      <Link
+        href="/dashboard/content-studio/settings"
+        onClick={onNavigate}
+        className={`nav-link ml-5 text-[12px] ${isActive('/dashboard/content-studio/settings') ? 'active' : ''}`}
+      >
+        <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+          <path d="M8 1l1.6 3.3 3.6.5-2.6 2.5.6 3.6L8 9.3l-3.2 1.6.6-3.6L2.8 4.8l3.6-.5L8 1z" strokeLinejoin="round"/>
+        </svg>
+        Style Guide
       </Link>
 
       {/* ── CHANNELS ───────────────────────────────────────────────────────── */}
