@@ -36,6 +36,7 @@ export interface ContentGeneration {
   talking_points: string | null
   versions: GenerationResult
   created_at: string
+  content_type?: string | null
 }
 
 interface FormState {
@@ -74,6 +75,28 @@ const PERSONA_OPTIONS = [
   { value: 'subscribers',              label: 'Active Subscribers (Recharge, loyalty-focused)' },
 ]
 
+const CONTENT_TYPE_OPTIONS = [
+  { value: 'product',      label: 'Product' },
+  { value: 'collection',   label: 'Collection' },
+  { value: 'landing-page', label: 'Landing Page' },
+  { value: 'event',        label: 'Event' },
+  { value: 'educational',  label: 'Educational' },
+  { value: 'brand',        label: 'Brand' },
+  { value: 'promotion',    label: 'Promotion' },
+  { value: 'other',        label: 'Other' },
+]
+
+const OFFER_TYPE_OPTIONS = [
+  { value: 'percent-off',    label: 'Percent Off' },
+  { value: 'dollar-off',     label: 'Dollar Off' },
+  { value: 'free-shipping',  label: 'Free Shipping' },
+  { value: 'bogo',           label: 'Buy One Get One' },
+  { value: 'bundle',         label: 'Bundle Deal' },
+  { value: 'flash-sale',     label: 'Flash Sale' },
+  { value: 'loyalty-reward', label: 'Loyalty Reward' },
+  { value: 'referral',       label: 'Referral Offer' },
+]
+
 // ── Product focus input ───────────────────────────────────────────────────────
 
 const JUNK_PATTERNS = ['return', 'protection', 'package', 'shipping', 'insurance']
@@ -90,6 +113,7 @@ function ProductFocusInput({
   displayName,
   products,
   className,
+  placeholder = 'Paste a product URL or type a product name',
 }: {
   value: string
   onChange: (v: string) => void
@@ -97,6 +121,7 @@ function ProductFocusInput({
   displayName: string
   products: { title: string; handle: string }[]
   className: string
+  placeholder?: string
 }) {
   const [open, setOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -132,12 +157,11 @@ function ProductFocusInput({
         value={value}
         onChange={(e) => { onChange(e.target.value); setOpen(true) }}
         onFocus={() => setOpen(true)}
-        placeholder="Paste a product URL or type a product name"
+        placeholder={placeholder}
         className={className}
         autoComplete="off"
       />
 
-      {/* URL detected — show product name if selected from typeahead, otherwise generic badge */}
       {isUrl && (
         <p className="mt-1.5 text-[11px] font-medium text-teal-deep">
           {displayName
@@ -147,14 +171,12 @@ function ProductFocusInput({
         </p>
       )}
 
-      {/* Hint line when empty */}
       {!value && (
         <p className="mt-1 text-[11px] text-ink-3">
           e.g. lashboxla.com/products/omega-adhesive or just &ldquo;OMega adhesive&rdquo;
         </p>
       )}
 
-      {/* Typeahead suggestions */}
       {showSuggestions && (
         <div className="absolute z-20 left-0 right-0 top-full mt-1 max-h-56 overflow-y-auto rounded-lg border border-cream-3 bg-white shadow-lg">
           {suggestions.map((p) => (
@@ -163,7 +185,7 @@ function ProductFocusInput({
               type="button"
               className="w-full text-left px-3 py-2 text-sm text-ink hover:bg-cream transition-colors border-b border-cream-2 last:border-0"
               onMouseDown={(e) => {
-                e.preventDefault() // prevent input blur before click registers
+                e.preventDefault()
                 onSelect(`https://lashboxla.com/products/${p.handle}`, p.title)
                 setOpen(false)
               }}
@@ -377,6 +399,63 @@ function LoadingSkeleton() {
   )
 }
 
+// ── Suggest button ────────────────────────────────────────────────────────────
+
+function SuggestButton({ onClick, loading, label }: { onClick: () => void; loading: boolean; label: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={loading}
+      className="flex items-center gap-1 text-xs text-teal-deep hover:text-teal disabled:opacity-50 transition"
+    >
+      {loading ? (
+        <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-teal/30 border-t-teal" />
+      ) : (
+        <svg className="h-3 w-3" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
+          <path d="M6 1v2M6 9v2M1 6h2M9 6h2M2.5 2.5l1.5 1.5M8 8l1.5 1.5M8 4l1.5-1.5M2.5 9.5L4 8" strokeLinecap="round"/>
+        </svg>
+      )}
+      {label}
+    </button>
+  )
+}
+
+function TopicSuggestionPills({
+  suggestions,
+  onSelect,
+  onDismiss,
+}: {
+  suggestions: string[]
+  onSelect: (s: string) => void
+  onDismiss: () => void
+}) {
+  if (!suggestions.length) return null
+  return (
+    <div className="mt-2 space-y-2">
+      <div className="flex flex-wrap gap-1.5">
+        {suggestions.map((s, i) => (
+          <button
+            key={i}
+            type="button"
+            onClick={() => onSelect(s)}
+            className="rounded-full border border-cream-3 bg-cream px-3 py-1 text-xs text-ink hover:bg-teal hover:text-white hover:border-teal transition cursor-pointer"
+          >
+            {s}
+          </button>
+        ))}
+      </div>
+      <button
+        type="button"
+        onClick={onDismiss}
+        className="text-[10px] text-ink-3 hover:text-ink-2 transition"
+      >
+        Dismiss
+      </button>
+    </div>
+  )
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function ContentStudio({
@@ -402,6 +481,21 @@ export default function ContentStudio({
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null)
   const [liveHistory, setLiveHistory] = useState<ContentGeneration[]>(history)
 
+  // ── Content type + conditional fields ─────────────────────────────────────
+  const [contentType, setContentType] = useState('product')
+  const [collectionUrl, setCollectionUrl] = useState('')
+  const [landingPageUrl, setLandingPageUrl] = useState('')
+  const [landingPageDescription, setLandingPageDescription] = useState('')
+  const [eventName, setEventName] = useState('')
+  const [eventDate, setEventDate] = useState('')
+  const [eventUrl, setEventUrl] = useState('')
+  const [offerType, setOfferType] = useState('percent-off')
+  const [discountAmount, setDiscountAmount] = useState('')
+  const [promoCode, setPromoCode] = useState('')
+  const [offerEndDate, setOfferEndDate] = useState('')
+  const [offerDetails, setOfferDetails] = useState('')
+  const [validationErrors, setValidationErrors] = useState<Record<string, string>>({})
+
   // ── Topic suggestions ─────────────────────────────────────────────────────
   const [topicSuggestions, setTopicSuggestions] = useState<string[]>([])
   const [topicSuggestionsLoading, setTopicSuggestionsLoading] = useState(false)
@@ -415,11 +509,87 @@ export default function ContentStudio({
   const [talkingPointsFromProduct, setTalkingPointsFromProduct] = useState(false)
   const [topicRequiredMsg, setTopicRequiredMsg] = useState(false)
 
-  // ── Auto-trigger talking points when product + topic are both set ─────────
+  // ── Helpers ───────────────────────────────────────────────────────────────
+
+  function clearConditionalFields() {
+    setForm((f) => ({ ...f, topic: '', productFocus: '' }))
+    setProductDisplayName('')
+    setCollectionUrl('')
+    setLandingPageUrl('')
+    setLandingPageDescription('')
+    setEventName('')
+    setEventDate('')
+    setEventUrl('')
+    setOfferType('percent-off')
+    setDiscountAmount('')
+    setPromoCode('')
+    setOfferEndDate('')
+    setOfferDetails('')
+    setValidationErrors({})
+    setShowTopicSuggestions(false)
+    setShowTalkingPointSuggestions(false)
+  }
+
+  function getEffectiveTopic(): string {
+    switch (contentType) {
+      case 'product':
+        if (form.topic) return form.topic
+        return productDisplayName ? `Promote ${productDisplayName}` : ''
+      case 'collection':
+        return form.topic
+      case 'landing-page':
+        return landingPageDescription ? landingPageDescription.slice(0, 120) : ''
+      case 'event':
+        return eventName ? `${eventName}${eventDate ? ` on ${eventDate}` : ''}` : ''
+      case 'promotion': {
+        const offerLabel = OFFER_TYPE_OPTIONS.find((o) => o.value === offerType)?.label ?? offerType
+        const parts = [offerLabel, discountAmount, promoCode ? `Code: ${promoCode}` : ''].filter(Boolean)
+        return parts.join(' - ') || 'Promotion'
+      }
+      default:
+        return form.topic
+    }
+  }
+
+  function getEffectiveProductFocus(): string {
+    if (contentType === 'product' || contentType === 'educational' || contentType === 'promotion') {
+      return form.productFocus
+    }
+    if (contentType === 'collection') return collectionUrl
+    return ''
+  }
+
+  function validateForm(): Record<string, string> {
+    const errs: Record<string, string> = {}
+    switch (contentType) {
+      case 'product':
+        if (!form.productFocus.trim()) errs.productFocus = 'Product is required'
+        break
+      case 'collection':
+        if (!collectionUrl.trim()) errs.collectionUrl = 'Collection URL is required'
+        if (!form.topic.trim()) errs.topic = 'Topic is required'
+        break
+      case 'landing-page':
+        if (!landingPageUrl.trim()) errs.landingPageUrl = 'Landing page URL is required'
+        if (!landingPageDescription.trim()) errs.landingPageDescription = 'Description is required'
+        break
+      case 'event':
+        if (!eventName.trim()) errs.eventName = 'Event name is required'
+        break
+      case 'educational':
+      case 'brand':
+      case 'other':
+        if (!form.topic.trim()) errs.topic = 'Topic is required'
+        break
+    }
+    return errs
+  }
+
+  // ── Auto-trigger talking points when product selected (product type only) ──
   const lastAutoTriggerKey = useRef('')
   useEffect(() => {
-    const topicReady = form.topic.length > 5
-    const key = productDisplayName && topicReady ? `${productDisplayName}` : ''
+    if (contentType !== 'product') return
+    const key = productDisplayName || ''
     if (
       key &&
       key !== lastAutoTriggerKey.current &&
@@ -429,10 +599,11 @@ export default function ContentStudio({
       lastAutoTriggerKey.current = key
       setTalkingPointsFromProduct(true)
       setTalkingPointSuggestionsLoading(true)
+      const effectiveTopic = `Promote ${productDisplayName}`
       fetch('/api/content-studio/suggest-talking-points', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ productFocus: form.productFocus, topic: form.topic, channel: form.channel }),
+        body: JSON.stringify({ productFocus: form.productFocus, topic: effectiveTopic, channel: form.channel }),
       })
         .then((r) => r.json())
         .then((data: { talkingPoints?: string[] }) => {
@@ -449,7 +620,7 @@ export default function ContentStudio({
       lastAutoTriggerKey.current = ''
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [productDisplayName, form.topic, showTalkingPointSuggestions, talkingPointSuggestionsLoading])
+  }, [productDisplayName, showTalkingPointSuggestions, talkingPointSuggestionsLoading, contentType])
 
   function setField<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((f) => ({ ...f, [key]: value }))
@@ -459,7 +630,7 @@ export default function ContentStudio({
     setSelectedTones((prev) => {
       const next = new Set(prev)
       if (next.has(tone)) {
-        if (next.size === 1) return prev // must keep at least one
+        if (next.size === 1) return prev
         next.delete(tone)
       } else {
         next.add(tone)
@@ -482,7 +653,7 @@ export default function ContentStudio({
       const res = await fetch('/api/content-studio/suggest-topics', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ productFocus: form.productFocus || null }),
+        body: JSON.stringify({ productFocus: getEffectiveProductFocus() || null, contentType }),
       })
       const data = await res.json() as { topics?: string[] }
       if (data.topics?.length) {
@@ -495,7 +666,8 @@ export default function ContentStudio({
   }
 
   async function fetchTalkingPointSuggestions() {
-    if (!form.topic) {
+    const effectiveTopic = getEffectiveTopic()
+    if (!effectiveTopic) {
       setTopicRequiredMsg(true)
       setTimeout(() => setTopicRequiredMsg(false), 2500)
       return
@@ -506,7 +678,7 @@ export default function ContentStudio({
       const res = await fetch('/api/content-studio/suggest-talking-points', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ productFocus: form.productFocus || null, topic: form.topic, channel: form.channel }),
+        body: JSON.stringify({ productFocus: getEffectiveProductFocus() || null, topic: effectiveTopic, channel: form.channel }),
       })
       const data = await res.json() as { talkingPoints?: string[] }
       if (data.talkingPoints?.length) {
@@ -532,11 +704,14 @@ export default function ContentStudio({
   }
 
   function loadFromHistory(row: ContentGeneration) {
+    const ct = row.content_type ?? 'product'
+    setContentType(ct)
+    clearConditionalFields()
     setForm({
       channel: row.channel,
       topic: row.topic,
       productFocus: row.product_focus ?? '',
-      audience: row.audience ?? '',
+      audience: row.audience ?? 'all-lash-artists',
       talkingPoints: row.talking_points ?? '',
     })
     setProductDisplayName('')
@@ -554,23 +729,60 @@ export default function ContentStudio({
   async function handleGenerate(e: React.FormEvent) {
     e.preventDefault()
     if (selectedTones.size === 0) return
+
+    const errs = validateForm()
+    if (Object.keys(errs).length > 0) {
+      setValidationErrors(errs)
+      return
+    }
+    setValidationErrors({})
+
+    const effectiveTopic = getEffectiveTopic()
+    if (!effectiveTopic) {
+      setError('Please fill in the required fields above.')
+      return
+    }
+
     setIsLoading(true)
     setResult(null)
     setError(null)
+
+    const payload: Record<string, unknown> = {
+      channel: form.channel,
+      contentType,
+      topic: effectiveTopic,
+      productFocus: getEffectiveProductFocus() || null,
+      audience: form.audience || null,
+      customAudience: customAudience || null,
+      tones: Array.from(selectedTones),
+      talkingPoints: form.talkingPoints || null,
+    }
+
+    if (contentType === 'promotion') {
+      payload.offerType = offerType
+      payload.discountAmount = discountAmount || null
+      payload.promoCode = promoCode || null
+      payload.offerEndDate = offerEndDate || null
+      payload.offerDetails = offerDetails || null
+    }
+    if (contentType === 'event') {
+      payload.eventName = eventName
+      payload.eventDate = eventDate || null
+      payload.eventUrl = eventUrl || null
+    }
+    if (contentType === 'landing-page') {
+      payload.landingPageUrl = landingPageUrl
+      payload.landingPageDescription = landingPageDescription
+    }
+    if (contentType === 'collection') {
+      payload.collectionUrl = collectionUrl
+    }
 
     try {
       const res = await fetch('/api/content-studio/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          channel: form.channel,
-          topic: form.topic,
-          productFocus: form.productFocus || null,
-          audience: form.audience || null,
-          customAudience: customAudience || null,
-          tones: Array.from(selectedTones),
-          talkingPoints: form.talkingPoints || null,
-        }),
+        body: JSON.stringify(payload),
       })
       const data = await res.json()
       if (!res.ok || data.error) {
@@ -578,7 +790,6 @@ export default function ContentStudio({
         return
       }
       setResult(data.data)
-      // Prepend to local history
       if (data.saved) {
         setLiveHistory((prev) => [data.saved, ...prev].slice(0, 20))
       }
@@ -591,6 +802,7 @@ export default function ContentStudio({
 
   const inputCls = 'w-full rounded-lg border border-cream-3 bg-white px-3 py-2 text-sm text-ink focus:border-teal focus:outline-none focus:ring-1 focus:ring-teal transition'
   const labelCls = 'block text-xs font-medium text-ink-2 mb-1'
+  const errCls = 'mt-1 text-[11px] text-red-500'
 
   return (
     <div className="space-y-6">
@@ -624,70 +836,318 @@ export default function ContentStudio({
               />
             </div>
 
-            {/* Topic */}
+            {/* Content Type */}
             <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="text-xs font-medium text-ink-2">Topic / Theme *</label>
-                <button
-                  type="button"
-                  onClick={fetchTopicSuggestions}
-                  disabled={topicSuggestionsLoading}
-                  className="flex items-center gap-1 text-xs text-teal-deep hover:text-teal disabled:opacity-50 transition"
-                >
-                  {topicSuggestionsLoading ? (
-                    <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-teal/30 border-t-teal" />
-                  ) : (
-                    <svg className="h-3 w-3" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
-                      <path d="M6 1v2M6 9v2M1 6h2M9 6h2M2.5 2.5l1.5 1.5M8 8l1.5 1.5M8 4l1.5-1.5M2.5 9.5L4 8" strokeLinecap="round"/>
-                    </svg>
-                  )}
-                  {form.topic ? 'Refresh suggestions' : 'Suggest topics'}
-                </button>
-              </div>
-              <input
-                required
-                value={form.topic}
-                onChange={(e) => setField('topic', e.target.value)}
-                placeholder="e.g. Restock reminder for CC curl lashes"
+              <label className={labelCls}>Content Type</label>
+              <select
+                value={contentType}
+                onChange={(e) => {
+                  setContentType(e.target.value)
+                  clearConditionalFields()
+                  setResult(null)
+                }}
                 className={inputCls}
-              />
-              {showTopicSuggestions && topicSuggestions.length > 0 && (
-                <div className="mt-2 space-y-2">
-                  <div className="flex flex-wrap gap-1.5">
-                    {topicSuggestions.map((s, i) => (
-                      <button
-                        key={i}
-                        type="button"
-                        onClick={() => { setField('topic', s); setShowTopicSuggestions(false) }}
-                        className="rounded-full border border-cream-3 bg-cream px-3 py-1 text-xs text-ink hover:bg-teal hover:text-white hover:border-teal transition cursor-pointer"
-                      >
-                        {s}
-                      </button>
-                    ))}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setShowTopicSuggestions(false)}
-                    className="text-[10px] text-ink-3 hover:text-ink-2 transition"
-                  >
-                    Dismiss
-                  </button>
-                </div>
-              )}
+              >
+                {CONTENT_TYPE_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
             </div>
 
-            {/* Product Focus */}
-            <div>
-              <label className={labelCls}>Product Focus</label>
-              <ProductFocusInput
-                value={form.productFocus}
-                onChange={(v) => { setField('productFocus', v); setProductDisplayName('') }}
-                onSelect={(url, name) => { setField('productFocus', url); setProductDisplayName(name) }}
-                displayName={productDisplayName}
-                products={products}
-                className={inputCls}
-              />
-            </div>
+            {/* ── Conditional fields ── */}
+
+            {/* product */}
+            {contentType === 'product' && (
+              <>
+                <div>
+                  <label className={labelCls}>Product <span className="text-red-400">*</span></label>
+                  <ProductFocusInput
+                    value={form.productFocus}
+                    onChange={(v) => { setField('productFocus', v); setProductDisplayName(''); setField('topic', '') }}
+                    onSelect={(url, name) => { setField('productFocus', url); setProductDisplayName(name); setField('topic', '') }}
+                    displayName={productDisplayName}
+                    products={products}
+                    className={inputCls + (validationErrors.productFocus ? ' border-red-400' : '')}
+                    placeholder="Paste a product URL or type a product name"
+                  />
+                  {validationErrors.productFocus && <p className={errCls}>{validationErrors.productFocus}</p>}
+                </div>
+                {form.productFocus && (
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-xs font-medium text-ink-2">
+                        Content Angle <span className="font-normal text-ink-3">(optional)</span>
+                      </label>
+                      <SuggestButton
+                        onClick={fetchTopicSuggestions}
+                        loading={topicSuggestionsLoading}
+                        label="Suggest angles"
+                      />
+                    </div>
+                    {showTopicSuggestions && (
+                      <TopicSuggestionPills
+                        suggestions={topicSuggestions}
+                        onSelect={(s) => { setField('topic', s); setShowTopicSuggestions(false) }}
+                        onDismiss={() => setShowTopicSuggestions(false)}
+                      />
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* collection */}
+            {contentType === 'collection' && (
+              <>
+                <div>
+                  <label className={labelCls}>Collection URL <span className="text-red-400">*</span></label>
+                  <input
+                    type="text"
+                    value={collectionUrl}
+                    onChange={(e) => setCollectionUrl(e.target.value)}
+                    placeholder="https://lashboxla.com/collections/..."
+                    className={inputCls + (validationErrors.collectionUrl ? ' border-red-400' : '')}
+                  />
+                  {validationErrors.collectionUrl && <p className={errCls}>{validationErrors.collectionUrl}</p>}
+                </div>
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-medium text-ink-2">Topic / Angle <span className="text-red-400">*</span></label>
+                    <SuggestButton onClick={fetchTopicSuggestions} loading={topicSuggestionsLoading} label="Suggest topics" />
+                  </div>
+                  <input
+                    value={form.topic}
+                    onChange={(e) => setField('topic', e.target.value)}
+                    placeholder="e.g. Best sellers for spring volume sets"
+                    className={inputCls + (validationErrors.topic ? ' border-red-400' : '')}
+                  />
+                  {validationErrors.topic && <p className={errCls}>{validationErrors.topic}</p>}
+                  {showTopicSuggestions && (
+                    <TopicSuggestionPills
+                      suggestions={topicSuggestions}
+                      onSelect={(s) => { setField('topic', s); setShowTopicSuggestions(false) }}
+                      onDismiss={() => setShowTopicSuggestions(false)}
+                    />
+                  )}
+                </div>
+              </>
+            )}
+
+            {/* landing-page */}
+            {contentType === 'landing-page' && (
+              <>
+                <div>
+                  <label className={labelCls}>Landing Page URL <span className="text-red-400">*</span></label>
+                  <input
+                    type="text"
+                    value={landingPageUrl}
+                    onChange={(e) => setLandingPageUrl(e.target.value)}
+                    placeholder="https://lashboxla.com/pages/..."
+                    className={inputCls + (validationErrors.landingPageUrl ? ' border-red-400' : '')}
+                  />
+                  {validationErrors.landingPageUrl && <p className={errCls}>{validationErrors.landingPageUrl}</p>}
+                </div>
+                <div>
+                  <label className={labelCls}>What is this page about? <span className="text-red-400">*</span></label>
+                  <textarea
+                    value={landingPageDescription}
+                    onChange={(e) => setLandingPageDescription(e.target.value)}
+                    placeholder="Describe the page goal, offer, or content — Claude will use this as the topic"
+                    className={inputCls + ' resize-none' + (validationErrors.landingPageDescription ? ' border-red-400' : '')}
+                    style={{ minHeight: '72px' }}
+                  />
+                  {validationErrors.landingPageDescription && <p className={errCls}>{validationErrors.landingPageDescription}</p>}
+                </div>
+              </>
+            )}
+
+            {/* event */}
+            {contentType === 'event' && (
+              <>
+                <div>
+                  <label className={labelCls}>Event Name <span className="text-red-400">*</span></label>
+                  <input
+                    value={eventName}
+                    onChange={(e) => setEventName(e.target.value)}
+                    placeholder="e.g. Spring Lash Summit, Miko Live Webinar"
+                    className={inputCls + (validationErrors.eventName ? ' border-red-400' : '')}
+                  />
+                  {validationErrors.eventName && <p className={errCls}>{validationErrors.eventName}</p>}
+                </div>
+                <div>
+                  <label className={labelCls}>Event Date <span className="font-normal text-ink-3">(optional)</span></label>
+                  <input
+                    type="date"
+                    value={eventDate}
+                    onChange={(e) => setEventDate(e.target.value)}
+                    className={inputCls}
+                  />
+                </div>
+                <div>
+                  <label className={labelCls}>Event URL <span className="font-normal text-ink-3">(optional)</span></label>
+                  <input
+                    type="text"
+                    value={eventUrl}
+                    onChange={(e) => setEventUrl(e.target.value)}
+                    placeholder="https://..."
+                    className={inputCls}
+                  />
+                </div>
+              </>
+            )}
+
+            {/* educational */}
+            {contentType === 'educational' && (
+              <>
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-medium text-ink-2">Topic <span className="text-red-400">*</span></label>
+                    <SuggestButton onClick={fetchTopicSuggestions} loading={topicSuggestionsLoading} label="Suggest topics" />
+                  </div>
+                  <input
+                    value={form.topic}
+                    onChange={(e) => setField('topic', e.target.value)}
+                    placeholder="e.g. How to troubleshoot retention issues in humid climates"
+                    className={inputCls + (validationErrors.topic ? ' border-red-400' : '')}
+                  />
+                  {validationErrors.topic && <p className={errCls}>{validationErrors.topic}</p>}
+                  {showTopicSuggestions && (
+                    <TopicSuggestionPills
+                      suggestions={topicSuggestions}
+                      onSelect={(s) => { setField('topic', s); setShowTopicSuggestions(false) }}
+                      onDismiss={() => setShowTopicSuggestions(false)}
+                    />
+                  )}
+                </div>
+                <div>
+                  <label className={labelCls}>Optional Product Tie-in</label>
+                  <ProductFocusInput
+                    value={form.productFocus}
+                    onChange={(v) => { setField('productFocus', v); setProductDisplayName('') }}
+                    onSelect={(url, name) => { setField('productFocus', url); setProductDisplayName(name) }}
+                    displayName={productDisplayName}
+                    products={products}
+                    className={inputCls}
+                    placeholder="Search for a product to reference, or paste a URL"
+                  />
+                </div>
+              </>
+            )}
+
+            {/* brand */}
+            {contentType === 'brand' && (
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-medium text-ink-2">Topic <span className="text-red-400">*</span></label>
+                  <SuggestButton onClick={fetchTopicSuggestions} loading={topicSuggestionsLoading} label="Suggest topics" />
+                </div>
+                <input
+                  value={form.topic}
+                  onChange={(e) => setField('topic', e.target.value)}
+                  placeholder="e.g. Why LashBox LA has been the #1 choice for artists for 10 years"
+                  className={inputCls + (validationErrors.topic ? ' border-red-400' : '')}
+                />
+                {validationErrors.topic && <p className={errCls}>{validationErrors.topic}</p>}
+                {showTopicSuggestions && (
+                  <TopicSuggestionPills
+                    suggestions={topicSuggestions}
+                    onSelect={(s) => { setField('topic', s); setShowTopicSuggestions(false) }}
+                    onDismiss={() => setShowTopicSuggestions(false)}
+                  />
+                )}
+              </div>
+            )}
+
+            {/* promotion */}
+            {contentType === 'promotion' && (
+              <>
+                <div>
+                  <label className={labelCls}>Product <span className="font-normal text-ink-3">(optional)</span></label>
+                  <ProductFocusInput
+                    value={form.productFocus}
+                    onChange={(v) => { setField('productFocus', v); setProductDisplayName('') }}
+                    onSelect={(url, name) => { setField('productFocus', url); setProductDisplayName(name) }}
+                    displayName={productDisplayName}
+                    products={products}
+                    className={inputCls}
+                    placeholder="Paste a product URL or type a product name"
+                  />
+                </div>
+                <div>
+                  <label className={labelCls}>Offer Type</label>
+                  <select value={offerType} onChange={(e) => setOfferType(e.target.value)} className={inputCls}>
+                    {OFFER_TYPE_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </select>
+                </div>
+                {(offerType === 'percent-off' || offerType === 'dollar-off') && (
+                  <div>
+                    <label className={labelCls}>Discount Amount <span className="font-normal text-ink-3">(optional)</span></label>
+                    <input
+                      value={discountAmount}
+                      onChange={(e) => setDiscountAmount(e.target.value)}
+                      placeholder={offerType === 'percent-off' ? 'e.g. 20%' : 'e.g. $15 off'}
+                      className={inputCls}
+                    />
+                  </div>
+                )}
+                <div>
+                  <label className={labelCls}>Promo Code <span className="font-normal text-ink-3">(optional)</span></label>
+                  <input
+                    value={promoCode}
+                    onChange={(e) => setPromoCode(e.target.value)}
+                    placeholder="e.g. SPRING20"
+                    className={inputCls}
+                  />
+                </div>
+                <div>
+                  <label className={labelCls}>Offer End Date <span className="font-normal text-ink-3">(optional)</span></label>
+                  <input
+                    type="date"
+                    value={offerEndDate}
+                    onChange={(e) => setOfferEndDate(e.target.value)}
+                    className={inputCls}
+                  />
+                </div>
+                <div>
+                  <label className={labelCls}>Offer Details <span className="font-normal text-ink-3">(optional)</span></label>
+                  <textarea
+                    value={offerDetails}
+                    onChange={(e) => setOfferDetails(e.target.value)}
+                    placeholder="Any additional details about the promotion..."
+                    className={inputCls + ' resize-none'}
+                    style={{ minHeight: '72px' }}
+                  />
+                </div>
+              </>
+            )}
+
+            {/* other */}
+            {contentType === 'other' && (
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-medium text-ink-2">Topic <span className="text-red-400">*</span></label>
+                  <SuggestButton onClick={fetchTopicSuggestions} loading={topicSuggestionsLoading} label="Suggest topics" />
+                </div>
+                <input
+                  value={form.topic}
+                  onChange={(e) => setField('topic', e.target.value)}
+                  placeholder="Describe what this content is about"
+                  className={inputCls + (validationErrors.topic ? ' border-red-400' : '')}
+                />
+                {validationErrors.topic && <p className={errCls}>{validationErrors.topic}</p>}
+                {showTopicSuggestions && (
+                  <TopicSuggestionPills
+                    suggestions={topicSuggestions}
+                    onSelect={(s) => { setField('topic', s); setShowTopicSuggestions(false) }}
+                    onDismiss={() => setShowTopicSuggestions(false)}
+                  />
+                )}
+              </div>
+            )}
+
+            {/* ── Fixed bottom fields ── */}
 
             {/* Target Audience */}
             <div>
@@ -715,39 +1175,25 @@ export default function ContentStudio({
               />
             </div>
 
-            {/* Tone */}
+            {/* Tone / Angle */}
             <div>
               <label className={labelCls}>Tone / Angle <span className="text-ink-3">(select at least one)</span></label>
               <TonePills selected={selectedTones} onToggle={toggleTone} />
             </div>
 
-            {/* Key Talking Points */}
+            {/* What should Claude know? */}
             <div>
               <div className="flex items-center justify-between mb-1">
-                <label className="text-xs font-medium text-ink-2">Key Talking Points</label>
-                <button
-                  type="button"
-                  onClick={fetchTalkingPointSuggestions}
-                  disabled={talkingPointSuggestionsLoading}
-                  className="flex items-center gap-1 text-xs text-teal-deep hover:text-teal disabled:opacity-50 transition"
-                >
-                  {talkingPointSuggestionsLoading ? (
-                    <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-teal/30 border-t-teal" />
-                  ) : (
-                    <svg className="h-3 w-3" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
-                      <path d="M6 1v2M6 9v2M1 6h2M9 6h2M2.5 2.5l1.5 1.5M8 8l1.5 1.5M8 4l1.5-1.5M2.5 9.5L4 8" strokeLinecap="round"/>
-                    </svg>
-                  )}
-                  Suggest
-                </button>
+                <label className="text-xs font-medium text-ink-2">What should Claude know?</label>
+                <SuggestButton onClick={fetchTalkingPointSuggestions} loading={talkingPointSuggestionsLoading} label="Suggest" />
               </div>
               {topicRequiredMsg && (
-                <p className="mb-1 text-[11px] text-amber-600">Add a topic first</p>
+                <p className="mb-1 text-[11px] text-amber-600">Fill in the required fields first</p>
               )}
               <textarea
                 value={form.talkingPoints}
                 onChange={(e) => setField('talkingPoints', e.target.value)}
-                placeholder="e.g. 72hr hold time, now available in CC curl, bulk discount available..."
+                placeholder="Optional. Add any facts, specs, or angles Claude should include."
                 className={inputCls + ' resize-none'}
                 style={{ minHeight: '80px' }}
               />
@@ -831,7 +1277,7 @@ export default function ContentStudio({
               </div>
               <p className="text-sm text-ink-3 leading-relaxed">
                 Fill in the form and click<br />
-                <span className="font-medium text-ink-2">"Generate Content"</span>
+                <span className="font-medium text-ink-2">&ldquo;Generate Content&rdquo;</span>
               </p>
             </div>
           )}

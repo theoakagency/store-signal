@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
   const service = createSupabaseServiceClient()
 
   const body = await req.json()
-  const { productFocus } = body as { productFocus?: string | null }
+  const { productFocus, contentType } = body as { productFocus?: string | null; contentType?: string | null }
 
   // ── Fetch context ─────────────────────────────────────────────────────────
 
@@ -131,7 +131,8 @@ Recent high-performing email topics:
 ${campaignLines || '  (no campaign data available)'}
 ${resolvedProductTitle ? `\nSelected product focus: ${resolvedProductTitle}` : ''}
 
-Generate 6 specific campaign topic ideas for this month. Each should be a concrete angle, not a generic theme.
+Content type: ${contentType || 'general'}
+Generate 6 specific topic ideas appropriate for this content type. Each should be a concrete angle, not a generic theme.
 
 Good examples:
 - "Why lash artists are switching to Lash Alchemist mid-summer"

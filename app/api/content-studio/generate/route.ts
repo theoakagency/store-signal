@@ -122,14 +122,50 @@ export async function POST(req: NextRequest) {
   const service = createSupabaseServiceClient()
 
   const body = await req.json()
-  const { channel, topic, productFocus, audience, customAudience, tones, talkingPoints } = body as {
+  const {
+    channel,
+    contentType,
+    topic,
+    productFocus,
+    audience,
+    customAudience,
+    tones,
+    talkingPoints,
+    // promotion fields
+    offerType,
+    discountAmount,
+    promoCode,
+    offerEndDate,
+    offerDetails,
+    // event fields
+    eventName,
+    eventDate,
+    eventUrl,
+    // landing-page fields
+    landingPageUrl,
+    landingPageDescription,
+    // collection field
+    collectionUrl,
+  } = body as {
     channel: 'email' | 'sms' | 'push'
+    contentType?: string
     topic: string
     productFocus?: string | null
     audience?: string | null
     customAudience?: string | null
     tones?: string[]
     talkingPoints?: string | null
+    offerType?: string | null
+    discountAmount?: string | null
+    promoCode?: string | null
+    offerEndDate?: string | null
+    offerDetails?: string | null
+    eventName?: string | null
+    eventDate?: string | null
+    eventUrl?: string | null
+    landingPageUrl?: string | null
+    landingPageDescription?: string | null
+    collectionUrl?: string | null
   }
 
   if (!channel || !topic) {
@@ -216,26 +252,83 @@ export async function POST(req: NextRequest) {
     .map(([seg, count]) => `  • ${seg}: ${count.toLocaleString()} customers`)
     .join('\n')
 
-  // Resolved product / collection context block
-  const productBlock = resolvedProduct
-    ? [
-        'PRODUCT / COLLECTION FOCUS:',
+  // ── Content context block (replaces old productBlock) ────────────────────
+
+  function buildContentContext(): string {
+    const ct = contentType ?? 'product'
+
+    if (ct === 'product' || ct === 'educational') {
+      if (!resolvedProduct) return ''
+      const lines = [
+        resolvedProduct.type === 'product' ? 'PRODUCT FOCUS:' : 'COLLECTION FOCUS:',
         resolvedProduct.type === 'product' ? [
           `- Name: ${resolvedProduct.title}`,
-          resolvedProduct.productType ? `- Type: ${resolvedProduct.productType}` : '',
-          resolvedProduct.variants   ? `- Variants available: ${resolvedProduct.variants}` : '',
-          resolvedProduct.description ? `- Product description: ${resolvedProduct.description}` : '',
-          resolvedProduct.tags        ? `- Tags: ${resolvedProduct.tags}` : '',
-          'Use specific details from this product description in the copy — reference actual specs, use cases, and differentiators rather than generic language.',
+          resolvedProduct.productType  ? `- Type: ${resolvedProduct.productType}` : '',
+          resolvedProduct.variants     ? `- Variants available: ${resolvedProduct.variants}` : '',
+          resolvedProduct.description  ? `- Product description: ${resolvedProduct.description}` : '',
+          resolvedProduct.tags         ? `- Tags: ${resolvedProduct.tags}` : '',
+          'Use specific details from this product description in the copy.',
         ].filter(Boolean).join('\n') : '',
         resolvedProduct.type === 'collection' ? [
           `- Collection: ${resolvedProduct.title}`,
           resolvedProduct.description ? `- Collection description: ${resolvedProduct.description}` : '',
-          'Write copy that speaks to the breadth of this collection and helps the reader navigate to what\'s right for them.',
+          "Write copy that speaks to the breadth of this collection.",
         ].filter(Boolean).join('\n') : '',
         resolvedProduct.type === 'text' ? `- Product reference: ${resolvedProduct.title}` : '',
       ].filter(Boolean).join('\n')
-    : ''
+      return lines
+    }
+
+    if (ct === 'promotion') {
+      const lines = [
+        'PROMOTION DETAILS:',
+        offerType ? `- Offer type: ${offerType}` : '',
+        discountAmount ? `- Discount: ${discountAmount}` : '',
+        promoCode ? `- Promo code: ${promoCode}` : '',
+        offerEndDate ? `- Offer ends: ${offerEndDate}` : '',
+        offerDetails ? `- Additional details: ${offerDetails}` : '',
+        resolvedProduct ? `- Featured product: ${resolvedProduct.title}` : '',
+        resolvedProduct?.description ? `- Product description: ${resolvedProduct.description}` : '',
+        'Create urgency around the offer. Include the promo code prominently if provided.',
+      ].filter(Boolean).join('\n')
+      return lines
+    }
+
+    if (ct === 'event') {
+      const lines = [
+        'EVENT DETAILS:',
+        eventName ? `- Event name: ${eventName}` : '',
+        eventDate ? `- Date: ${eventDate}` : '',
+        eventUrl ? `- Registration/details URL: ${eventUrl}` : '',
+        'Drive registrations or attendance. Create excitement around the event.',
+      ].filter(Boolean).join('\n')
+      return lines
+    }
+
+    if (ct === 'landing-page') {
+      const lines = [
+        'LANDING PAGE DETAILS:',
+        landingPageUrl ? `- URL: ${landingPageUrl}` : '',
+        landingPageDescription ? `- Page purpose: ${landingPageDescription}` : '',
+        'Drive clicks to this page. Copy should clearly communicate the value of visiting.',
+      ].filter(Boolean).join('\n')
+      return lines
+    }
+
+    if (ct === 'collection') {
+      const lines = [
+        collectionUrl ? `COLLECTION URL: ${collectionUrl}` : '',
+        resolvedProduct ? `Collection name: ${resolvedProduct.title}` : '',
+        resolvedProduct?.description ? `Collection description: ${resolvedProduct.description}` : '',
+      ].filter(Boolean).join('\n')
+      return lines
+    }
+
+    // brand / other / educational with no product — no extra context block
+    return ''
+  }
+
+  const contentContextBlock = buildContentContext()
 
   const emailPerfBlock = avgOpenRate !== null
     ? `Current email performance baseline: ${(avgOpenRate * 100).toFixed(1)}% avg open rate, ${avgClickRate !== null ? (avgClickRate * 100).toFixed(1) + '%' : 'N/A'} avg click rate`
@@ -281,7 +374,7 @@ ${topProductLines || '  (no product data synced yet)'}
 ${emailPerfBlock}
 Customer segments:
 ${segmentLines || '  (no segment data synced yet)'}
-${productBlock ? '\n' + productBlock : ''}
+${contentContextBlock ? '\n' + contentContextBlock : ''}
 
 BRAND VOICE:
 - Educational and empowering — teach, don't just sell
@@ -363,6 +456,7 @@ Write 3 distinct versions, each taking a different angle suited to the tone(s) r
       store_id:        STORE_ID,
       user_id:         user.id,
       channel,
+      content_type:    contentType ?? 'product',
       topic,
       product_focus:   productFocus ?? null,
       audience:        audience ?? null,
@@ -371,7 +465,7 @@ Write 3 distinct versions, each taking a different angle suited to the tone(s) r
       talking_points:  talkingPoints ?? null,
       versions:        parsed,
     })
-    .select('id, channel, topic, product_focus, audience, custom_audience, tones, talking_points, versions, created_at')
+    .select('id, channel, content_type, topic, product_focus, audience, custom_audience, tones, talking_points, versions, created_at')
     .single()
 
   if (dbErr) {
