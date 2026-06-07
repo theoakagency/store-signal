@@ -442,7 +442,12 @@ Write 3 distinct versions, each taking a different angle suited to the tone(s) r
     })
 
     const text = message.content[0].type === 'text' ? message.content[0].text : ''
-    const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim()
+    const cleaned = text
+      .replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim()
+      .replace(/ — /g, ', ')   // em-dash with spaces → comma
+      .replace(/—/g, ', ')     // bare em-dash → comma
+      .replace(/ – /g, ' - ')  // en-dash with spaces → hyphen
+      .replace(/–/g, '-')      // bare en-dash → hyphen
     parsed = JSON.parse(cleaned)
   } catch (err) {
     return Response.json({ error: `AI generation failed: ${(err as Error).message}` }, { status: 500 })
