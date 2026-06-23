@@ -36,16 +36,7 @@ export default function LblaHome() {
     <div className="mx-auto max-w-2xl px-4 py-12 sm:px-6">
       {/* Header */}
       <div className="mb-10 text-center">
-        <Link
-          href="/dashboard"
-          className="mb-6 inline-flex items-center gap-1 text-xs text-ink-3 hover:text-ink-2 transition"
-        >
-          <svg className="h-3 w-3" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
-            <path d="M7.5 2L3 6l4.5 4" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-          Back to Dashboard
-        </Link>
-        <h1 className="font-display text-3xl font-semibold text-ink">LBLA Team Tools</h1>
+<h1 className="font-display text-3xl font-semibold text-ink">LBLA Team Tools</h1>
         <p className="mt-2 text-sm text-ink-3">Internal tools for the LBLA team</p>
       </div>
 
