@@ -1,7 +1,7 @@
 import Link from 'next/link'
 
 export const metadata = {
-  title: 'Team Tools | LashBox LA',
+  title: 'Team Tools | LBLA',
 }
 
 const TOOLS = [
@@ -14,7 +14,7 @@ const TOOLS = [
       </svg>
     ),
     title: 'Content Generator',
-    description: 'Create email, SMS, and push content for LashBox LA campaigns.',
+    description: 'Create email, SMS, and push content for LBLA campaigns.',
     cta: 'Open',
   },
   {
@@ -45,8 +45,8 @@ export default function LblaHome() {
           </svg>
           Back to Dashboard
         </Link>
-        <h1 className="font-display text-3xl font-semibold text-ink">LashBox LA Team Tools</h1>
-        <p className="mt-2 text-sm text-ink-3">Internal tools for the LashBox LA team</p>
+        <h1 className="font-display text-3xl font-semibold text-ink">LBLA Team Tools</h1>
+        <p className="mt-2 text-sm text-ink-3">Internal tools for the LBLA team</p>
       </div>
 
       {/* Tool cards */}

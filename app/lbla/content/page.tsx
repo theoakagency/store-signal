@@ -2,7 +2,7 @@ import { createSupabaseServiceClient } from '@/lib/supabase'
 import LblaContent from './LblaContent'
 
 export const metadata = {
-  title: 'Content Generator | LashBox LA',
+  title: 'Content Generator | LBLA',
 }
 
 const STORE_ID = '00000000-0000-0000-0000-000000000002'

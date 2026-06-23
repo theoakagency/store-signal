@@ -21,7 +21,7 @@ export default function LblaTopbar() {
           href="/lbla"
           className="font-display text-xl font-semibold tracking-tight text-teal-deep hover:text-teal transition whitespace-nowrap"
         >
-          LashBox LA
+          LBLA
         </Link>
         {pathname !== '/lbla' && (
           <Link
