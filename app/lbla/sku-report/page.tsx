@@ -25,6 +25,13 @@ function displayDate(iso: string): string {
   return `${months[Number(m) - 1]} ${Number(day)}, ${y}`
 }
 
+function parseSkuFilter(raw: string): string[] {
+  return raw
+    .split(',')
+    .map((s) => s.trim().toUpperCase())
+    .filter(Boolean)
+}
+
 function getPrevMonthRange(): { start: string; end: string } {
   const now = new Date()
   const first = new Date(now.getFullYear(), now.getMonth() - 1, 1)
@@ -77,14 +84,16 @@ function TableSkeleton() {
 
 export default function SkuReportPage() {
   const prev = getPrevMonthRange()
-  const [preset, setPreset]     = useState<DatePreset>('prev-month')
+  const [preset,      setPreset]      = useState<DatePreset>('prev-month')
   const [customStart, setCustomStart] = useState(prev.start)
   const [customEnd,   setCustomEnd]   = useState(prev.end)
+  const [skuFilterRaw, setSkuFilterRaw] = useState('')
 
-  const [isLoading,   setIsLoading]   = useState(false)
-  const [progress,    setProgress]    = useState<ChunkProgress | null>(null)
-  const [results,     setResults]     = useState<SkuResult[] | null>(null)
-  const [totalUnits,  setTotalUnits]  = useState(0)
+  const [isLoading,      setIsLoading]      = useState(false)
+  const [progress,       setProgress]       = useState<ChunkProgress | null>(null)
+  const [results,        setResults]        = useState<SkuResult[] | null>(null)
+  const [totalUnits,     setTotalUnits]     = useState(0)
+  const [activeFilter,   setActiveFilter]   = useState<string[]>([]) // filter used for current results
   const [chunkErrors,    setChunkErrors]    = useState<string[]>([])
   const [seenStatuses,   setSeenStatuses]   = useState<string[]>([])
   const [dateRange,      setDateRange]      = useState<{ start: string; end: string } | null>(null)
@@ -106,7 +115,9 @@ export default function SkuReportPage() {
     setSeenStatuses([])
     setTotalUnits(0)
 
-    const range = getRange()
+    const range     = getRange()
+    const skuFilter = parseSkuFilter(skuFilterRaw)
+
     if (!range.start || !range.end || range.start > range.end) {
       setFetchError('Invalid date range.')
       return
@@ -114,12 +125,17 @@ export default function SkuReportPage() {
 
     setIsLoading(true)
     setDateRange(range)
+    setActiveFilter(skuFilter)
 
     try {
       const res = await fetch('/api/skuvault/sales', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ startDate: range.start, endDate: range.end }),
+        body:    JSON.stringify({
+          startDate: range.start,
+          endDate:   range.end,
+          skuFilter: skuFilter.length > 0 ? skuFilter : undefined,
+        }),
       })
 
       if (!res.ok || !res.body) {
@@ -167,6 +183,15 @@ export default function SkuReportPage() {
     }
   }
 
+  function handleClearFilter() {
+    setSkuFilterRaw('')
+    setResults(null)
+    setActiveFilter([])
+    setTotalUnits(0)
+    setSeenStatuses([])
+    setChunkErrors([])
+  }
+
   const range = getRange()
 
   return (
@@ -178,7 +203,7 @@ export default function SkuReportPage() {
         <p className="mt-1 text-sm text-ink-3">Quantity sold by SKU from SKU Vault</p>
       </div>
 
-      {/* Date range card */}
+      {/* Date range + filter card */}
       <div className="rounded-2xl border border-cream-3 bg-white p-6 shadow-sm mb-6 space-y-5">
 
         {/* Preset buttons */}
@@ -235,6 +260,20 @@ export default function SkuReportPage() {
           <span className="font-medium">Reporting period:</span>{' '}
           {displayDate(range.start)} – {displayDate(range.end)}
         </p>
+
+        {/* SKU filter */}
+        <div>
+          <label className="block text-xs font-semibold uppercase tracking-wide text-ink-2 mb-1.5">
+            SKU Filter <span className="font-normal normal-case text-ink-3">(optional)</span>
+          </label>
+          <input
+            type="text"
+            value={skuFilterRaw}
+            onChange={(e) => setSkuFilterRaw(e.target.value)}
+            placeholder="Filter by SKU — separate multiple with commas, e.g. LCAC0357FMCB, ADSHPURP5"
+            className="w-full rounded-xl border border-cream-3 bg-white px-4 py-3 text-sm text-ink placeholder:text-ink-3 focus:border-teal focus:outline-none focus:ring-2 focus:ring-teal/20 transition font-data"
+          />
+        </div>
 
         {/* Generate button */}
         <button
@@ -308,11 +347,28 @@ export default function SkuReportPage() {
       {/* Results table */}
       {results !== null && results.length > 0 && (
         <div className="space-y-3">
+
+          {/* Meta row: count + filter indicator + export */}
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="space-y-0.5">
-              <p className="text-sm font-medium text-ink">
-                {results.length.toLocaleString()} unique SKUs
-              </p>
+              {activeFilter.length > 0 ? (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="text-sm font-medium text-ink">
+                    Showing results for {activeFilter.length} SKU{activeFilter.length !== 1 ? 's' : ''}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleClearFilter}
+                    className="text-xs font-medium text-teal-deep hover:text-teal transition"
+                  >
+                    Clear filter
+                  </button>
+                </div>
+              ) : (
+                <p className="text-sm font-medium text-ink">
+                  {results.length.toLocaleString()} unique SKUs
+                </p>
+              )}
               {dateRange && (
                 <p className="text-xs text-ink-3">
                   {displayDate(dateRange.start)} – {displayDate(dateRange.end)}

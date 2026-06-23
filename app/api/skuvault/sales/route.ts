@@ -56,7 +56,12 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: 'SKU Vault credentials not configured.' }, { status: 500 })
   }
 
-  const { startDate, endDate } = await req.json() as { startDate: string; endDate: string }
+  const body = await req.json() as { startDate: string; endDate: string; skuFilter?: string[] }
+  const { startDate, endDate } = body
+  // Normalize filter to uppercase set; undefined/empty = no filter
+  const filterSet = (body.skuFilter && body.skuFilter.length > 0)
+    ? new Set(body.skuFilter.map((s) => s.toUpperCase()))
+    : null
 
   if (!startDate || !endDate) {
     return Response.json({ error: 'startDate and endDate are required.' }, { status: 400 })
@@ -123,6 +128,7 @@ export async function POST(req: NextRequest) {
             for (const item of sale.MerchantItems ?? []) {
               const sku = item.Sku?.trim()
               if (!sku) continue
+              if (filterSet && !filterSet.has(sku.toUpperCase())) continue
               const qty = Number(item.Quantity ?? 0)
               if (qty <= 0) continue
               skuTotals[sku] = (skuTotals[sku] ?? 0) + qty
@@ -132,6 +138,7 @@ export async function POST(req: NextRequest) {
             for (const kit of sale.MerchantKits ?? []) {
               const sku = kit.Sku?.trim()
               if (!sku) continue
+              if (filterSet && !filterSet.has(sku.toUpperCase())) continue
               const qty = Number(kit.Quantity ?? 0)
               if (qty <= 0) continue
               skuTotals[sku] = (skuTotals[sku] ?? 0) + qty
