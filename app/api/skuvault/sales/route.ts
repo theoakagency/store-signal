@@ -4,28 +4,21 @@ export const maxDuration = 300
 
 const ALLOWED_STATUSES = new Set(['Completed', 'Ready to Ship', 'Shipped: Unpaid'])
 
-interface SkuVaultSaleItem {
-  Sku?: string
-  SKU?: string
-  Code?: string
-  Quantity?: number
-  SaleItemStatus?: string
-  Status?: string
+interface MerchantItem {
+  Sku: string
+  Quantity: number
+}
+
+interface MerchantKit {
+  Sku: string
+  Quantity: number
+  Items?: unknown[] // component SKUs — ignored, only count the kit SKU itself
 }
 
 interface SkuVaultSale {
-  SaleStatus?: string
-  Status?: string
-  Items?: SkuVaultSaleItem[]
-  LineItems?: SkuVaultSaleItem[]
-  SaleItems?: SkuVaultSaleItem[]
-}
-
-interface SkuVaultResponse {
-  Sales?: SkuVaultSale[]
-  Items?: SkuVaultSaleItem[]
-  Errors?: string[]
-  Status?: number
+  Status: string
+  MerchantItems?: MerchantItem[]
+  MerchantKits?: MerchantKit[]
 }
 
 function chunkDateRange(start: Date, end: Date, days: number): { from: Date; to: Date }[] {
@@ -42,18 +35,10 @@ function chunkDateRange(start: Date, end: Date, days: number): { from: Date; to:
 }
 
 function toSvDate(d: Date, endOfDay = false): string {
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const y   = d.getFullYear()
+  const m   = String(d.getMonth() + 1).padStart(2, '0')
   const day = String(d.getDate()).padStart(2, '0')
   return `${y}-${m}-${day}T${endOfDay ? '23:59:59' : '00:00:00'}`
-}
-
-function getSku(item: SkuVaultSaleItem): string | null {
-  return (item.Sku ?? item.SKU ?? item.Code ?? '').trim() || null
-}
-
-function getStatus(item: SkuVaultSaleItem, parent?: SkuVaultSale): string {
-  return item.SaleItemStatus ?? item.Status ?? parent?.SaleStatus ?? parent?.Status ?? ''
 }
 
 export async function POST(req: NextRequest) {
@@ -77,11 +62,10 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: 'Invalid date range.' }, { status: 400 })
   }
 
-  const chunks = chunkDateRange(start, end, 7)
+  const chunks      = chunkDateRange(start, end, 7)
   const skuTotals: Record<string, number> = {}
   const chunkErrors: string[] = []
-
-  const encoder = new TextEncoder()
+  const encoder     = new TextEncoder()
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -90,13 +74,13 @@ export async function POST(req: NextRequest) {
       }
 
       for (let i = 0; i < chunks.length; i++) {
-        const chunk = chunks[i]
+        const chunk   = chunks[i]
         const fromStr = toSvDate(chunk.from, false)
         const toStr   = toSvDate(chunk.to,   true)
 
         try {
           const res = await fetch('https://app.skuvault.com/api/sales/getSalesByDate', {
-            method: 'POST',
+            method:  'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               FromDate:    fromStr,
@@ -114,36 +98,35 @@ export async function POST(req: NextRequest) {
             continue
           }
 
-          const data = await res.json() as SkuVaultResponse
+          // Response is a direct JSON array of sale objects
+          const sales = await res.json() as SkuVaultSale[]
 
-          if (data.Errors?.length) {
-            chunkErrors.push(`Chunk ${i + 1}: ${data.Errors.join(', ')}`)
+          if (!Array.isArray(sales)) {
+            chunkErrors.push(`Chunk ${i + 1}: unexpected response shape`)
+            send({ type: 'chunk', chunk: i + 1, total: chunks.length, error: 'unexpected response shape' })
+            continue
           }
 
-          const sales: SkuVaultSale[] = data.Sales ?? []
-
           for (const sale of sales) {
-            const items: SkuVaultSaleItem[] = sale.LineItems ?? sale.Items ?? sale.SaleItems ?? []
-            for (const item of items) {
-              const itemStatus = getStatus(item, sale)
-              if (!ALLOWED_STATUSES.has(itemStatus)) continue
-              const sku = getSku(item)
+            if (!ALLOWED_STATUSES.has(sale.Status)) continue
+
+            // Regular items
+            for (const item of sale.MerchantItems ?? []) {
+              const sku = item.Sku?.trim()
               if (!sku) continue
               const qty = Number(item.Quantity ?? 0)
               if (qty <= 0) continue
               skuTotals[sku] = (skuTotals[sku] ?? 0) + qty
             }
-          }
 
-          // Also handle flat items (some API versions return items at the top level)
-          for (const item of data.Items ?? []) {
-            const itemStatus = getStatus(item)
-            if (!ALLOWED_STATUSES.has(itemStatus)) continue
-            const sku = getSku(item)
-            if (!sku) continue
-            const qty = Number(item.Quantity ?? 0)
-            if (qty <= 0) continue
-            skuTotals[sku] = (skuTotals[sku] ?? 0) + qty
+            // Kit/bundle SKUs — count the kit itself, ignore nested component Items
+            for (const kit of sale.MerchantKits ?? []) {
+              const sku = kit.Sku?.trim()
+              if (!sku) continue
+              const qty = Number(kit.Quantity ?? 0)
+              if (qty <= 0) continue
+              skuTotals[sku] = (skuTotals[sku] ?? 0) + qty
+            }
           }
 
           send({ type: 'chunk', chunk: i + 1, total: chunks.length, skusFound: Object.keys(skuTotals).length })
@@ -154,7 +137,6 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // Build sorted results
       const results = Object.entries(skuTotals)
         .map(([sku, quantity]) => ({ sku, quantity }))
         .sort((a, b) => a.sku.localeCompare(b.sku))
