@@ -2,7 +2,14 @@ import { NextRequest } from 'next/server'
 
 export const maxDuration = 300
 
-const ALLOWED_STATUSES = new Set(['Completed', 'Ready to Ship', 'Shipped: Unpaid'])
+const ALLOWED_STATUSES = new Set([
+  'Completed',
+  'Ready to Ship',
+  'Shipped: Unpaid',
+  'Pending',
+  'Unpaid',
+  'Payment Pending',
+])
 
 interface MerchantItem {
   Sku: string
@@ -65,6 +72,7 @@ export async function POST(req: NextRequest) {
   const chunks      = chunkDateRange(start, end, 7)
   const skuTotals: Record<string, number> = {}
   const chunkErrors: string[] = []
+  const seenStatuses = new Set<string>() // tracks all Status values for debugging
   const encoder     = new TextEncoder()
 
   const stream = new ReadableStream({
@@ -108,6 +116,7 @@ export async function POST(req: NextRequest) {
           }
 
           for (const sale of sales) {
+            if (sale.Status) seenStatuses.add(sale.Status)
             if (!ALLOWED_STATUSES.has(sale.Status)) continue
 
             // Regular items
@@ -150,6 +159,7 @@ export async function POST(req: NextRequest) {
         chunksProcessed: chunks.length,
         chunkErrors,
         dateRange: { start: startDate, end: endDate },
+        allStatusesSeen: Array.from(seenStatuses).sort(),
       })
 
       controller.close()

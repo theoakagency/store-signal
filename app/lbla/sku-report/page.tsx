@@ -85,9 +85,10 @@ export default function SkuReportPage() {
   const [progress,    setProgress]    = useState<ChunkProgress | null>(null)
   const [results,     setResults]     = useState<SkuResult[] | null>(null)
   const [totalUnits,  setTotalUnits]  = useState(0)
-  const [chunkErrors, setChunkErrors] = useState<string[]>([])
-  const [dateRange,   setDateRange]   = useState<{ start: string; end: string } | null>(null)
-  const [fetchError,  setFetchError]  = useState<string | null>(null)
+  const [chunkErrors,    setChunkErrors]    = useState<string[]>([])
+  const [seenStatuses,   setSeenStatuses]   = useState<string[]>([])
+  const [dateRange,      setDateRange]      = useState<{ start: string; end: string } | null>(null)
+  const [fetchError,     setFetchError]     = useState<string | null>(null)
 
   const readerRef = useRef<ReadableStreamDefaultReader<Uint8Array> | null>(null)
 
@@ -102,6 +103,7 @@ export default function SkuReportPage() {
     setResults(null)
     setProgress(null)
     setChunkErrors([])
+    setSeenStatuses([])
     setTotalUnits(0)
 
     const range = getRange()
@@ -150,6 +152,7 @@ export default function SkuReportPage() {
               setResults(event.results ?? [])
               setTotalUnits(event.totalUnits ?? 0)
               setChunkErrors(event.chunkErrors ?? [])
+              setSeenStatuses(event.allStatusesSeen ?? [])
               setDateRange(event.dateRange ?? range)
             }
           } catch { /* skip malformed line */ }
@@ -292,8 +295,13 @@ export default function SkuReportPage() {
 
       {/* No results */}
       {!isLoading && results !== null && results.length === 0 && (
-        <div className="rounded-2xl border border-cream-3 bg-white p-10 text-center shadow-sm">
+        <div className="rounded-2xl border border-cream-3 bg-white p-10 text-center shadow-sm space-y-3">
           <p className="text-sm text-ink-3">No sales found for this date range.</p>
+          {seenStatuses.length > 0 && (
+            <p className="text-xs text-ink-3">
+              Statuses seen in response: <span className="font-data">{seenStatuses.join(', ')}</span>
+            </p>
+          )}
         </div>
       )}
 
@@ -350,6 +358,12 @@ export default function SkuReportPage() {
               </table>
             </div>
           </div>
+
+          {seenStatuses.length > 0 && (
+            <p className="text-xs text-ink-3 text-center">
+              Statuses in response: <span className="font-data">{seenStatuses.join(', ')}</span>
+            </p>
+          )}
         </div>
       )}
     </div>
