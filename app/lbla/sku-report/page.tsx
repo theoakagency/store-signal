@@ -2,8 +2,6 @@
 
 import { useState, useRef } from 'react'
 
-export const metadata = undefined // can't use metadata in client component
-
 type DatePreset = 'prev-month' | 'month-to-date' | 'custom'
 
 interface SkuResult {

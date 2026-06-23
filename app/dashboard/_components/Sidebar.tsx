@@ -1,4 +1,5 @@
 import NavLinks from './NavLinks'
+import Link from 'next/link'
 
 export default function Sidebar({
   onNavigate,
@@ -36,7 +37,16 @@ export default function Sidebar({
       </div>
 
       {/* Footer */}
-      <div className="shrink-0 border-t border-white/[0.06] px-5 py-3">
+      <div className="shrink-0 border-t border-white/[0.06] px-5 py-3 space-y-2">
+        <Link
+          href="/lbla"
+          className="flex items-center gap-1.5 text-[11px] font-medium text-cream/40 hover:text-cream/70 transition"
+        >
+          Team Tools
+          <svg className="h-3 w-3" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
+            <path d="M2.5 6h7M6.5 3l3 3-3 3" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </Link>
         <p className="text-[10px] font-data uppercase tracking-widest text-cream/30">
           Store Signal v1
         </p>
