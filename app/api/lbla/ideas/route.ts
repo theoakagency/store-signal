@@ -276,7 +276,7 @@ export async function GET() {
           productFocus: product.product_title,
           audience: 'active-customers',
           tone: avgDays < 45 ? 'Urgency' : 'Educational',
-          whatShouldClaudeKnow: `${repeatPct}% of buyers reorder this product with an average interval of ${avgDays} days. Focus on the restock or refill angle — this audience already knows the product works. Make it easy to act.`,
+          whatShouldClaudeKnow: `This is a friendly restock reminder. Do NOT mention specific days, intervals, data points, or statistics in the copy — these feel cold and transactional. Instead write as a knowledgeable peer reminding them why this product belongs in their regular rotation. Focus on 2-3 specific product benefits that matter to working artists, and make it easy to act. Warm and confident, not pushy.`,
         },
       })
     }
