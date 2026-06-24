@@ -79,11 +79,11 @@ interface AffinityRow {
 // ── Audience map (hardcoded descriptions) ─────────────────────────────────────
 
 const AUDIENCE_MAP: Record<string, string> = {
-  'all-lash-artists': 'Broad audience of working lash artists -- professional, licensed, actively seeing clients. Write peer-to-peer, assume they know the craft.',
-  'new-customers':    'First-time or early buyers still forming their supplier habits. Building confidence, clientele, and systems. Price-aware, responsive to education, reassurance, and clear value props.',
-  'active-buyers':    'Consistent reorder customers who are engaged but not yet top-tier. Respond well to product updates, restocking reminders, and messages that reinforce they are making smart choices.',
-  'lapsed-buyers':    'Have not ordered in 90+ days. May have switched suppliers or gone quiet. Lead with the product -- do not guilt or pressure. Give them a strong reason to return: something new, relevant, or of clear value.',
-  'vip-top-spenders': 'Highest-LTV customers -- Diamond and Gold tier, volume buyers, long-tenured. Already loyal. Respond to exclusives, early access, and premium quality signals. Discounts are less important than recognition and insider status.',
+  'general-audience':  'Broad audience of working lash artists -- professional, licensed, actively seeing clients. Write peer-to-peer, assume they know the craft.',
+  'active-customers':  'Consistent reorder customers who are engaged but not yet top-tier. Respond well to product updates, restocking reminders, and messages that reinforce they are making smart choices.',
+  'new-customers':     'First-time or early buyers still forming their supplier habits. Building confidence, clientele, and systems. Price-aware, responsive to education, reassurance, and clear value props.',
+  'lapsed-customers':  'Have not ordered in 90+ days. May have switched suppliers or gone quiet. Lead with the product -- do not guilt or pressure. Give them a strong reason to return: something new, relevant, or of clear value.',
+  'vip-top-spenders':  'Highest-LTV customers -- Diamond and Gold tier, volume buyers, long-tenured. Already loyal. Respond to exclusives, early access, and premium quality signals. Discounts are less important than recognition and insider status.',
 }
 
 // ── Section 1: Shopify product fetch ─────────────────────────────────────────
@@ -173,16 +173,16 @@ function buildAudienceStatsBlock(
   const lines: string[] = []
 
   const personaLabel: Record<string, string> = {
-    'all-lash-artists': 'All Lash Artists',
-    'new-customers':    'New Customers',
-    'active-buyers':    'Active Buyers',
-    'lapsed-buyers':    'Lapsed Buyers',
-    'vip-top-spenders': 'VIP / Top Spenders',
+    'general-audience':  'General Audience',
+    'active-customers':  'Active Customers',
+    'new-customers':     'New Customers',
+    'lapsed-customers':  'Lapsed Customers',
+    'vip-top-spenders':  'VIP / Top Spenders',
   }
 
   lines.push(`AUDIENCE DATA (${personaLabel[persona] ?? persona}):`)
 
-  if (persona === 'all-lash-artists') {
+  if (persona === 'general-audience') {
     if (total > 0) lines.push(`- Total customer base: ${total.toLocaleString()} customers`)
     const activeCount = (seg['VIP'] ?? 0) + (seg['Active'] ?? 0)
     if (activeCount > 0) lines.push(`- Active buyers: ${activeCount.toLocaleString()} (VIP + Active segments)`)
@@ -200,7 +200,7 @@ function buildAudienceStatsBlock(
       lines.push(`- Bronze-tier avg LTV: $${Math.round(b.totalRevenue / Math.max(b.count, 1)).toLocaleString()} (lowest tier, typical for newer buyers)`)
     }
 
-  } else if (persona === 'active-buyers') {
+  } else if (persona === 'active-customers') {
     const activeCount = seg['Active'] ?? 0
     if (activeCount > 0) lines.push(`- Active customers: ${activeCount.toLocaleString()}`)
     if (total > 0 && activeCount > 0) lines.push(`- Active share of base: ${Math.round((activeCount / total) * 100)}%`)
@@ -209,7 +209,7 @@ function buildAudienceStatsBlock(
       lines.push(`- Silver-tier avg LTV: $${Math.round(s.totalRevenue / Math.max(s.count, 1)).toLocaleString()}`)
     }
 
-  } else if (persona === 'lapsed-buyers') {
+  } else if (persona === 'lapsed-customers') {
     const lapsedCount = (seg['Lapsed'] ?? 0) + (seg['At Risk'] ?? 0)
     if (lapsedCount > 0) lines.push(`- Lapsed / At Risk customers: ${lapsedCount.toLocaleString()}`)
     if (total > 0 && lapsedCount > 0) lines.push(`- Share of base: ${Math.round((lapsedCount / total) * 100)}%`)
@@ -468,7 +468,7 @@ export async function POST(req: NextRequest) {
 
   // Section 3: Audience stats
   const audienceStatsBlock = buildAudienceStatsBlock(
-    audience ?? 'all-lash-artists',
+    audience ?? 'general-audience',
     (overlapData ?? null) as CustomerOverlapRow | null,
     (rechargeData ?? null) as RechargeMetricsRow | null,
   )
@@ -477,7 +477,7 @@ export async function POST(req: NextRequest) {
   const productPerfBlock = buildProductPerformanceBlock(productStatsRows, topAffinity)
 
   // Audience description (hardcoded + enhanced)
-  const audienceGuidance = AUDIENCE_MAP[audience ?? ''] ?? AUDIENCE_MAP['all-lash-artists']
+  const audienceGuidance = AUDIENCE_MAP[audience ?? ''] ?? AUDIENCE_MAP['general-audience']
 
   // Content type context
   const ct = contentType ?? 'product'

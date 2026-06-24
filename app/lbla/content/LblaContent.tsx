@@ -55,11 +55,11 @@ const CHANNEL_TABS: { id: Channel; label: string }[] = [
 ]
 
 const PERSONA_OPTIONS = [
-  { value: 'all-lash-artists', label: 'All Lash Artists' },
-  { value: 'new-customers',    label: 'New Customers' },
-  { value: 'active-buyers',    label: 'Active Buyers' },
-  { value: 'lapsed-buyers',    label: 'Lapsed Buyers' },
-  { value: 'vip-top-spenders', label: 'VIP / Top Spenders' },
+  { value: 'general-audience',  label: 'General Audience' },
+  { value: 'active-customers',  label: 'Active Customers' },
+  { value: 'new-customers',     label: 'New Customers' },
+  { value: 'lapsed-customers',  label: 'Lapsed Customers' },
+  { value: 'vip-top-spenders',  label: 'VIP / Top Spenders' },
 ]
 
 const CONTENT_TYPE_OPTIONS = [
@@ -616,7 +616,7 @@ export default function LblaContent({
     channel: 'email',
     topic: '',
     productFocus: '',
-    audience: 'all-lash-artists',
+    audience: 'general-audience',
     talkingPoints: '',
   })
   const [productDisplayName, setProductDisplayName] = useState('')
@@ -928,7 +928,7 @@ export default function LblaContent({
       channel: row.channel,
       topic: row.topic ?? '',
       productFocus: row.product_focus ?? '',
-      audience: row.audience ?? 'all-lash-artists',
+      audience: row.audience ?? 'general-audience',
       talkingPoints: row.talking_points ?? '',
     })
     setProductDisplayName('')
