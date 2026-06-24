@@ -35,7 +35,7 @@ export default async function ContentPage() {
       .select('id, channel, content_type, topic, product_focus, audience, tones, talking_points, output, generated_at')
       .eq('tenant_id', TENANT_ID)
       .order('generated_at', { ascending: false })
-      .limit(10),
+      .limit(20),
   ])
 
   const seenTitles = new Set<string>()

@@ -889,7 +889,7 @@ export default function LblaContent({
         output: data.data as { versions: unknown[] },
         generated_at: new Date().toISOString(),
       }
-      setRecentHistory((prev) => [logRow, ...prev].slice(0, 10))
+      setRecentHistory((prev) => [logRow, ...prev].slice(0, 20))
     } catch {
       setError('Network error — check console')
     } finally {
@@ -898,16 +898,27 @@ export default function LblaContent({
   }
 
   function loadFromHistory(row: GenerationLogRow) {
-    setField('channel', row.channel)
-    setContentType(row.content_type ?? 'product')
-    setField('topic', row.topic ?? '')
-    setField('productFocus', row.product_focus ?? '')
-    setProductDisplayName(row.product_focus ? row.product_focus.split('/').pop() ?? '' : '')
-    setField('audience', row.audience ?? 'all-lash-artists')
-    setField('talkingPoints', row.talking_points ?? '')
+    const ct = row.content_type ?? 'product'
+    setContentType(ct)
+    clearConditionalFields()
+    setForm({
+      channel: row.channel,
+      topic: row.topic ?? '',
+      productFocus: row.product_focus ?? '',
+      audience: row.audience ?? 'all-lash-artists',
+      talkingPoints: row.talking_points ?? '',
+    })
+    setProductDisplayName('')
+    setCustomAudience('')
     setSelectedTones(new Set(row.tones ?? ['Educational']))
+    setShowTopicSuggestions(false)
+    setShowTalkingPointSuggestions(false)
+    setSelectedTalkingPoints(new Set())
+    lastAutoTriggerKey.current = ''
     setResult(row.output as GenerationResult)
     setScores(null)
+    setError(null)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   const inputCls = 'w-full rounded-lg border border-cream-3 bg-white px-3 py-2 text-sm text-ink focus:border-teal focus:outline-none focus:ring-1 focus:ring-teal transition'
@@ -915,7 +926,9 @@ export default function LblaContent({
   const errCls   = 'mt-1 text-[11px] text-red-500'
 
   return (
-    <div className="mx-auto max-w-2xl px-4 py-8 sm:px-6">
+    <div className="space-y-6">
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
 
       {/* ── Form ── */}
       <section className="rounded-2xl border border-cream-3 bg-white p-6 shadow-sm">
@@ -1324,33 +1337,97 @@ export default function LblaContent({
         </form>
       </section>
 
-      {/* ── Results ── */}
-      {isLoading && (
-        <div className="mt-6">
-          <LoadingSkeleton />
-        </div>
-      )}
+      {/* ── Results Panel ── */}
+      <section className="rounded-2xl border border-cream-3 bg-white p-6 shadow-sm">
+        <h2 className="font-display text-lg font-semibold text-ink mb-5">Generated Versions</h2>
 
-      {!isLoading && result && (
-        <div className="mt-6 space-y-3">
-          <h2 className="font-display text-lg font-semibold text-ink">Generated Versions</h2>
-          {result.versions.map((v, i) => {
-            const score = scores?.[i] ?? null
-            if (form.channel === 'email') return <EmailCard key={i} v={v as EmailVersion} idx={i} copiedIdx={copiedIdx} onCopy={handleCopy} score={score} scoreLoading={scoresLoading && !scores} />
-            if (form.channel === 'sms')   return <SmsCard   key={i} v={v as SmsVersion}   idx={i} copiedIdx={copiedIdx} onCopy={handleCopy} score={score} scoreLoading={scoresLoading && !scores} />
-            return <PushCard key={i} v={v as PushVersion} idx={i} copiedIdx={copiedIdx} onCopy={handleCopy} score={score} scoreLoading={scoresLoading && !scores} />
-          })}
-          <button
-            type="button"
-            onClick={() => { setResult(null); setScores(null); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
-            className="w-full rounded-lg border border-cream-3 bg-white py-2.5 text-sm font-medium text-ink-3 transition hover:border-teal/40 hover:text-ink-2"
-          >
-            Generate again
-          </button>
-        </div>
-      )}
+        {!isLoading && !result && (
+          <div className="flex flex-col items-center justify-center py-14 text-center">
+            <div className="mb-3 h-12 w-12 rounded-full bg-cream-2 flex items-center justify-center">
+              <svg className="h-6 w-6 text-ink-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <path d="M15.232 5.232l3.536 3.536M9 13l-4 4 4-1 7-7-3-3-7 7 1-4z" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </div>
+            <p className="text-sm text-ink-3 leading-relaxed">
+              Fill in the form and click<br />
+              <span className="font-medium text-ink-2">&ldquo;Generate Content&rdquo;</span>
+            </p>
+          </div>
+        )}
 
-      <GenerationHistory history={recentHistory} onLoad={loadFromHistory} />
+        {isLoading && <LoadingSkeleton />}
+
+        {!isLoading && result && (
+          <div className="space-y-3">
+            {result.versions.map((v, i) => {
+              const score = scores?.[i] ?? null
+              if (form.channel === 'email') return <EmailCard key={i} v={v as EmailVersion} idx={i} copiedIdx={copiedIdx} onCopy={handleCopy} score={score} scoreLoading={scoresLoading && !scores} />
+              if (form.channel === 'sms')   return <SmsCard   key={i} v={v as SmsVersion}   idx={i} copiedIdx={copiedIdx} onCopy={handleCopy} score={score} scoreLoading={scoresLoading && !scores} />
+              return <PushCard key={i} v={v as PushVersion} idx={i} copiedIdx={copiedIdx} onCopy={handleCopy} score={score} scoreLoading={scoresLoading && !scores} />
+            })}
+          </div>
+        )}
+      </section>
+
+      </div>{/* end grid */}
+
+      {/* ── Generation History Table ── */}
+      <section className="rounded-2xl border border-cream-3 bg-white shadow-sm overflow-hidden">
+        <div className="flex items-center justify-between border-b border-cream-2 px-5 py-3.5">
+          <h2 className="font-display text-sm font-semibold text-ink">Generation History</h2>
+          <span className="font-data text-xs text-ink-3">Recent {recentHistory.length}</span>
+        </div>
+
+        {recentHistory.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-12">
+            <p className="text-sm text-ink-3">No generations yet — create your first above.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead>
+                <tr className="border-b border-cream-2 text-xs font-medium text-ink-3">
+                  <th className="px-5 py-2.5 text-left">Date</th>
+                  <th className="px-5 py-2.5 text-left">Channel</th>
+                  <th className="px-5 py-2.5 text-left">Topic</th>
+                  <th className="px-5 py-2.5 text-left">Audience</th>
+                  <th className="px-5 py-2.5 text-left">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-cream-2">
+                {recentHistory.map((row) => (
+                  <tr key={row.id} className="hover:bg-cream transition-colors">
+                    <td className="px-5 py-3 font-data text-xs text-ink-3 whitespace-nowrap">
+                      {new Date(row.generated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                    </td>
+                    <td className="px-5 py-3">
+                      <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                        row.channel === 'email' ? 'bg-blue-50 text-blue-600' :
+                        row.channel === 'sms'   ? 'bg-purple-50 text-purple-600' :
+                                                  'bg-amber-50 text-amber-600'
+                      }`}>
+                        {row.channel}
+                      </span>
+                    </td>
+                    <td className="px-5 py-3 text-ink max-w-[200px] truncate">{row.topic || row.product_focus || '—'}</td>
+                    <td className="px-5 py-3 text-ink-2 text-xs max-w-[150px] truncate">{row.audience ?? '—'}</td>
+                    <td className="px-5 py-3">
+                      <button
+                        type="button"
+                        onClick={() => loadFromHistory(row)}
+                        className="rounded-md border border-cream-3 bg-white px-2.5 py-1 text-xs font-medium text-ink-3 transition hover:border-teal/50 hover:text-teal"
+                      >
+                        Load
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
     </div>
   )
 }
