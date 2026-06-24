@@ -75,17 +75,6 @@ const FORMAT_OPTIONS: { value: EmailFormat; label: string }[] = [
   { value: 'short_punchy',   label: 'Short & Punchy' },
 ]
 
-const OFFER_TYPE_OPTIONS = [
-  { value: 'percent-off',    label: 'Percent Off' },
-  { value: 'dollar-off',     label: 'Dollar Off' },
-  { value: 'free-shipping',  label: 'Free Shipping' },
-  { value: 'bogo',           label: 'Buy One Get One' },
-  { value: 'bundle',         label: 'Bundle Deal' },
-  { value: 'flash-sale',     label: 'Flash Sale' },
-  { value: 'loyalty-reward', label: 'Loyalty Reward' },
-  { value: 'referral',       label: 'Referral Offer' },
-]
-
 // ── Product focus input with typeahead ────────────────────────────────────────
 
 const JUNK_PATTERNS = ['return', 'protection', 'package', 'shipping', 'insurance']
@@ -630,11 +619,7 @@ export default function LblaContent({
   // ── Content type + conditional fields ────────────────────────────────────
   const [contentType, setContentType] = useState('product')
   const [collectionUrl, setCollectionUrl] = useState('')
-  const [offerType, setOfferType] = useState('percent-off')
-  const [discountAmount, setDiscountAmount] = useState('')
-  const [promoCode, setPromoCode] = useState('')
-  const [offerEndDate, setOfferEndDate] = useState('')
-  const [offerDetails, setOfferDetails] = useState('')
+  const [promotionDetails, setPromotionDetails] = useState('')
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({})
 
   // ── Email format selector ─────────────────────────────────────────────────
@@ -666,11 +651,7 @@ export default function LblaContent({
     setForm((f) => ({ ...f, topic: '', productFocus: '' }))
     setProductDisplayName('')
     setCollectionUrl('')
-    setOfferType('percent-off')
-    setDiscountAmount('')
-    setPromoCode('')
-    setOfferEndDate('')
-    setOfferDetails('')
+    setPromotionDetails('')
     setValidationErrors({})
     setShowTopicSuggestions(false)
     setShowTalkingPointSuggestions(false)
@@ -683,18 +664,15 @@ export default function LblaContent({
         return productDisplayName ? `Promote ${productDisplayName}` : ''
       case 'collection':
         return form.topic
-      case 'promotion': {
-        const offerLabel = OFFER_TYPE_OPTIONS.find((o) => o.value === offerType)?.label ?? offerType
-        const parts = [offerLabel, discountAmount, promoCode ? `Code: ${promoCode}` : ''].filter(Boolean)
-        return parts.join(' - ') || 'Promotion'
-      }
+      case 'promotion':
+        return promotionDetails
       default:
         return form.topic
     }
   }
 
   function getEffectiveProductFocus(): string {
-    if (contentType === 'product' || contentType === 'educational' || contentType === 'promotion') {
+    if (contentType === 'product' || contentType === 'educational') {
       return form.productFocus
     }
     if (contentType === 'collection') return collectionUrl
@@ -710,6 +688,9 @@ export default function LblaContent({
       case 'collection':
         if (!collectionUrl.trim()) errs.collectionUrl = 'Collection URL is required'
         if (!form.topic.trim()) errs.topic = 'Topic is required'
+        break
+      case 'promotion':
+        if (!promotionDetails.trim()) errs.promotionDetails = 'Promotion details are required'
         break
       case 'educational':
         if (!form.topic.trim()) errs.topic = 'Topic is required'
@@ -863,13 +844,6 @@ export default function LblaContent({
       emailFormat: form.channel === 'email' ? emailFormat : null,
     }
 
-    if (contentType === 'promotion') {
-      payload.offerType = offerType
-      payload.discountAmount = discountAmount || null
-      payload.promoCode = promoCode || null
-      payload.offerEndDate = offerEndDate || null
-      payload.offerDetails = offerDetails || null
-    }
     if (contentType === 'collection') {
       payload.collectionUrl = collectionUrl
     }
@@ -1096,57 +1070,17 @@ export default function LblaContent({
 
           {/* promotion */}
           {contentType === 'promotion' && (
-            <>
-              <div>
-                <label className={labelCls}>Product <span className="font-normal text-ink-3">(optional)</span></label>
-                <ProductFocusInput
-                  value={form.productFocus}
-                  onChange={(v) => { setField('productFocus', v); setProductDisplayName('') }}
-                  onSelect={(url, name) => { setField('productFocus', url); setProductDisplayName(name) }}
-                  displayName={productDisplayName}
-                  products={products}
-                  className={inputCls}
-                  placeholder="Paste a product URL or type a product name"
-                />
-              </div>
-              <div>
-                <label className={labelCls}>Offer Type</label>
-                <select value={offerType} onChange={(e) => setOfferType(e.target.value)} className={inputCls}>
-                  {OFFER_TYPE_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>{o.label}</option>
-                  ))}
-                </select>
-              </div>
-              {(offerType === 'percent-off' || offerType === 'dollar-off') && (
-                <div>
-                  <label className={labelCls}>Discount Amount <span className="font-normal text-ink-3">(optional)</span></label>
-                  <input
-                    value={discountAmount}
-                    onChange={(e) => setDiscountAmount(e.target.value)}
-                    placeholder={offerType === 'percent-off' ? 'e.g. 20%' : 'e.g. $15 off'}
-                    className={inputCls}
-                  />
-                </div>
-              )}
-              <div>
-                <label className={labelCls}>Promo Code <span className="font-normal text-ink-3">(optional)</span></label>
-                <input value={promoCode} onChange={(e) => setPromoCode(e.target.value)} placeholder="e.g. SPRING20" className={inputCls} />
-              </div>
-              <div>
-                <label className={labelCls}>Offer End Date <span className="font-normal text-ink-3">(optional)</span></label>
-                <input type="date" value={offerEndDate} onChange={(e) => setOfferEndDate(e.target.value)} className={inputCls} />
-              </div>
-              <div>
-                <label className={labelCls}>Offer Details <span className="font-normal text-ink-3">(optional)</span></label>
-                <textarea
-                  value={offerDetails}
-                  onChange={(e) => setOfferDetails(e.target.value)}
-                  placeholder="Any additional details about the promotion..."
-                  className={inputCls + ' resize-none'}
-                  style={{ minHeight: '72px' }}
-                />
-              </div>
-            </>
+            <div>
+              <label className={labelCls}>Promotion Details <span className="text-red-400">*</span></label>
+              <textarea
+                value={promotionDetails}
+                onChange={(e) => setPromotionDetails(e.target.value)}
+                placeholder="Describe the promotion — e.g. 25% off all adhesives July 1–8, use code JULY25 at checkout"
+                className={inputCls + ' resize-none' + (validationErrors.promotionDetails ? ' border-red-400' : '')}
+                style={{ minHeight: '80px' }}
+              />
+              {validationErrors.promotionDetails && <p className={errCls}>{validationErrors.promotionDetails}</p>}
+            </div>
           )}
 
 

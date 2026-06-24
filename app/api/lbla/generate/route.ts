@@ -320,18 +320,6 @@ export async function POST(req: NextRequest) {
     tones?: string[]
     talkingPoints?: string | null
     emailFormat?: 'conversational' | 'structured' | 'short_punchy' | null
-    // promotion-specific (passed through)
-    offerType?: string | null
-    discountAmount?: string | null
-    promoCode?: string | null
-    offerEndDate?: string | null
-    offerDetails?: string | null
-    // event-specific
-    eventName?: string | null
-    eventDate?: string | null
-    eventUrl?: string | null
-    // landing-page / collection
-    landingPageUrl?: string | null
     collectionUrl?: string | null
   }
 
