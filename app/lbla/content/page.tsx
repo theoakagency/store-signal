@@ -1,3 +1,4 @@
+import { Suspense } from 'react'
 import { createSupabaseServiceClient } from '@/lib/supabase'
 import LblaContent, { type GenerationLogRow } from './LblaContent'
 
@@ -48,9 +49,11 @@ export default async function ContentPage() {
   }
 
   return (
-    <LblaContent
-      products={products}
-      history={(historyRows ?? []) as GenerationLogRow[]}
-    />
+    <Suspense>
+      <LblaContent
+        products={products}
+        history={(historyRows ?? []) as GenerationLogRow[]}
+      />
+    </Suspense>
   )
 }

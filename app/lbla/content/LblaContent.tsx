@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useMemo } from 'react'
+import { useSearchParams, useRouter } from 'next/navigation'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -616,6 +617,11 @@ export default function LblaContent({
   const [error, setError] = useState<string | null>(null)
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null)
 
+  // ── URL param pre-fill (from Campaign Ideas) ─────────────────────────────
+  const searchParams = useSearchParams()
+  const router = useRouter()
+  const [hasPrefill, setHasPrefill] = useState(false)
+
   // ── Content type + conditional fields ────────────────────────────────────
   const [contentType, setContentType] = useState('product')
   const [collectionUrl, setCollectionUrl] = useState('')
@@ -697,6 +703,45 @@ export default function LblaContent({
         break
     }
     return errs
+  }
+
+  // ── Pre-fill from Campaign Ideas URL params ───────────────────────────────
+  useEffect(() => {
+    const channel = searchParams.get('channel') as Channel | null
+    const ct      = searchParams.get('contentType')
+    const pf      = searchParams.get('productFocus')
+    const aud     = searchParams.get('audience')
+    const tone    = searchParams.get('tone')
+    const cad     = searchParams.get('customAudienceDetail')
+    const wscк    = searchParams.get('whatShouldClaudeKnow')
+    const pd      = searchParams.get('promotionDetails')
+
+    if (!channel && !ct && !pf) return // no params, nothing to do
+
+    setHasPrefill(true)
+
+    if (ct) {
+      setContentType(ct)
+      clearConditionalFields()
+    }
+    if (channel && ['email', 'sms', 'push'].includes(channel)) {
+      setField('channel', channel)
+    }
+    if (pf) {
+      setField('productFocus', pf)
+      setProductDisplayName(pf) // product title pre-fill, not a URL
+    }
+    if (aud) setField('audience', aud)
+    if (wscк) setField('talkingPoints', wscк)
+    if (tone && TONE_OPTIONS.includes(tone)) setSelectedTones(new Set([tone]))
+    if (cad) setCustomAudience(cad)
+    if (pd && ct === 'promotion') setPromotionDetails(pd)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []) // run once on mount
+
+  function clearPrefill() {
+    router.replace('/lbla/content')
+    setHasPrefill(false)
   }
 
   // ── Auto-trigger talking points when product selected ─────────────────────
@@ -934,6 +979,22 @@ export default function LblaContent({
         </div>
 
         <form onSubmit={handleGenerate} className="space-y-4">
+
+          {/* Pre-fill banner */}
+          {hasPrefill && (
+            <div className="flex items-center justify-between gap-2 rounded-lg border border-teal/30 bg-teal/5 px-3 py-2">
+              <p className="text-xs text-teal-deep font-medium">
+                Pre-filled from Campaign Ideas — review and generate
+              </p>
+              <button
+                type="button"
+                onClick={clearPrefill}
+                className="text-[11px] text-ink-3 underline hover:text-ink-2 transition shrink-0"
+              >
+                Clear
+              </button>
+            </div>
+          )}
 
           {/* Channel */}
           <div>
