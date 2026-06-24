@@ -206,9 +206,6 @@ function DataSnapshot({ snapshot }: { snapshot: IdeasResponse['data_snapshot'] }
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-const CHANNEL_FILTERS = ['All', 'Email', 'SMS', 'Push'] as const
-type ChannelFilter = typeof CHANNEL_FILTERS[number]
-
 export default function LblaIdeas() {
   const [ideas, setIdeas] = useState<IdeaItem[]>([])
   const [whatsWorking, setWhatsWorking] = useState<IdeasResponse['whats_working']>([])
@@ -216,7 +213,6 @@ export default function LblaIdeas() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
-  const [channelFilter, setChannelFilter] = useState<ChannelFilter>('All')
 
   const fetchIdeas = useCallback(async () => {
     setLoading(true)
@@ -238,10 +234,6 @@ export default function LblaIdeas() {
 
   useEffect(() => { void fetchIdeas() }, [fetchIdeas])
 
-  const filteredIdeas = channelFilter === 'All'
-    ? ideas
-    : ideas.filter((i) => i.suggested_channel === channelFilter || i.suggested_channel === 'All')
-
   const minutesAgo = lastUpdated
     ? Math.round((Date.now() - lastUpdated.getTime()) / 60_000)
     : null
@@ -250,36 +242,15 @@ export default function LblaIdeas() {
     <div className="mx-auto max-w-[1280px] px-4 py-8 sm:px-6 lg:px-8 space-y-6">
 
       {/* Page header */}
-      <div>
-        <h1 className="font-display text-2xl font-semibold text-ink">Campaign Ideas</h1>
-        <p className="mt-1 text-sm text-ink-3">Data-driven content ideas ranked by opportunity</p>
-        {snapshot && <div className="mt-2"><DataSnapshot snapshot={snapshot} /></div>}
-      </div>
-
-      {/* Filter bar */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        {/* Channel filter pills */}
-        <div className="flex gap-1.5">
-          {CHANNEL_FILTERS.map((f) => (
-            <button
-              key={f}
-              type="button"
-              onClick={() => setChannelFilter(f)}
-              className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
-                channelFilter === f
-                  ? 'border-teal bg-teal/10 text-teal-deep'
-                  : 'border-cream-3 bg-white text-ink-3 hover:border-teal/40 hover:text-ink-2'
-              }`}
-            >
-              {f}
-            </button>
-          ))}
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="font-display text-2xl font-semibold text-ink">Campaign Ideas</h1>
+          <p className="mt-1 text-sm text-ink-3">Data-driven content ideas ranked by opportunity</p>
+          {snapshot && <div className="mt-2"><DataSnapshot snapshot={snapshot} /></div>}
         </div>
-
-        {/* Refresh */}
-        <div className="flex items-center gap-3">
+        <div className="flex shrink-0 items-center gap-3 pt-1">
           {minutesAgo !== null && (
-            <span className="text-[11px] text-ink-3">
+            <span className="hidden text-[11px] text-ink-3 sm:block">
               Updated {minutesAgo === 0 ? 'just now' : `${minutesAgo}m ago`}
             </span>
           )}
@@ -321,7 +292,7 @@ export default function LblaIdeas() {
             Try again
           </button>
         </div>
-      ) : filteredIdeas.length === 0 ? (
+      ) : ideas.length === 0 ? (
         <div className="rounded-2xl border border-cream-3 bg-white p-10 text-center shadow-sm">
           <p className="text-sm font-medium text-ink">No campaign opportunities found</p>
           <p className="text-xs text-ink-3 mt-1">
@@ -330,7 +301,7 @@ export default function LblaIdeas() {
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          {filteredIdeas.map((idea) => (
+          {ideas.map((idea) => (
             <IdeaCard key={idea.id} idea={idea} />
           ))}
         </div>
