@@ -6,6 +6,17 @@ export const metadata = {
 
 const TOOLS = [
   {
+    href: '/lbla/ideas',
+    icon: (
+      <svg className="h-8 w-8 text-teal" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+        <path d="M9 21h6M12 3a6 6 0 0 1 4 10.6V17H8v-3.4A6 6 0 0 1 12 3z" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    ),
+    title: 'Campaign Ideas',
+    description: 'Data-driven ideas ranked by opportunity. Pick one and generate content instantly.',
+    cta: 'Explore',
+  },
+  {
     href: '/lbla/content',
     icon: (
       <svg className="h-8 w-8 text-teal" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -33,7 +44,7 @@ const TOOLS = [
 
 export default function LblaHome() {
   return (
-    <div className="mx-auto max-w-2xl px-4 py-12 sm:px-6">
+    <div className="mx-auto max-w-4xl px-4 py-12 sm:px-6">
       {/* Header */}
       <div className="mb-10 text-center">
 <h1 className="font-display text-3xl font-semibold text-ink">LBLA Team Tools</h1>
@@ -41,7 +52,7 @@ export default function LblaHome() {
       </div>
 
       {/* Tool cards */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {TOOLS.map((tool) => (
           <Link
             key={tool.href}

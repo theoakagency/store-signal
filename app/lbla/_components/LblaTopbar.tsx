@@ -5,6 +5,7 @@ import Link from 'next/link'
 
 const PAGE_TITLES: Record<string, string> = {
   '/lbla':            'Team Tools',
+  '/lbla/ideas':      'Campaign Ideas',
   '/lbla/content':    'Content Generator',
   '/lbla/sku-report': 'SKU Sales Report',
 }
