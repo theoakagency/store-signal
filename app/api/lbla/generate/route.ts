@@ -289,6 +289,35 @@ function buildProductPerformanceBlock(
   return lines.join('\n')
 }
 
+// ── Section 3: Email format instructions ─────────────────────────────────────
+
+function buildFormatBlock(fmt: string | null | undefined): string {
+  if (fmt === 'structured') {
+    return `EMAIL FORMAT: Structured
+- Start with one short punchy header line inside the body (not the subject line)
+- Follow with 1-2 short paragraphs of context
+- Include a bulleted list of 3-5 specific product benefits, features, or steps -- each bullet max 20 words, specific not generic
+- End with one clear CTA sentence
+- Maximum 220 words total body
+- Use **Header text** for the header line and - item for bullets in the body field so they render correctly`
+  }
+  if (fmt === 'short_punchy') {
+    return `EMAIL FORMAT: Short & Punchy
+- Two paragraphs maximum
+- Under 100 words total body
+- Get to the point in the first sentence -- no warm-up
+- No headers, no bullets
+- Every sentence earns its place -- cut anything that doesn't add meaning`
+  }
+  // conversational (default)
+  return `EMAIL FORMAT: Conversational
+- Flowing prose only -- no headers, no bullet points, no bold text
+- 2-4 short paragraphs
+- Maximum 180 words in the body
+- Should read like a knowledgeable colleague writing directly to another artist
+- No section breaks, no formatting symbols`
+}
+
 // ── Main handler ──────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
@@ -301,6 +330,7 @@ export async function POST(req: NextRequest) {
     customAudience?: string | null
     tones?: string[]
     talkingPoints?: string | null
+    emailFormat?: 'conversational' | 'structured' | 'short_punchy' | null
     // promotion-specific (passed through)
     offerType?: string | null
     discountAmount?: string | null
@@ -316,7 +346,7 @@ export async function POST(req: NextRequest) {
     collectionUrl?: string | null
   }
 
-  const { channel, contentType, topic, productFocus, audience, customAudience, tones, talkingPoints } = body
+  const { channel, contentType, topic, productFocus, audience, customAudience, tones, talkingPoints, emailFormat } = body
 
   if (!channel || !topic) {
     return Response.json({ error: 'channel and topic are required' }, { status: 400 })
@@ -499,6 +529,8 @@ export async function POST(req: NextRequest) {
 
     styleBlock || null,
 
+    channel === 'email' ? buildFormatBlock(emailFormat) : null,
+
     `FORMATTING CONSTRAINTS -- APPLY TO EVERY FIELD INCLUDING SUBJECTS AND PREHEADERS:
 - Never use em dashes (--) or en dashes (-) anywhere. Use a comma, period, or rewrite the clause instead.
 - Never use more than one exclamation point across all three versions combined.
@@ -506,7 +538,7 @@ export async function POST(req: NextRequest) {
 
     `RESPONSE FORMAT: Return ONLY valid JSON, no markdown, no code fences, no preamble.\n${
       channel === 'email'
-        ? `{\n  "versions": [\n    { "subject": "...", "preheader": "...", "body": "..." },\n    { "subject": "...", "preheader": "...", "body": "..." },\n    { "subject": "...", "preheader": "...", "body": "..." }\n  ]\n}`
+        ? `{\n  "versions": [\n    { "subject": "...", "preheader": "...", "body": "..." },\n    { "subject": "...", "preheader": "...", "body": "..." },\n    { "subject": "...", "preheader": "...", "body": "..." }\n  ]\n}\nFor Structured format: body may use **Header text** for a bold header line and - item for bullet list items. Plain prose only for other formats.`
         : channel === 'sms'
         ? `{\n  "versions": [\n    { "message": "... (under 160 characters)" },\n    { "message": "... (under 160 characters)" },\n    { "message": "... (under 160 characters)" }\n  ]\n}`
         : `{\n  "versions": [\n    { "title": "... (under 40 chars)", "message": "... (under 100 chars)" },\n    { "title": "... (under 40 chars)", "message": "... (under 100 chars)" },\n    { "title": "... (under 40 chars)", "message": "... (under 100 chars)" }\n  ]\n}`
@@ -527,7 +559,7 @@ ${audience ? `Target Audience: ${audience}` : ''}
 Tone / Angle: ${toneList}
 ${talkingPoints ? `Key Talking Points:\n${talkingPoints}` : ''}
 
-Write 3 distinct versions, each taking a different angle suited to the tone(s) requested. Make the copy feel specific to LashBox LA's brand -- never generic beauty brand language.${channel === 'email' ? ' Email body should be 100-200 words, conversational but professional.' : channel === 'sms' ? ' Each SMS must be under 160 characters -- tight, clear call to action.' : ' Push title under 40 chars, message under 100 chars. High urgency, direct.'}`
+Write 3 distinct versions, each taking a different angle suited to the tone(s) requested. Make the copy feel specific to LashBox LA's brand -- never generic beauty brand language.${channel === 'sms' ? ' Each SMS must be under 160 characters -- tight, clear call to action.' : channel === 'push' ? ' Push title under 40 chars, message under 100 chars. High urgency, direct.' : ''}`
 
   // ── Call Claude ───────────────────────────────────────────────────────────
 

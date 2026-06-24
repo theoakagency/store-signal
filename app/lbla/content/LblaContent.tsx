@@ -5,6 +5,7 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type Channel = 'email' | 'sms' | 'push'
+type EmailFormat = 'conversational' | 'structured' | 'short_punchy'
 
 interface EmailVersion { subject: string; preheader: string; body: string }
 interface SmsVersion   { message: string }
@@ -77,6 +78,12 @@ const CONTENT_TYPE_OPTIONS = [
   { value: 'brand',        label: 'Brand' },
   { value: 'promotion',    label: 'Promotion' },
   { value: 'other',        label: 'Other' },
+]
+
+const FORMAT_OPTIONS: { value: EmailFormat; label: string }[] = [
+  { value: 'conversational', label: 'Conversational' },
+  { value: 'structured',     label: 'Structured' },
+  { value: 'short_punchy',   label: 'Short & Punchy' },
 ]
 
 const OFFER_TYPE_OPTIONS = [
@@ -192,6 +199,60 @@ function ProductFocusInput({
   )
 }
 
+// ── Email body rendering (handles **bold** and - bullets) ─────────────────────
+
+function renderInline(text: string): React.ReactNode {
+  const parts = text.split(/(\*\*[^*]+\*\*)/)
+  if (parts.length === 1) return text
+  return parts.map((part, i) =>
+    part.startsWith('**') && part.endsWith('**')
+      ? <strong key={i}>{part.slice(2, -2)}</strong>
+      : part
+  )
+}
+
+function renderEmailBody(body: string): React.ReactNode {
+  const lines = body.split('\n')
+  const elements: React.ReactNode[] = []
+  const bulletBuffer: string[] = []
+
+  function flushBullets(key: string) {
+    if (!bulletBuffer.length) return
+    elements.push(
+      <ul key={key} className="list-disc list-inside space-y-0.5 text-xs text-ink-2 leading-relaxed">
+        {bulletBuffer.map((b, i) => <li key={i}>{renderInline(b)}</li>)}
+      </ul>
+    )
+    bulletBuffer.length = 0
+  }
+
+  lines.forEach((line, idx) => {
+    if (line.startsWith('- ')) {
+      bulletBuffer.push(line.slice(2))
+    } else {
+      flushBullets(`b${idx}`)
+      if (line.trim()) {
+        elements.push(
+          <p key={idx} className="text-xs text-ink-2 leading-relaxed">{renderInline(line)}</p>
+        )
+      }
+    }
+  })
+  flushBullets('end')
+
+  return <div className="space-y-1.5">{elements}</div>
+}
+
+function wordCount(text: string): number {
+  return text.trim().split(/\s+/).filter(Boolean).length
+}
+
+function WordCountBadge({ body }: { body: string }) {
+  const count = wordCount(body)
+  const color = count <= 180 ? 'text-green-600' : count <= 250 ? 'text-amber-500' : 'text-red-500'
+  return <span className={`text-[10px] font-data ${color}`}>{count} words</span>
+}
+
 // ── Sub-components ────────────────────────────────────────────────────────────
 
 function ChannelTabs({ value, onChange }: { value: Channel; onChange: (c: Channel) => void }) {
@@ -283,8 +344,9 @@ function EmailCard({ v, idx, copiedIdx, onCopy, score, scoreLoading }: {
       </div>
       <p className="text-sm font-semibold text-ink leading-snug">{v.subject}</p>
       {v.preheader && <p className="text-xs italic text-ink-3 leading-snug">{v.preheader}</p>}
-      <div className="border-t border-cream-3 pt-3">
-        <p className="whitespace-pre-wrap text-xs text-ink-2 leading-relaxed">{v.body}</p>
+      <div className="border-t border-cream-3 pt-3 space-y-2">
+        {renderEmailBody(v.body)}
+        <WordCountBadge body={v.body} />
       </div>
       {score && score.violations.length > 0 && <ViolationsPanel violations={score.violations} />}
     </div>
@@ -591,6 +653,9 @@ export default function LblaContent({
   const [offerDetails, setOfferDetails] = useState('')
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({})
 
+  // ── Email format selector ─────────────────────────────────────────────────
+  const [emailFormat, setEmailFormat] = useState<EmailFormat>('conversational')
+
   // ── Brand voice scoring (Section 5) ──────────────────────────────────────
   const [scores, setScores] = useState<VersionScore[] | null>(null)
   const [scoresLoading, setScoresLoading] = useState(false)
@@ -829,6 +894,7 @@ export default function LblaContent({
       customAudience: customAudience || null,
       tones: Array.from(selectedTones),
       talkingPoints: form.talkingPoints || null,
+      emailFormat: form.channel === 'email' ? emailFormat : null,
     }
 
     if (contentType === 'promotion') {
@@ -941,7 +1007,7 @@ export default function LblaContent({
           {/* Channel */}
           <div>
             <label className={labelCls}>Channel</label>
-            <ChannelTabs value={form.channel} onChange={(c) => { setField('channel', c); setResult(null) }} />
+            <ChannelTabs value={form.channel} onChange={(c) => { setField('channel', c); setResult(null); if (c !== 'email') setEmailFormat('conversational') }} />
           </div>
 
           {/* Content Type */}
@@ -1255,6 +1321,29 @@ export default function LblaContent({
             <label className={labelCls}>Tone / Angle <span className="text-ink-3">(select at least one)</span></label>
             <TonePills selected={selectedTones} onToggle={toggleTone} />
           </div>
+
+          {/* Email Format — email only */}
+          {form.channel === 'email' && (
+            <div>
+              <label className={labelCls}>Email Format</label>
+              <div className="flex gap-1.5 flex-wrap">
+                {FORMAT_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setEmailFormat(opt.value)}
+                    className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
+                      emailFormat === opt.value
+                        ? 'border-teal bg-teal/10 text-teal-deep'
+                        : 'border-cream-3 bg-white text-ink-3 hover:border-teal/40 hover:text-ink-2'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* What should Claude know? */}
           <div>
