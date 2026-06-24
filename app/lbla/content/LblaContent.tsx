@@ -273,9 +273,9 @@ function EmailCard({ v, idx, copiedIdx, onCopy, score, scoreLoading }: {
 }) {
   const fullText = `Subject: ${v.subject}\nPreheader: ${v.preheader}\n\n${v.body}`
   return (
-    <div className="rounded-xl border border-cream-3 bg-cream p-4 space-y-2">
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex flex-col gap-1">
+    <div className="rounded-xl border border-cream-3 bg-cream p-6 space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
           <span className="text-[10px] font-data uppercase tracking-widest text-ink-3">Version {idx + 1}</span>
           <ScoreBadge score={score} loading={scoreLoading} />
         </div>
@@ -283,7 +283,7 @@ function EmailCard({ v, idx, copiedIdx, onCopy, score, scoreLoading }: {
       </div>
       <p className="text-sm font-semibold text-ink leading-snug">{v.subject}</p>
       {v.preheader && <p className="text-xs italic text-ink-3 leading-snug">{v.preheader}</p>}
-      <div className="mt-2 border-t border-cream-3 pt-2">
+      <div className="border-t border-cream-3 pt-3">
         <p className="whitespace-pre-wrap text-xs text-ink-2 leading-relaxed">{v.body}</p>
       </div>
       {score && score.violations.length > 0 && <ViolationsPanel violations={score.violations} />}
@@ -298,9 +298,9 @@ function SmsCard({ v, idx, copiedIdx, onCopy, score, scoreLoading }: {
 }) {
   const overLimit = v.message.length > 160
   return (
-    <div className="rounded-xl border border-cream-3 bg-cream p-4 space-y-2">
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex flex-col gap-1">
+    <div className="rounded-xl border border-cream-3 bg-cream p-6 space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
           <span className="text-[10px] font-data uppercase tracking-widest text-ink-3">Version {idx + 1}</span>
           <ScoreBadge score={score} loading={scoreLoading} />
         </div>
@@ -322,9 +322,9 @@ function PushCard({ v, idx, copiedIdx, onCopy, score, scoreLoading }: {
 }) {
   const fullText = `${v.title}\n${v.message}`
   return (
-    <div className="rounded-xl border border-cream-3 bg-cream p-4 space-y-2">
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex flex-col gap-1">
+    <div className="rounded-xl border border-cream-3 bg-cream p-6 space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
           <span className="text-[10px] font-data uppercase tracking-widest text-ink-3">Version {idx + 1}</span>
           <ScoreBadge score={score} loading={scoreLoading} />
         </div>
@@ -332,7 +332,7 @@ function PushCard({ v, idx, copiedIdx, onCopy, score, scoreLoading }: {
       </div>
       <p className="text-sm font-semibold text-ink">{v.title}</p>
       <p className="text-xs text-ink-2 leading-relaxed">{v.message}</p>
-      <div className="flex gap-3 pt-0.5">
+      <div className="flex gap-3">
         <span className={`font-data text-[10px] ${v.title.length > 40 ? 'text-red-500' : 'text-ink-3'}`}>Title: {v.title.length}/40</span>
         <span className={`font-data text-[10px] ${v.message.length > 100 ? 'text-red-500' : 'text-ink-3'}`}>Message: {v.message.length}/100</span>
       </div>
@@ -926,9 +926,9 @@ export default function LblaContent({
   const errCls   = 'mt-1 text-[11px] text-red-500'
 
   return (
-    <div className="space-y-6">
+    <div className="mx-auto max-w-[1280px] px-6 py-8 lg:px-8 space-y-6">
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
 
       {/* ── Form ── */}
       <section className="rounded-2xl border border-cream-3 bg-white p-6 shadow-sm">
@@ -1273,7 +1273,7 @@ export default function LblaContent({
               style={{ minHeight: '80px' }}
             />
             {showTalkingPointSuggestions && talkingPointSuggestions.length > 0 && (
-              <div className="mt-2 rounded-lg border border-cream-3 bg-cream p-3 space-y-2">
+              <div className="mt-2 rounded-lg border border-cream-3 bg-cream p-4 space-y-2">
                 <p className="text-[10px] font-data uppercase tracking-widest text-ink-3">
                   {talkingPointsFromProduct ? 'Suggested from product description' : 'Suggested talking points'}
                 </p>
@@ -1338,35 +1338,33 @@ export default function LblaContent({
       </section>
 
       {/* ── Results Panel ── */}
-      <section className="rounded-2xl border border-cream-3 bg-white p-6 shadow-sm">
-        <h2 className="font-display text-lg font-semibold text-ink mb-5">Generated Versions</h2>
+      <section className="rounded-2xl border border-cream-3 bg-white shadow-sm flex flex-col overflow-hidden">
+        <h2 className="shrink-0 px-6 pt-6 pb-5 font-display text-lg font-semibold text-ink">Generated Versions</h2>
 
-        {!isLoading && !result && (
-          <div className="flex flex-col items-center justify-center py-14 text-center">
-            <div className="mb-3 h-12 w-12 rounded-full bg-cream-2 flex items-center justify-center">
-              <svg className="h-6 w-6 text-ink-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                <path d="M15.232 5.232l3.536 3.536M9 13l-4 4 4-1 7-7-3-3-7 7 1-4z" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
+        <div className="flex-1 overflow-y-auto px-6 pb-6 space-y-3">
+          {!isLoading && !result && (
+            <div className="flex flex-col items-center justify-center py-14 text-center">
+              <div className="mb-3 h-12 w-12 rounded-full bg-cream-2 flex items-center justify-center">
+                <svg className="h-6 w-6 text-ink-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <path d="M15.232 5.232l3.536 3.536M9 13l-4 4 4-1 7-7-3-3-7 7 1-4z" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </div>
+              <p className="text-sm text-ink-3 leading-relaxed">
+                Fill in the form and click<br />
+                <span className="font-medium text-ink-2">&ldquo;Generate Content&rdquo;</span>
+              </p>
             </div>
-            <p className="text-sm text-ink-3 leading-relaxed">
-              Fill in the form and click<br />
-              <span className="font-medium text-ink-2">&ldquo;Generate Content&rdquo;</span>
-            </p>
-          </div>
-        )}
+          )}
 
-        {isLoading && <LoadingSkeleton />}
+          {isLoading && <LoadingSkeleton />}
 
-        {!isLoading && result && (
-          <div className="space-y-3">
-            {result.versions.map((v, i) => {
-              const score = scores?.[i] ?? null
-              if (form.channel === 'email') return <EmailCard key={i} v={v as EmailVersion} idx={i} copiedIdx={copiedIdx} onCopy={handleCopy} score={score} scoreLoading={scoresLoading && !scores} />
-              if (form.channel === 'sms')   return <SmsCard   key={i} v={v as SmsVersion}   idx={i} copiedIdx={copiedIdx} onCopy={handleCopy} score={score} scoreLoading={scoresLoading && !scores} />
-              return <PushCard key={i} v={v as PushVersion} idx={i} copiedIdx={copiedIdx} onCopy={handleCopy} score={score} scoreLoading={scoresLoading && !scores} />
-            })}
-          </div>
-        )}
+          {!isLoading && result && result.versions.map((v, i) => {
+            const score = scores?.[i] ?? null
+            if (form.channel === 'email') return <EmailCard key={i} v={v as EmailVersion} idx={i} copiedIdx={copiedIdx} onCopy={handleCopy} score={score} scoreLoading={scoresLoading && !scores} />
+            if (form.channel === 'sms')   return <SmsCard   key={i} v={v as SmsVersion}   idx={i} copiedIdx={copiedIdx} onCopy={handleCopy} score={score} scoreLoading={scoresLoading && !scores} />
+            return <PushCard key={i} v={v as PushVersion} idx={i} copiedIdx={copiedIdx} onCopy={handleCopy} score={score} scoreLoading={scoresLoading && !scores} />
+          })}
+        </div>
       </section>
 
       </div>{/* end grid */}
