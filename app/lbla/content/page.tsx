@@ -5,18 +5,38 @@ export const metadata = {
   title: 'Content Generator | LBLA',
 }
 
-const STORE_ID = '00000000-0000-0000-0000-000000000002'
+const TENANT_ID = '00000000-0000-0000-0000-000000000001'
+
+function titleToHandle(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+}
 
 export default async function ContentPage() {
   const service = createSupabaseServiceClient()
-  const { data: rules } = await service
-    .from('style_guide_rules')
-    .select('id')
-    .eq('store_id', STORE_ID)
-    .eq('active', true)
-    .limit(1)
 
-  const styleGuideConfigured = (rules?.length ?? 0) > 0
+  const { data: productRows } = await service
+    .from('product_stats')
+    .select('product_title, total_revenue')
+    .eq('tenant_id', TENANT_ID)
+    .gt('revenue_90d', 0)
+    .not('product_title', 'ilike', '%return%')
+    .not('product_title', 'ilike', '%protection%')
+    .not('product_title', 'ilike', '%package%')
+    .not('product_title', 'ilike', '%shipping%')
+    .not('product_title', 'ilike', '%insurance%')
+    .order('total_revenue', { ascending: false })
 
-  return <LblaContent styleGuideConfigured={styleGuideConfigured} />
+  const seenTitles = new Set<string>()
+  const products: { title: string; handle: string }[] = []
+  for (const row of productRows ?? []) {
+    if (!seenTitles.has(row.product_title)) {
+      seenTitles.add(row.product_title)
+      products.push({ title: row.product_title, handle: titleToHandle(row.product_title) })
+    }
+  }
+
+  return <LblaContent products={products} />
 }
