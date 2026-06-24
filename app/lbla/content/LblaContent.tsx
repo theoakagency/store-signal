@@ -43,12 +43,9 @@ interface FormState {
 
 const TONE_OPTIONS = [
   'Educational',
-  'Launch Hype',
-  'Urgency / Scarcity',
-  'Community',
   'Promotional',
-  'Storytelling',
-  'Results-Focused',
+  'Launch Hype',
+  'Urgency',
 ]
 
 const CHANNEL_TABS: { id: Channel; label: string }[] = [
@@ -58,26 +55,18 @@ const CHANNEL_TABS: { id: Channel; label: string }[] = [
 ]
 
 const PERSONA_OPTIONS = [
-  { value: 'all-lash-artists',        label: 'All Lash Artists' },
-  { value: 'new-lash-artists',         label: 'New Lash Artists (0-2 years, building clientele)' },
-  { value: 'established-lash-artists', label: 'Established Lash Artists (3+ years, efficiency focused)' },
-  { value: 'volume-specialists',       label: 'Volume Specialists (high client load, speed and consistency)' },
-  { value: 'lash-lift-specialists',    label: 'Lash Lift Specialists (offering or exploring lift services)' },
-  { value: 'salon-owners',             label: 'Salon Owners (managing staff, buying in bulk)' },
-  { value: 'students',                 label: 'Students / Pre-Licensed (in training)' },
-  { value: 'lapsed-customers',         label: 'Lapsed Customers (90+ days since last order)' },
-  { value: 'subscribers',              label: 'Active Subscribers (Recharge, loyalty-focused)' },
+  { value: 'all-lash-artists', label: 'All Lash Artists' },
+  { value: 'new-customers',    label: 'New Customers' },
+  { value: 'active-buyers',    label: 'Active Buyers' },
+  { value: 'lapsed-buyers',    label: 'Lapsed Buyers' },
+  { value: 'vip-top-spenders', label: 'VIP / Top Spenders' },
 ]
 
 const CONTENT_TYPE_OPTIONS = [
-  { value: 'product',      label: 'Product' },
-  { value: 'collection',   label: 'Collection' },
-  { value: 'landing-page', label: 'Landing Page' },
-  { value: 'event',        label: 'Event' },
-  { value: 'educational',  label: 'Educational' },
-  { value: 'brand',        label: 'Brand' },
-  { value: 'promotion',    label: 'Promotion' },
-  { value: 'other',        label: 'Other' },
+  { value: 'product',     label: 'Product' },
+  { value: 'collection',  label: 'Collection' },
+  { value: 'promotion',   label: 'Promotion' },
+  { value: 'educational', label: 'Educational' },
 ]
 
 const FORMAT_OPTIONS: { value: EmailFormat; label: string }[] = [
@@ -641,11 +630,6 @@ export default function LblaContent({
   // ── Content type + conditional fields ────────────────────────────────────
   const [contentType, setContentType] = useState('product')
   const [collectionUrl, setCollectionUrl] = useState('')
-  const [landingPageUrl, setLandingPageUrl] = useState('')
-  const [landingPageDescription, setLandingPageDescription] = useState('')
-  const [eventName, setEventName] = useState('')
-  const [eventDate, setEventDate] = useState('')
-  const [eventUrl, setEventUrl] = useState('')
   const [offerType, setOfferType] = useState('percent-off')
   const [discountAmount, setDiscountAmount] = useState('')
   const [promoCode, setPromoCode] = useState('')
@@ -682,11 +666,6 @@ export default function LblaContent({
     setForm((f) => ({ ...f, topic: '', productFocus: '' }))
     setProductDisplayName('')
     setCollectionUrl('')
-    setLandingPageUrl('')
-    setLandingPageDescription('')
-    setEventName('')
-    setEventDate('')
-    setEventUrl('')
     setOfferType('percent-off')
     setDiscountAmount('')
     setPromoCode('')
@@ -704,10 +683,6 @@ export default function LblaContent({
         return productDisplayName ? `Promote ${productDisplayName}` : ''
       case 'collection':
         return form.topic
-      case 'landing-page':
-        return landingPageDescription ? landingPageDescription.slice(0, 120) : ''
-      case 'event':
-        return eventName ? `${eventName}${eventDate ? ` on ${eventDate}` : ''}` : ''
       case 'promotion': {
         const offerLabel = OFFER_TYPE_OPTIONS.find((o) => o.value === offerType)?.label ?? offerType
         const parts = [offerLabel, discountAmount, promoCode ? `Code: ${promoCode}` : ''].filter(Boolean)
@@ -736,16 +711,7 @@ export default function LblaContent({
         if (!collectionUrl.trim()) errs.collectionUrl = 'Collection URL is required'
         if (!form.topic.trim()) errs.topic = 'Topic is required'
         break
-      case 'landing-page':
-        if (!landingPageUrl.trim()) errs.landingPageUrl = 'Landing page URL is required'
-        if (!landingPageDescription.trim()) errs.landingPageDescription = 'Description is required'
-        break
-      case 'event':
-        if (!eventName.trim()) errs.eventName = 'Event name is required'
-        break
       case 'educational':
-      case 'brand':
-      case 'other':
         if (!form.topic.trim()) errs.topic = 'Topic is required'
         break
     }
@@ -903,15 +869,6 @@ export default function LblaContent({
       payload.promoCode = promoCode || null
       payload.offerEndDate = offerEndDate || null
       payload.offerDetails = offerDetails || null
-    }
-    if (contentType === 'event') {
-      payload.eventName = eventName
-      payload.eventDate = eventDate || null
-      payload.eventUrl = eventUrl || null
-    }
-    if (contentType === 'landing-page') {
-      payload.landingPageUrl = landingPageUrl
-      payload.landingPageDescription = landingPageDescription
     }
     if (contentType === 'collection') {
       payload.collectionUrl = collectionUrl
@@ -1099,58 +1056,6 @@ export default function LblaContent({
             </>
           )}
 
-          {/* landing-page */}
-          {contentType === 'landing-page' && (
-            <>
-              <div>
-                <label className={labelCls}>Landing Page URL <span className="text-red-400">*</span></label>
-                <input
-                  type="text"
-                  value={landingPageUrl}
-                  onChange={(e) => setLandingPageUrl(e.target.value)}
-                  placeholder="https://lashboxla.com/pages/..."
-                  className={inputCls + (validationErrors.landingPageUrl ? ' border-red-400' : '')}
-                />
-                {validationErrors.landingPageUrl && <p className={errCls}>{validationErrors.landingPageUrl}</p>}
-              </div>
-              <div>
-                <label className={labelCls}>What is this page about? <span className="text-red-400">*</span></label>
-                <textarea
-                  value={landingPageDescription}
-                  onChange={(e) => setLandingPageDescription(e.target.value)}
-                  placeholder="Describe the page goal, offer, or content — Claude will use this as the topic"
-                  className={inputCls + ' resize-none' + (validationErrors.landingPageDescription ? ' border-red-400' : '')}
-                  style={{ minHeight: '72px' }}
-                />
-                {validationErrors.landingPageDescription && <p className={errCls}>{validationErrors.landingPageDescription}</p>}
-              </div>
-            </>
-          )}
-
-          {/* event */}
-          {contentType === 'event' && (
-            <>
-              <div>
-                <label className={labelCls}>Event Name <span className="text-red-400">*</span></label>
-                <input
-                  value={eventName}
-                  onChange={(e) => setEventName(e.target.value)}
-                  placeholder="e.g. Spring Lash Summit, Miko Live Webinar"
-                  className={inputCls + (validationErrors.eventName ? ' border-red-400' : '')}
-                />
-                {validationErrors.eventName && <p className={errCls}>{validationErrors.eventName}</p>}
-              </div>
-              <div>
-                <label className={labelCls}>Event Date <span className="font-normal text-ink-3">(optional)</span></label>
-                <input type="date" value={eventDate} onChange={(e) => setEventDate(e.target.value)} className={inputCls} />
-              </div>
-              <div>
-                <label className={labelCls}>Event URL <span className="font-normal text-ink-3">(optional)</span></label>
-                <input type="text" value={eventUrl} onChange={(e) => setEventUrl(e.target.value)} placeholder="https://..." className={inputCls} />
-              </div>
-            </>
-          )}
-
           {/* educational */}
           {contentType === 'educational' && (
             <>
@@ -1187,30 +1092,6 @@ export default function LblaContent({
                 />
               </div>
             </>
-          )}
-
-          {/* brand */}
-          {contentType === 'brand' && (
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="text-xs font-medium text-ink-2">Topic <span className="text-red-400">*</span></label>
-                <SuggestButton onClick={fetchTopicSuggestions} loading={topicSuggestionsLoading} label="Suggest topics" />
-              </div>
-              <input
-                value={form.topic}
-                onChange={(e) => setField('topic', e.target.value)}
-                placeholder="e.g. Why LashBox LA has been the #1 choice for artists for 10 years"
-                className={inputCls + (validationErrors.topic ? ' border-red-400' : '')}
-              />
-              {validationErrors.topic && <p className={errCls}>{validationErrors.topic}</p>}
-              {showTopicSuggestions && (
-                <TopicSuggestionPills
-                  suggestions={topicSuggestions}
-                  onSelect={(s) => { setField('topic', s); setShowTopicSuggestions(false) }}
-                  onDismiss={() => setShowTopicSuggestions(false)}
-                />
-              )}
-            </div>
           )}
 
           {/* promotion */}
@@ -1268,29 +1149,6 @@ export default function LblaContent({
             </>
           )}
 
-          {/* other */}
-          {contentType === 'other' && (
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="text-xs font-medium text-ink-2">Topic <span className="text-red-400">*</span></label>
-                <SuggestButton onClick={fetchTopicSuggestions} loading={topicSuggestionsLoading} label="Suggest topics" />
-              </div>
-              <input
-                value={form.topic}
-                onChange={(e) => setField('topic', e.target.value)}
-                placeholder="Describe what this content is about"
-                className={inputCls + (validationErrors.topic ? ' border-red-400' : '')}
-              />
-              {validationErrors.topic && <p className={errCls}>{validationErrors.topic}</p>}
-              {showTopicSuggestions && (
-                <TopicSuggestionPills
-                  suggestions={topicSuggestions}
-                  onSelect={(s) => { setField('topic', s); setShowTopicSuggestions(false) }}
-                  onDismiss={() => setShowTopicSuggestions(false)}
-                />
-              )}
-            </div>
-          )}
 
           {/* ── Fixed bottom fields ── */}
 
