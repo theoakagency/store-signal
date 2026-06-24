@@ -13,6 +13,25 @@ type Version = EmailVersion | SmsVersion | PushVersion
 
 interface GenerationResult { versions: Version[] }
 
+interface VersionScore {
+  score: number
+  violations: { rule: string; text: string; suggestion: string }[]
+  passed: boolean
+}
+
+export interface GenerationLogRow {
+  id: string
+  channel: 'email' | 'sms' | 'push'
+  content_type: string | null
+  topic: string | null
+  product_focus: string | null
+  audience: string | null
+  tones: string[] | null
+  talking_points: string | null
+  output: { versions: unknown[] }
+  generated_at: string
+}
+
 interface FormState {
   channel: Channel
   topic: string
@@ -247,12 +266,19 @@ function CopyButton({ text, idx, copiedIdx, onCopy }: {
   )
 }
 
-function EmailCard({ v, idx, copiedIdx, onCopy }: { v: EmailVersion; idx: number; copiedIdx: number | null; onCopy: (text: string, idx: number) => void }) {
+function EmailCard({ v, idx, copiedIdx, onCopy, score, scoreLoading }: {
+  v: EmailVersion; idx: number; copiedIdx: number | null
+  onCopy: (text: string, idx: number) => void
+  score?: VersionScore | null; scoreLoading?: boolean
+}) {
   const fullText = `Subject: ${v.subject}\nPreheader: ${v.preheader}\n\n${v.body}`
   return (
     <div className="rounded-xl border border-cream-3 bg-cream p-4 space-y-2">
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-[10px] font-data uppercase tracking-widest text-ink-3">Version {idx + 1}</span>
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex flex-col gap-1">
+          <span className="text-[10px] font-data uppercase tracking-widest text-ink-3">Version {idx + 1}</span>
+          <ScoreBadge score={score} loading={scoreLoading} />
+        </div>
         <CopyButton text={fullText} idx={idx} copiedIdx={copiedIdx} onCopy={onCopy} />
       </div>
       <p className="text-sm font-semibold text-ink leading-snug">{v.subject}</p>
@@ -260,32 +286,48 @@ function EmailCard({ v, idx, copiedIdx, onCopy }: { v: EmailVersion; idx: number
       <div className="mt-2 border-t border-cream-3 pt-2">
         <p className="whitespace-pre-wrap text-xs text-ink-2 leading-relaxed">{v.body}</p>
       </div>
+      {score && score.violations.length > 0 && <ViolationsPanel violations={score.violations} />}
     </div>
   )
 }
 
-function SmsCard({ v, idx, copiedIdx, onCopy }: { v: SmsVersion; idx: number; copiedIdx: number | null; onCopy: (text: string, idx: number) => void }) {
+function SmsCard({ v, idx, copiedIdx, onCopy, score, scoreLoading }: {
+  v: SmsVersion; idx: number; copiedIdx: number | null
+  onCopy: (text: string, idx: number) => void
+  score?: VersionScore | null; scoreLoading?: boolean
+}) {
   const overLimit = v.message.length > 160
   return (
     <div className="rounded-xl border border-cream-3 bg-cream p-4 space-y-2">
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-[10px] font-data uppercase tracking-widest text-ink-3">Version {idx + 1}</span>
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex flex-col gap-1">
+          <span className="text-[10px] font-data uppercase tracking-widest text-ink-3">Version {idx + 1}</span>
+          <ScoreBadge score={score} loading={scoreLoading} />
+        </div>
         <div className="flex items-center gap-2">
           <span className={`font-data text-xs ${overLimit ? 'text-red-500 font-semibold' : 'text-ink-3'}`}>{v.message.length}/160</span>
           <CopyButton text={v.message} idx={idx} copiedIdx={copiedIdx} onCopy={onCopy} />
         </div>
       </div>
       <p className="whitespace-pre-wrap text-sm text-ink leading-relaxed">{v.message}</p>
+      {score && score.violations.length > 0 && <ViolationsPanel violations={score.violations} />}
     </div>
   )
 }
 
-function PushCard({ v, idx, copiedIdx, onCopy }: { v: PushVersion; idx: number; copiedIdx: number | null; onCopy: (text: string, idx: number) => void }) {
+function PushCard({ v, idx, copiedIdx, onCopy, score, scoreLoading }: {
+  v: PushVersion; idx: number; copiedIdx: number | null
+  onCopy: (text: string, idx: number) => void
+  score?: VersionScore | null; scoreLoading?: boolean
+}) {
   const fullText = `${v.title}\n${v.message}`
   return (
     <div className="rounded-xl border border-cream-3 bg-cream p-4 space-y-2">
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-[10px] font-data uppercase tracking-widest text-ink-3">Version {idx + 1}</span>
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex flex-col gap-1">
+          <span className="text-[10px] font-data uppercase tracking-widest text-ink-3">Version {idx + 1}</span>
+          <ScoreBadge score={score} loading={scoreLoading} />
+        </div>
         <CopyButton text={fullText} idx={idx} copiedIdx={copiedIdx} onCopy={onCopy} />
       </div>
       <p className="text-sm font-semibold text-ink">{v.title}</p>
@@ -294,7 +336,157 @@ function PushCard({ v, idx, copiedIdx, onCopy }: { v: PushVersion; idx: number; 
         <span className={`font-data text-[10px] ${v.title.length > 40 ? 'text-red-500' : 'text-ink-3'}`}>Title: {v.title.length}/40</span>
         <span className={`font-data text-[10px] ${v.message.length > 100 ? 'text-red-500' : 'text-ink-3'}`}>Message: {v.message.length}/100</span>
       </div>
+      {score && score.violations.length > 0 && <ViolationsPanel violations={score.violations} />}
     </div>
+  )
+}
+
+function ScoreBadge({ score, loading }: { score?: VersionScore | null; loading?: boolean }) {
+  if (loading) return <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-teal/30 border-t-teal" />
+  if (!score) return null
+  const s = score.score
+  const color = s >= 85 ? 'bg-green-50 text-green-700 border-green-200'
+              : s >= 70 ? 'bg-amber-50 text-amber-700 border-amber-200'
+                        : 'bg-red-50 text-red-700 border-red-200'
+  const label = s >= 85 ? 'On brand' : s >= 70 ? 'Review needed' : 'Off brand'
+  return (
+    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${color}`}>
+      {s} — {label}
+    </span>
+  )
+}
+
+function ViolationsPanel({ violations }: { violations: VersionScore['violations'] }) {
+  const [open, setOpen] = useState(false)
+  if (!violations.length) return null
+  return (
+    <div className="mt-1">
+      <button type="button" onClick={() => setOpen((v) => !v)} className="text-[10px] text-ink-3 hover:text-ink-2 transition">
+        {open ? '▾' : '▸'} {violations.length} note{violations.length !== 1 ? 's' : ''}
+      </button>
+      {open && (
+        <div className="mt-1.5 space-y-1.5">
+          {violations.map((v, i) => (
+            <div key={i} className="rounded-lg border border-amber-100 bg-amber-50 px-2.5 py-2">
+              <p className="text-[11px] font-semibold text-amber-800">{v.rule}</p>
+              {v.text && <p className="mt-0.5 text-[11px] text-amber-700">Found: &ldquo;{v.text}&rdquo;</p>}
+              {v.suggestion && <p className="mt-0.5 text-[11px] text-amber-600">Try: {v.suggestion}</p>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function GenerationHistory({
+  history,
+  onLoad,
+}: {
+  history: GenerationLogRow[]
+  onLoad: (row: GenerationLogRow) => void
+}) {
+  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [copiedKey, setCopiedKey] = useState<string | null>(null)
+
+  if (!history.length) return null
+
+  function copy(text: string, key: string) {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedKey(key)
+      setTimeout(() => setCopiedKey(null), 2000)
+    })
+  }
+
+  function versionText(v: unknown, channel: string): string {
+    const r = v as Record<string, string>
+    if (channel === 'email') return `Subject: ${r.subject ?? ''}\nPreheader: ${r.preheader ?? ''}\n\n${r.body ?? ''}`
+    if (channel === 'sms')   return r.message ?? ''
+    return `${r.title ?? ''}\n${r.message ?? ''}`
+  }
+
+  return (
+    <section className="mt-10">
+      <h2 className="font-display text-base font-semibold text-ink mb-3">Recent Generations</h2>
+      <div className="space-y-2">
+        {history.map((row) => {
+          const isOpen = expandedId === row.id
+          const date = new Date(row.generated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
+          return (
+            <div key={row.id} className="rounded-xl border border-cream-3 bg-cream">
+              <button
+                type="button"
+                className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
+                onClick={() => setExpandedId(isOpen ? null : row.id)}
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-ink">{row.topic || row.product_focus || 'Untitled'}</p>
+                  <p className="text-[11px] text-ink-3 mt-0.5">
+                    <span className="font-data uppercase">{row.channel}</span>
+                    {row.content_type && row.content_type !== row.channel ? ` · ${row.content_type}` : ''}
+                    {row.audience ? ` · ${row.audience.replace(/-/g, ' ')}` : ''}
+                    {' · '}
+                    {date}
+                  </p>
+                </div>
+                <span className={`shrink-0 text-ink-3 transition-transform ${isOpen ? 'rotate-180' : ''}`}>
+                  <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+                    <path d="M4 6l4 4 4-4" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </span>
+              </button>
+
+              {isOpen && (
+                <div className="border-t border-cream-3 px-4 pb-4 pt-3 space-y-3">
+                  {(row.output.versions ?? []).map((v, i) => {
+                    const text = versionText(v, row.channel)
+                    const copyKey = `${row.id}-${i}`
+                    const vr = v as Record<string, string>
+                    return (
+                      <div key={i} className="rounded-lg border border-cream-3 bg-white p-3 space-y-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[10px] font-data uppercase tracking-widest text-ink-3">Version {i + 1}</span>
+                          <button
+                            type="button"
+                            onClick={() => copy(text, copyKey)}
+                            className="text-xs text-ink-3 hover:text-teal transition font-medium"
+                          >
+                            {copiedKey === copyKey ? 'Copied' : 'Copy'}
+                          </button>
+                        </div>
+                        {row.channel === 'email' && (
+                          <>
+                            <p className="text-sm font-semibold text-ink leading-snug">{vr.subject}</p>
+                            {vr.preheader && <p className="text-xs italic text-ink-3">{vr.preheader}</p>}
+                            <p className="whitespace-pre-wrap text-xs text-ink-2 leading-relaxed border-t border-cream-3 pt-2 mt-2">{vr.body}</p>
+                          </>
+                        )}
+                        {row.channel === 'sms' && (
+                          <p className="whitespace-pre-wrap text-sm text-ink leading-relaxed">{vr.message}</p>
+                        )}
+                        {row.channel === 'push' && (
+                          <>
+                            <p className="text-sm font-semibold text-ink">{vr.title}</p>
+                            <p className="text-xs text-ink-2">{vr.message}</p>
+                          </>
+                        )}
+                      </div>
+                    )
+                  })}
+                  <button
+                    type="button"
+                    onClick={() => { onLoad(row); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+                    className="w-full rounded-lg border border-teal/30 bg-teal/5 py-2 text-xs font-semibold text-teal-deep transition hover:bg-teal/10"
+                  >
+                    Use this again
+                  </button>
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </section>
   )
 }
 
@@ -364,8 +556,10 @@ function TopicSuggestionPills({ suggestions, onSelect, onDismiss }: {
 
 export default function LblaContent({
   products,
+  history = [],
 }: {
   products: { title: string; handle: string }[]
+  history?: GenerationLogRow[]
 }) {
   const [form, setForm] = useState<FormState>({
     channel: 'email',
@@ -396,6 +590,13 @@ export default function LblaContent({
   const [offerEndDate, setOfferEndDate] = useState('')
   const [offerDetails, setOfferDetails] = useState('')
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({})
+
+  // ── Brand voice scoring (Section 5) ──────────────────────────────────────
+  const [scores, setScores] = useState<VersionScore[] | null>(null)
+  const [scoresLoading, setScoresLoading] = useState(false)
+
+  // ── Recent history (grows after new generations) ──────────────────────────
+  const [recentHistory, setRecentHistory] = useState<GenerationLogRow[]>(history)
 
   // ── Topic suggestions ─────────────────────────────────────────────────────
   const [topicSuggestions, setTopicSuggestions] = useState<string[]>([])
@@ -617,6 +818,7 @@ export default function LblaContent({
     setIsLoading(true)
     setResult(null)
     setError(null)
+    setScores(null)
 
     const payload: Record<string, unknown> = {
       channel: form.channel,
@@ -661,11 +863,51 @@ export default function LblaContent({
         return
       }
       setResult(data.data)
+
+      // Section 5: fire brand voice scoring non-blocking
+      setScoresLoading(true)
+      fetch('/api/lbla/score-content', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ versions: data.data.versions, channel: form.channel }),
+      })
+        .then((r) => r.json() as Promise<{ scores?: VersionScore[] }>)
+        .then((scoreData) => { if (scoreData.scores) setScores(scoreData.scores) })
+        .catch(() => {})
+        .finally(() => setScoresLoading(false))
+
+      // Section 4: prepend to local history list (server already saved it)
+      const logRow: GenerationLogRow = {
+        id: crypto.randomUUID(),
+        channel: form.channel,
+        content_type: contentType,
+        topic: effectiveTopic,
+        product_focus: getEffectiveProductFocus() || null,
+        audience: form.audience || null,
+        tones: Array.from(selectedTones),
+        talking_points: form.talkingPoints || null,
+        output: data.data as { versions: unknown[] },
+        generated_at: new Date().toISOString(),
+      }
+      setRecentHistory((prev) => [logRow, ...prev].slice(0, 10))
     } catch {
       setError('Network error — check console')
     } finally {
       setIsLoading(false)
     }
+  }
+
+  function loadFromHistory(row: GenerationLogRow) {
+    setField('channel', row.channel)
+    setContentType(row.content_type ?? 'product')
+    setField('topic', row.topic ?? '')
+    setField('productFocus', row.product_focus ?? '')
+    setProductDisplayName(row.product_focus ? row.product_focus.split('/').pop() ?? '' : '')
+    setField('audience', row.audience ?? 'all-lash-artists')
+    setField('talkingPoints', row.talking_points ?? '')
+    setSelectedTones(new Set(row.tones ?? ['Educational']))
+    setResult(row.output as GenerationResult)
+    setScores(null)
   }
 
   const inputCls = 'w-full rounded-lg border border-cream-3 bg-white px-3 py-2 text-sm text-ink focus:border-teal focus:outline-none focus:ring-1 focus:ring-teal transition'
@@ -1093,19 +1335,22 @@ export default function LblaContent({
         <div className="mt-6 space-y-3">
           <h2 className="font-display text-lg font-semibold text-ink">Generated Versions</h2>
           {result.versions.map((v, i) => {
-            if (form.channel === 'email') return <EmailCard key={i} v={v as EmailVersion} idx={i} copiedIdx={copiedIdx} onCopy={handleCopy} />
-            if (form.channel === 'sms')   return <SmsCard   key={i} v={v as SmsVersion}   idx={i} copiedIdx={copiedIdx} onCopy={handleCopy} />
-            return <PushCard key={i} v={v as PushVersion} idx={i} copiedIdx={copiedIdx} onCopy={handleCopy} />
+            const score = scores?.[i] ?? null
+            if (form.channel === 'email') return <EmailCard key={i} v={v as EmailVersion} idx={i} copiedIdx={copiedIdx} onCopy={handleCopy} score={score} scoreLoading={scoresLoading && !scores} />
+            if (form.channel === 'sms')   return <SmsCard   key={i} v={v as SmsVersion}   idx={i} copiedIdx={copiedIdx} onCopy={handleCopy} score={score} scoreLoading={scoresLoading && !scores} />
+            return <PushCard key={i} v={v as PushVersion} idx={i} copiedIdx={copiedIdx} onCopy={handleCopy} score={score} scoreLoading={scoresLoading && !scores} />
           })}
           <button
             type="button"
-            onClick={() => { setResult(null); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+            onClick={() => { setResult(null); setScores(null); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
             className="w-full rounded-lg border border-cream-3 bg-white py-2.5 text-sm font-medium text-ink-3 transition hover:border-teal/40 hover:text-ink-2"
           >
             Generate again
           </button>
         </div>
       )}
+
+      <GenerationHistory history={recentHistory} onLoad={loadFromHistory} />
     </div>
   )
 }
