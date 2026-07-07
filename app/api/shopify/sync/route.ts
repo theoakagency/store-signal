@@ -23,6 +23,7 @@ interface ShopifyOrder {
   subtotal_price: string
   total_tax: string
   total_discounts: string
+  discount_codes: Array<{ code: string; amount: string; type: string }> | null
   currency: string
   customer?: { id: number }
   line_items: ShopifyLineItem[]
@@ -39,8 +40,10 @@ interface ShopifyOrder {
 interface ShopifyLineItem {
   id: number
   title: string
+  variant_title: string | null
   quantity: number
   price: string
+  total_discount: string
   sku: string | null
   variant_id: number | null
   product_id: number | null
@@ -178,14 +181,17 @@ function mapOrder(order: ShopifyOrder) {
     subtotal_price: parseFloat(order.subtotal_price),
     total_tax: parseFloat(order.total_tax),
     total_discounts: parseFloat(order.total_discounts),
+    discount_codes: order.discount_codes ?? [],
     currency: order.currency,
     customer_id: order.customer?.id ?? null,
     line_items_count: order.line_items.length,
     line_items: order.line_items.map((li) => ({
       id: li.id,
       title: li.title,
+      variant_title: li.variant_title ?? null,
       quantity: li.quantity,
       price: li.price,
+      total_discount: li.total_discount,
       sku: li.sku,
       variant_id: li.variant_id,
       product_id: li.product_id,
