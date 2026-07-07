@@ -22,6 +22,7 @@ interface Props {
   loyaltylionConnected: boolean
   semrushConnected: boolean
   semrushDomain: string | null
+  shipstationConnected: boolean
 }
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
@@ -888,6 +889,91 @@ function SemrushModal({ onClose, onSuccess, shopifyDomain }: { onClose: () => vo
   )
 }
 
+// ── ShipStation Connect Modal ────────────────────────────────────────────────
+
+function ShipStationModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
+  const [apiKey, setApiKey] = useState('')
+  const [showKey, setShowKey] = useState(false)
+  const [testState, setTestState] = useState<'idle' | 'testing' | 'ok' | 'fail'>('idle')
+  const [testMsg, setTestMsg] = useState('')
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'done'>('idle')
+
+  const inputCls = 'w-full rounded-lg border border-cream-3 bg-cream px-3 py-2 text-sm text-ink focus:border-teal focus:outline-none focus:ring-1 focus:ring-teal transition'
+
+  async function handleTest() {
+    if (!apiKey.trim()) return
+    setTestState('testing'); setTestMsg('')
+    try {
+      const res = await fetch('/api/shipstation/test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ apiKey }) })
+      const data = await res.json() as { ok?: boolean; message?: string }
+      if (data.ok) { setTestState('ok'); setTestMsg(data.message ?? 'Connection successful') }
+      else { setTestState('fail'); setTestMsg(data.message ?? 'Connection failed') }
+    } catch { setTestState('fail'); setTestMsg('Network error') }
+  }
+
+  async function handleSave() {
+    if (!apiKey.trim()) return
+    setSaveState('saving')
+    try {
+      const res = await fetch('/api/shipstation/connect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ apiKey }) })
+      const data = await res.json() as { ok?: boolean; error?: string }
+      if (data.error) { setSaveState('idle'); showToast(`Error: ${data.error}`); return }
+      setSaveState('done')
+      fetch('/api/shipstation/sync', { method: 'POST' }).catch(() => null)
+      onSuccess()
+    } catch { setSaveState('idle'); showToast('Network error') }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-charcoal/50 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative z-10 w-full max-w-md rounded-2xl bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b border-cream-2 px-6 py-5">
+          <div className="flex items-center gap-3">
+            <div className="h-8 w-8 rounded-lg bg-[#1D4F91] flex items-center justify-center">
+              <span className="text-sm font-bold text-white">S</span>
+            </div>
+            <h2 className="font-display text-lg font-semibold text-ink">Connect ShipStation</h2>
+          </div>
+          <button onClick={onClose} className="rounded-lg p-1.5 hover:bg-cream-2 transition text-ink-3">
+            <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 0 1 1.414 0L10 8.586l4.293-4.293a1 1 0 1 1 1.414 1.414L11.414 10l4.293 4.293a1 1 0 0 1-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 0 1-1.414-1.414L8.586 10 4.293 5.707a1 1 0 0 1 0-1.414z" clipRule="evenodd"/></svg>
+          </button>
+        </div>
+        <div className="px-6 py-5 space-y-4">
+          <div className="rounded-xl bg-blue-50 border border-blue-100 px-4 py-3 text-xs text-blue-900 space-y-1">
+            <p className="font-semibold">How to get your API key:</p>
+            <p>1. Go to <strong>ShipStation → Settings → Account → API Settings</strong></p>
+            <p>2. Generate a <strong>V2 API Key</strong></p>
+            <p>3. Copy and paste it below</p>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-ink-2 mb-1">API Key *</label>
+            <div className="relative">
+              <input type={showKey ? 'text' : 'password'} value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="•••••••••••••••••••••••" className={inputCls + ' pr-10'} />
+              <button type="button" onClick={() => setShowKey((v) => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-3 hover:text-ink">
+                <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path d="M10 12a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"/><path fillRule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 1 1-8 0 4 4 0 0 1 8 0z" clipRule="evenodd"/></svg>
+              </button>
+            </div>
+          </div>
+          {testMsg && (
+            <div className={`rounded-lg px-3 py-2.5 text-xs ${testState === 'ok' ? 'bg-teal-pale text-teal-deep' : 'bg-red-50 text-red-700'}`}>
+              {testState === 'ok' ? '✓ ' : '✗ '}{testMsg}
+            </div>
+          )}
+          <div className="flex gap-2 pt-1">
+            <button onClick={handleTest} disabled={!apiKey.trim() || testState === 'testing'} className="flex-1 rounded-lg border border-cream-3 px-4 py-2.5 text-sm font-medium text-ink-2 hover:bg-cream disabled:opacity-50 transition">
+              {testState === 'testing' ? <span className="flex items-center justify-center gap-2"><span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-cream-3 border-t-teal" />Testing…</span> : 'Test Connection'}
+            </button>
+            <button onClick={handleSave} disabled={!apiKey.trim() || saveState === 'saving' || saveState === 'done'} className="flex-1 rounded-lg bg-[#1D4F91] px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-900 disabled:opacity-50 transition">
+              {saveState === 'saving' ? <span className="flex items-center justify-center gap-2"><span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white/40 border-t-white" />Connecting & syncing…</span> : saveState === 'done' ? '✓ Connected' : 'Save & Sync'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function IntegrationsClient({
@@ -909,6 +995,7 @@ export default function IntegrationsClient({
   loyaltylionConnected,
   semrushConnected,
   semrushDomain,
+  shipstationConnected,
 }: Props) {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -949,6 +1036,7 @@ export default function IntegrationsClient({
     'sync-loyalty':   '/api/loyaltylion/sync',
     'sync-gsc':       '/api/gsc/sync',
     'sync-search':    '/api/semrush/sync',
+    'sync-shipstation': '/api/shipstation/sync',
   }
 
   const CRON_LABELS: Record<string, string> = {
@@ -960,6 +1048,7 @@ export default function IntegrationsClient({
     'sync-loyalty':    'LoyaltyLion',
     'sync-gsc':        'Search Console',
     'sync-search':     'SEMrush',
+    'sync-shipstation': 'ShipStation',
     'daily-rebuild':   'Profile rebuild',
     'daily-analysis':  'Product analysis',
   }
@@ -1052,6 +1141,7 @@ export default function IntegrationsClient({
   const [showRechargeModal, setShowRechargeModal] = useState(false)
   const [showLoyaltyLionModal, setShowLoyaltyLionModal] = useState(false)
   const [showSemrushModal, setShowSemrushModal] = useState(false)
+  const [showShipStationModal, setShowShipStationModal] = useState(false)
   const [disconnectingGsc, setDisconnectingGsc] = useState(false)
 
   // Handle OAuth callback toasts
@@ -1124,6 +1214,7 @@ export default function IntegrationsClient({
       {showRechargeModal && <RechargeModal onClose={() => setShowRechargeModal(false)} onSuccess={() => { setShowRechargeModal(false); showToast('Recharge connected — syncing now…'); router.refresh() }} />}
       {showLoyaltyLionModal && <LoyaltyLionModal onClose={() => setShowLoyaltyLionModal(false)} onSuccess={() => { setShowLoyaltyLionModal(false); showToast('LoyaltyLion connected — syncing now…'); router.refresh() }} />}
       {showSemrushModal && <SemrushModal onClose={() => setShowSemrushModal(false)} onSuccess={() => { setShowSemrushModal(false); showToast('SEMrush connected — initial sync started'); router.refresh() }} shopifyDomain={shopifyDomain} />}
+      {showShipStationModal && <ShipStationModal onClose={() => setShowShipStationModal(false)} onSuccess={() => { setShowShipStationModal(false); showToast('ShipStation connected — syncing now…'); router.refresh() }} />}
 
       <div className="space-y-8">
         {/* E-Commerce */}
@@ -1438,6 +1529,32 @@ export default function IntegrationsClient({
                 ) : (
                   <button onClick={() => setShowLoyaltyLionModal(true)} className="inline-flex items-center rounded-lg bg-[#E31C79] px-3 py-1.5 text-xs font-semibold text-white hover:bg-pink-700 transition">
                     Connect LoyaltyLion
+                  </button>
+                )
+              }
+            />
+          </div>
+        </section>
+
+        {/* Fulfillment & Cost Data */}
+        <section>
+          <h2 className="font-display text-base font-semibold text-ink mb-3">Fulfillment & Cost Data</h2>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <IntegrationCard
+              name="ShipStation"
+              description="Pulls actual shipping label cost per order, matched to the Shopify order, for cost/margin reporting. No dashboard yet — data feeds reports directly."
+              logo={
+                <div className="h-6 w-6 rounded-lg bg-[#1D4F91] flex items-center justify-center">
+                  <span className="text-xs font-bold text-white">S</span>
+                </div>
+              }
+              status={shipstationConnected ? 'connected' : 'not_connected'}
+              action={
+                shipstationConnected ? (
+                  <button onClick={() => setShowShipStationModal(true)} className="text-xs text-ink-3 hover:text-ink transition">Update key</button>
+                ) : (
+                  <button onClick={() => setShowShipStationModal(true)} className="inline-flex items-center rounded-lg bg-[#1D4F91] px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-900 transition">
+                    Connect ShipStation
                   </button>
                 )
               }

@@ -160,6 +160,7 @@ All cron routes and heavy sync routes set `export const maxDuration = 300` (5 mi
 | **LoyaltyLion** | `loyaltylion_token`, `loyaltylion_secret` | `sync-loyalty` | Every 6h | Members, tiers, points balances, rewards catalog, campaign lift |
 | **Google Search Console** | `gsc_refresh_token`, `gsc_property_url` | `sync-gsc` | Daily 4:30am | Top 50 keywords, top 100 pages (current + prior 90d), monthly click trend (12m) |
 | **SEMrush** | `semrush_api_key`, `semrush_domain` | `sync-search` | Daily 4am | Organic keywords, rankings, search volume, authority score, competitor gaps |
+| **ShipStation** | `shipstation_api_key` | `sync-shipstation` | Every 6h +15m | Shipping labels (v2 API): actual label cost, ship date, carrier, service — matched to Shopify order via `external_order_id` → `shopify_order_id` |
 
 All API credentials for third-party platforms are stored in the `stores` table — **never in environment variables**. Only infrastructure secrets (Supabase keys, Anthropic key, Vercel cron secret) are in env vars.
 
@@ -175,6 +176,7 @@ All API credentials for third-party platforms are stored in the `stores` table �
 | `sync-analytics` | `/api/cron/sync-analytics` | `0 */6 * * *` | GA4 sessions, channels, ecommerce |
 | `sync-recharge` | `/api/cron/sync-recharge` | `30 */6 * * *` | Recharge subscriptions (active + cancelled) |
 | `sync-loyalty` | `/api/cron/sync-loyalty` | `0 */6 * * *` | LoyaltyLion members, rewards, campaign lift |
+| `sync-shipstation` | `/api/cron/sync-shipstation` | `15 */6 * * *` | ShipStation shipping labels (incremental, since last sync) |
 | `daily-rebuild` | `/api/cron/daily-rebuild` | `0 3 * * *` | Customer profiles (all batches) + agent context cache |
 | `sync-search` | `/api/cron/sync-search` | `0 4 * * *` | SEMrush (skips if run <20h ago — API unit cost protection) |
 | `sync-gsc` | `/api/cron/sync-gsc` | `30 4 * * *` | Google Search Console keywords + pages |
@@ -315,6 +317,14 @@ Set `SYNC_ENABLED=false` to pause all crons (checked by each route at start).
 | `/api/semrush/test` | POST | Validate API key |
 | `/api/semrush/debug` | GET | Return raw API response |
 
+### ShipStation (`/api/shipstation/`)
+| Route | Method | Purpose |
+|---|---|---|
+| `/api/shipstation/connect` | POST | Save `shipstation_api_key` |
+| `/api/shipstation/test` | POST | Validate API key against `GET /v2/labels` |
+| `/api/shipstation/sync` | POST | Incremental sync since `shipstation_last_synced_at` (or last 24h) — delegates to `lib/syncShipStation.ts` |
+| `/api/shipstation/sync/historical` | POST | Chunked backfill over an explicit `{ start, end }` window (7-day chunks, self-continuing via `next_chunk_start`) — for on-demand historical pulls |
+
 ### AI Insights (`/api/insights/`)
 All are user-triggered POST endpoints. None call cron-auth. All use Claude claude-sonnet-4-6.
 
@@ -373,6 +383,8 @@ All are user-triggered POST endpoints. None call cron-auth. All use Claude claud
 | `lib/syncRecharge.ts` | `runRechargeSync(apiToken)` | Recharge sync — extracted from route so cron can call it directly |
 | `lib/syncLoyalty.ts` | `runLoyaltySync(token, secret)` | LoyaltyLion sync. Avoids activities endpoint (504 risk) unless completed campaigns exist. Computes tier LTV from `orders` table (not `customers`) to capture B2B guest-checkout spend. |
 | `lib/syncSEMrush.ts` | `runSEMrushSync(apiKey, domain)` | SEMrush sync orchestration |
+| `lib/shipstation.ts` | `getLabels`, `testConnection` | ShipStation v2 API wrapper. `API-Key` header auth, offset pagination over `GET /v2/labels` |
+| `lib/syncShipStation.ts` | `runShipStationSync(apiKey, { start, end })` | Upserts labels into `shipstation_shipments`, mapping `external_order_id` → `shopify_order_id` (bigint). Imported by both the cron route and the manual/historical routes — no duplicated logic |
 
 ---
 
@@ -404,6 +416,13 @@ All migrations live in `supabase/migrations/`. Apply via Supabase SQL Editor or 
 | 020 | `020_cron_logs.sql` | `cron_logs` table (cron_name, status, started_at, completed_at, records_synced, errors, metadata) |
 | 021 | `021_loyalty_complete.sql` | Adds `rewards_catalog` and loyalty tier/redemption columns to `loyalty_metrics_cache` |
 | 022 | `022_customer_stats_cache.sql` | Adds `segment_counts jsonb` and `ltv_stats jsonb` columns to `customer_overlap_cache` |
+| 023 | `023_performance_indexes.sql` | Composite indexes on orders, ads, analytics, and recharge tables for common query patterns |
+| 024 | `024_data_audit_log.sql` | `data_audit_log` table — manual spot-check entries comparing system figures against source-of-truth dashboards |
+| 025 | `025_enable_rls_missing_tables.sql` | Enables RLS on `cron_logs` and the LoyaltyLion audit tables (Supabase security alert fix) |
+| 026 | `026_content_studio.sql` | `content_generations` table — AI-generated email/SMS/push content history for Content Studio |
+| 027 | `027_style_guide.sql` | `style_guide_rules` table for Content Studio |
+| 028 | `028_lbla_generation_log.sql` | `lbla_generation_log` table — service-client-only log for the public `/lbla` content generator |
+| 029 | `029_shipstation.sql` | ShipStation credentials (`shipstation_api_key`, `shipstation_last_synced_at`) on `stores`; `shipstation_shipments` table (label cost, ship date, carrier, service, joined to Shopify orders via `shopify_order_id`) |
 
 ---
 
@@ -481,6 +500,9 @@ In `product_stats`, the column `first_purchase_leads_to_second` is currently ass
 
 ### Profile rebuild duration
 `runProfileBatch()` processes customers in 5,000-email batches. With ~40k customers this takes 5–8 minutes total across batches. `daily-rebuild` calls all batches sequentially in a single 300s Vercel function. If customer count grows significantly the job will need to be split across multiple cron invocations.
+
+### ShipStation `external_order_id` mapping unverified against a live account
+`lib/syncShipStation.ts` assumes ShipStation v2's `labels.external_order_id` is Shopify's numeric order ID and stores it directly in `shipstation_shipments.shopify_order_id` for joining to `orders.shopify_order_id`. This was determined from ShipStation's public docs, not confirmed against the connected lashboxla ShipStation account — after the first real sync, spot-check a handful of `shipstation_shipments` rows against their corresponding Shopify orders to confirm the join is exact before relying on it for the KLL royalty report. If `external_order_id` turns out to hold something else (e.g. the ShipStation-internal order ID), the fix is isolated to the one field in `runShipStationSync`.
 
 ---
 

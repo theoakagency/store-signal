@@ -12,7 +12,7 @@ export default async function IntegrationsPage() {
   const [{ data: store }, { data: recentAdsLog }] = await Promise.all([
     supabase
       .from('stores')
-      .select('shopify_domain, shopify_access_token, klaviyo_api_key, klaviyo_account_id, last_synced_at, gsc_refresh_token, gsc_property_url, ga4_refresh_token, ga4_property_id, meta_access_token, meta_ad_account_id, google_ads_customer_id, google_ads_refresh_token, recharge_api_token, loyaltylion_token, semrush_api_key, semrush_domain')
+      .select('shopify_domain, shopify_access_token, klaviyo_api_key, klaviyo_account_id, last_synced_at, gsc_refresh_token, gsc_property_url, ga4_refresh_token, ga4_property_id, meta_access_token, meta_ad_account_id, google_ads_customer_id, google_ads_refresh_token, recharge_api_token, loyaltylion_token, semrush_api_key, semrush_domain, shipstation_api_key')
       .eq('id', '00000000-0000-0000-0000-000000000002')
       .single(),
     // Check if the most recent sync-ads run failed with a token-related error
@@ -54,6 +54,7 @@ export default async function IntegrationsPage() {
       loyaltylionConnected={!!store?.loyaltylion_token}
       semrushConnected={!!store?.semrush_api_key}
       semrushDomain={store?.semrush_domain ?? null}
+      shipstationConnected={!!store?.shipstation_api_key}
     />
   )
 }
