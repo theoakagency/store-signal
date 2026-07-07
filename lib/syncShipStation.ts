@@ -19,13 +19,18 @@ export async function runShipStationSync(
 
   if (labels.length > 0) {
     const rows = labels.map((label) => {
-      const shopifyOrderId = label.external_order_id ? Number(label.external_order_id) : null
-      if (shopifyOrderId === null || Number.isNaN(shopifyOrderId)) unmatched += 1
+      // external_order_id is null for orders synced via the native Shopify-ShipStation
+      // connection. The Shopify order ID instead lives as the first segment of
+      // external_shipment_id, formatted "{shopify_order_id}-{secondary_id}".
+      const firstSegment = label.external_shipment_id?.split('-')[0]
+      const parsed = firstSegment ? Number(firstSegment) : NaN
+      const shopifyOrderId = Number.isNaN(parsed) ? null : parsed
+      if (shopifyOrderId === null) unmatched += 1
 
       return {
         id: label.label_id,
         tenant_id: TENANT_ID,
-        shopify_order_id: Number.isNaN(shopifyOrderId) ? null : shopifyOrderId,
+        shopify_order_id: shopifyOrderId,
         shipment_cost: label.shipment_cost?.amount ?? null,
         currency: label.shipment_cost?.currency ?? null,
         ship_date: label.ship_date,

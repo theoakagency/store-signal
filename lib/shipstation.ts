@@ -23,12 +23,28 @@ export interface ShipStationLabel {
   label_id: string
   shipment_id: string
   external_order_id: string | null
+  external_shipment_id: string | null
   ship_date: string | null
   created_at: string
   carrier_id: string | null
   service_code: string | null
   shipment_cost: { currency: string; amount: number } | null
   status: string
+}
+
+// ── Date range helpers ───────────────────────────────────────────────────────
+// ShipStation's v2 API requires full ISO 8601 timestamps for created_at_start/end,
+// not plain dates — normalize whatever date string comes in to midnight UTC
+// (start) or 23:59:59.999 UTC (end) of that calendar date.
+
+function startOfDayUTC(dateStr: string): string {
+  const d = new Date(dateStr)
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0, 0)).toISOString()
+}
+
+function endOfDayUTC(dateStr: string): string {
+  const d = new Date(dateStr)
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 23, 59, 59, 999)).toISOString()
 }
 
 // ── Paginated fetch helper ───────────────────────────────────────────────────
@@ -71,8 +87,8 @@ export async function getLabels(
   dateRange: { start: string; end: string }
 ): Promise<ShipStationLabel[]> {
   return fetchAllLabels(apiKey, {
-    created_at_start: dateRange.start,
-    created_at_end: dateRange.end,
+    created_at_start: startOfDayUTC(dateRange.start),
+    created_at_end: endOfDayUTC(dateRange.end),
   })
 }
 
