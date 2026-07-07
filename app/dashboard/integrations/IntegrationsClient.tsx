@@ -1144,6 +1144,76 @@ export default function IntegrationsClient({
   const [showShipStationModal, setShowShipStationModal] = useState(false)
   const [disconnectingGsc, setDisconnectingGsc] = useState(false)
 
+  // ── ShipStation manual backfill ─────────────────────────────────────────────
+  const [backfillStart, setBackfillStart] = useState('')
+  const [backfillEnd, setBackfillEnd] = useState('')
+  const [backfillState, setBackfillState] = useState<'idle' | 'running' | 'done' | 'error'>('idle')
+  const [backfillProgress, setBackfillProgress] = useState<{ chunk: number; total: number } | null>(null)
+  const [backfillSynced, setBackfillSynced] = useState(0)
+  const [backfillMsg, setBackfillMsg] = useState('')
+
+  async function runShipStationBackfill() {
+    if (!backfillStart || !backfillEnd) return
+
+    const startIso = new Date(`${backfillStart}T00:00:00Z`).toISOString()
+    const endIso = new Date(`${backfillEnd}T23:59:59Z`).toISOString()
+    const totalChunks = Math.max(
+      1,
+      Math.ceil((new Date(endIso).getTime() - new Date(startIso).getTime()) / (7 * 24 * 60 * 60 * 1000))
+    )
+
+    setBackfillState('running')
+    setBackfillMsg('')
+    setBackfillSynced(0)
+    setBackfillProgress({ chunk: 0, total: totalChunks })
+
+    let synced = 0
+    let chunkStart: string | undefined
+    let chunkIndex = 0
+    const maxIterations = totalChunks + 2 // small safety margin, not a retry loop
+
+    try {
+      while (chunkIndex < maxIterations) {
+        const res = await fetch('/api/shipstation/sync/historical', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ start: startIso, end: endIso, chunk_start: chunkStart }),
+        })
+        const data = await res.json() as {
+          synced?: { labels: number }
+          error?: string
+          next_chunk_start?: string | null
+        }
+
+        chunkIndex += 1
+
+        if (data.error) {
+          setBackfillState('error')
+          setBackfillMsg(data.error)
+          setBackfillSynced(synced)
+          return
+        }
+
+        synced += data.synced?.labels ?? 0
+        setBackfillProgress({ chunk: chunkIndex, total: totalChunks })
+        setBackfillSynced(synced)
+
+        if (!data.next_chunk_start) {
+          setBackfillState('done')
+          return
+        }
+        chunkStart = data.next_chunk_start
+      }
+      // Safety margin exhausted without a null next_chunk_start — surface rather than loop forever
+      setBackfillState('error')
+      setBackfillMsg('Backfill stopped after an unexpected number of chunks — check the date range and try again')
+    } catch {
+      setBackfillState('error')
+      setBackfillMsg('Network error during backfill')
+      setBackfillSynced(synced)
+    }
+  }
+
   // Handle OAuth callback toasts
   useEffect(() => {
     if (searchParams.get('google_ads_connected')) {
@@ -1550,13 +1620,76 @@ export default function IntegrationsClient({
               }
               status={shipstationConnected ? 'connected' : 'not_connected'}
               action={
-                shipstationConnected ? (
-                  <button onClick={() => setShowShipStationModal(true)} className="text-xs text-ink-3 hover:text-ink transition">Update key</button>
-                ) : (
-                  <button onClick={() => setShowShipStationModal(true)} className="inline-flex items-center rounded-lg bg-[#1D4F91] px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-900 transition">
-                    Connect ShipStation
-                  </button>
-                )
+                <div className="w-full space-y-3">
+                  {shipstationConnected ? (
+                    <button onClick={() => setShowShipStationModal(true)} className="text-xs text-ink-3 hover:text-ink transition">Update key</button>
+                  ) : (
+                    <button onClick={() => setShowShipStationModal(true)} className="inline-flex items-center rounded-lg bg-[#1D4F91] px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-900 transition">
+                      Connect ShipStation
+                    </button>
+                  )}
+
+                  {shipstationConnected && (
+                    <div className="border-t border-cream-2 pt-3 space-y-2">
+                      <p className="text-xs font-medium text-ink-2">Manual historical backfill</p>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="date"
+                          value={backfillStart}
+                          onChange={(e) => setBackfillStart(e.target.value)}
+                          disabled={backfillState === 'running'}
+                          className="rounded-lg border border-cream-3 bg-cream px-2 py-1.5 text-xs text-ink focus:border-teal focus:outline-none focus:ring-1 focus:ring-teal transition disabled:opacity-50"
+                        />
+                        <span className="text-xs text-ink-3">to</span>
+                        <input
+                          type="date"
+                          value={backfillEnd}
+                          onChange={(e) => setBackfillEnd(e.target.value)}
+                          disabled={backfillState === 'running'}
+                          className="rounded-lg border border-cream-3 bg-cream px-2 py-1.5 text-xs text-ink focus:border-teal focus:outline-none focus:ring-1 focus:ring-teal transition disabled:opacity-50"
+                        />
+                      </div>
+                      <button
+                        onClick={runShipStationBackfill}
+                        disabled={!backfillStart || !backfillEnd || backfillState === 'running'}
+                        className="inline-flex items-center rounded-lg bg-[#1D4F91] px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-900 disabled:opacity-50 transition"
+                      >
+                        {backfillState === 'running' ? (
+                          <span className="flex items-center gap-2">
+                            <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+                            Syncing…
+                          </span>
+                        ) : 'Run backfill'}
+                      </button>
+
+                      {backfillState === 'running' && backfillProgress && (
+                        <div>
+                          <div className="h-1.5 w-full rounded-full bg-cream-2 overflow-hidden">
+                            <div
+                              className="h-full bg-teal transition-all"
+                              style={{ width: `${(backfillProgress.chunk / backfillProgress.total) * 100}%` }}
+                            />
+                          </div>
+                          <p className="mt-1 text-xs text-ink-3">
+                            Syncing… chunk {backfillProgress.chunk} of {backfillProgress.total} — {backfillSynced} shipment(s) synced so far
+                          </p>
+                        </div>
+                      )}
+
+                      {backfillState === 'done' && (
+                        <p className="text-xs text-teal-deep">
+                          ✓ Backfill complete — synced {backfillSynced} shipment(s) across {backfillProgress?.total ?? 0} chunk(s)
+                        </p>
+                      )}
+
+                      {backfillState === 'error' && (
+                        <div className="rounded-lg bg-red-50 px-2.5 py-2 text-xs text-red-700">
+                          ✗ {backfillMsg} {backfillSynced > 0 && `(${backfillSynced} shipment(s) synced before the error — safe to re-run, syncing is idempotent)`}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               }
             />
           </div>
