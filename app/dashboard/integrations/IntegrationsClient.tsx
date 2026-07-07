@@ -1214,6 +1214,76 @@ export default function IntegrationsClient({
     }
   }
 
+  // ── Shopify manual backfill ──────────────────────────────────────────────────
+  const [shopifyBackfillStart, setShopifyBackfillStart] = useState('')
+  const [shopifyBackfillEnd, setShopifyBackfillEnd] = useState('')
+  const [shopifyBackfillState, setShopifyBackfillState] = useState<'idle' | 'running' | 'done' | 'error'>('idle')
+  const [shopifyBackfillProgress, setShopifyBackfillProgress] = useState<{ chunk: number; total: number } | null>(null)
+  const [shopifyBackfillSynced, setShopifyBackfillSynced] = useState(0)
+  const [shopifyBackfillMsg, setShopifyBackfillMsg] = useState('')
+
+  async function runShopifyBackfill() {
+    if (!shopifyBackfillStart || !shopifyBackfillEnd) return
+
+    const startIso = new Date(`${shopifyBackfillStart}T00:00:00Z`).toISOString()
+    const endIso = new Date(`${shopifyBackfillEnd}T23:59:59Z`).toISOString()
+    const totalChunks = Math.max(
+      1,
+      Math.ceil((new Date(endIso).getTime() - new Date(startIso).getTime()) / (7 * 24 * 60 * 60 * 1000))
+    )
+
+    setShopifyBackfillState('running')
+    setShopifyBackfillMsg('')
+    setShopifyBackfillSynced(0)
+    setShopifyBackfillProgress({ chunk: 0, total: totalChunks })
+
+    let synced = 0
+    let chunkStart: string | undefined = startIso
+    let chunkIndex = 0
+    const maxIterations = totalChunks + 2 // small safety margin, not a retry loop
+
+    try {
+      while (chunkIndex < maxIterations) {
+        const res = await fetch('/api/shopify/sync/historical', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ chunk_start: chunkStart, end: endIso }),
+        })
+        const data = await res.json() as {
+          orders?: number
+          errors?: string[]
+          next_chunk_start?: string | null
+        }
+
+        chunkIndex += 1
+
+        if (data.errors && data.errors.length > 0) {
+          setShopifyBackfillState('error')
+          setShopifyBackfillMsg(data.errors.join('; '))
+          setShopifyBackfillSynced(synced)
+          return
+        }
+
+        synced += data.orders ?? 0
+        setShopifyBackfillProgress({ chunk: chunkIndex, total: totalChunks })
+        setShopifyBackfillSynced(synced)
+
+        if (!data.next_chunk_start) {
+          setShopifyBackfillState('done')
+          return
+        }
+        chunkStart = data.next_chunk_start
+      }
+      // Safety margin exhausted without a null next_chunk_start — surface rather than loop forever
+      setShopifyBackfillState('error')
+      setShopifyBackfillMsg('Backfill stopped after an unexpected number of chunks — check the date range and try again')
+    } catch {
+      setShopifyBackfillState('error')
+      setShopifyBackfillMsg('Network error during backfill')
+      setShopifyBackfillSynced(synced)
+    }
+  }
+
   // Handle OAuth callback toasts
   useEffect(() => {
     if (searchParams.get('google_ads_connected')) {
@@ -1302,15 +1372,78 @@ export default function IntegrationsClient({
               status={shopifyConnected ? 'connected' : 'not_connected'}
               meta={shopifyConnected ? `${shopifyDomain}${lastSync ? ` · Last sync: ${lastSync}` : ''}` : 'Not connected'}
               action={
-                shopifyConnected ? (
-                  <a href="/api/shopify/install" className="text-xs text-teal hover:text-teal-dark font-medium transition">
-                    Re-authorize
-                  </a>
-                ) : (
-                  <a href="/api/shopify/install" className="inline-flex items-center rounded-lg bg-teal px-3 py-1.5 text-xs font-semibold text-white hover:bg-teal-dark transition">
-                    Connect Shopify
-                  </a>
-                )
+                <div className="w-full space-y-3">
+                  {shopifyConnected ? (
+                    <a href="/api/shopify/install" className="text-xs text-teal hover:text-teal-dark font-medium transition">
+                      Re-authorize
+                    </a>
+                  ) : (
+                    <a href="/api/shopify/install" className="inline-flex items-center rounded-lg bg-teal px-3 py-1.5 text-xs font-semibold text-white hover:bg-teal-dark transition">
+                      Connect Shopify
+                    </a>
+                  )}
+
+                  {shopifyConnected && (
+                    <div className="border-t border-cream-2 pt-3 space-y-2">
+                      <p className="text-xs font-medium text-ink-2">Manual historical backfill</p>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="date"
+                          value={shopifyBackfillStart}
+                          onChange={(e) => setShopifyBackfillStart(e.target.value)}
+                          disabled={shopifyBackfillState === 'running'}
+                          className="rounded-lg border border-cream-3 bg-cream px-2 py-1.5 text-xs text-ink focus:border-teal focus:outline-none focus:ring-1 focus:ring-teal transition disabled:opacity-50"
+                        />
+                        <span className="text-xs text-ink-3">to</span>
+                        <input
+                          type="date"
+                          value={shopifyBackfillEnd}
+                          onChange={(e) => setShopifyBackfillEnd(e.target.value)}
+                          disabled={shopifyBackfillState === 'running'}
+                          className="rounded-lg border border-cream-3 bg-cream px-2 py-1.5 text-xs text-ink focus:border-teal focus:outline-none focus:ring-1 focus:ring-teal transition disabled:opacity-50"
+                        />
+                      </div>
+                      <button
+                        onClick={runShopifyBackfill}
+                        disabled={!shopifyBackfillStart || !shopifyBackfillEnd || shopifyBackfillState === 'running'}
+                        className="inline-flex items-center rounded-lg bg-teal px-3 py-1.5 text-xs font-semibold text-white hover:bg-teal-dark disabled:opacity-50 transition"
+                      >
+                        {shopifyBackfillState === 'running' ? (
+                          <span className="flex items-center gap-2">
+                            <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+                            Syncing…
+                          </span>
+                        ) : 'Run backfill'}
+                      </button>
+
+                      {shopifyBackfillState === 'running' && shopifyBackfillProgress && (
+                        <div>
+                          <div className="h-1.5 w-full rounded-full bg-cream-2 overflow-hidden">
+                            <div
+                              className="h-full bg-teal transition-all"
+                              style={{ width: `${(shopifyBackfillProgress.chunk / shopifyBackfillProgress.total) * 100}%` }}
+                            />
+                          </div>
+                          <p className="mt-1 text-xs text-ink-3">
+                            Syncing… chunk {shopifyBackfillProgress.chunk} of {shopifyBackfillProgress.total} — {shopifyBackfillSynced} order(s) synced so far
+                          </p>
+                        </div>
+                      )}
+
+                      {shopifyBackfillState === 'done' && (
+                        <p className="text-xs text-teal-deep">
+                          ✓ Backfill complete — synced {shopifyBackfillSynced} order(s) across {shopifyBackfillProgress?.total ?? 0} chunk(s)
+                        </p>
+                      )}
+
+                      {shopifyBackfillState === 'error' && (
+                        <div className="rounded-lg bg-red-50 px-2.5 py-2 text-xs text-red-700">
+                          ✗ {shopifyBackfillMsg} {shopifyBackfillSynced > 0 && `(${shopifyBackfillSynced} order(s) synced before the error — safe to re-run, syncing is idempotent)`}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               }
             />
             <IntegrationCard

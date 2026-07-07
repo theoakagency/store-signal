@@ -2,11 +2,17 @@
  * Historical sync — processes one 7-day chunk at a time.
  *
  * POST /api/shopify/sync/historical
- * Body: { "chunk_start": "2024-01-01T00:00:00Z" }
- *       (omit to start from SHOPIFY_SYNC_MONTHS_BACK months ago)
+ * Body: { "chunk_start": "2024-01-01T00:00:00Z", "end"?: "2024-02-01T00:00:00Z" }
+ *       chunk_start: omit to start from SHOPIFY_SYNC_MONTHS_BACK months ago.
+ *       end: omit to chunk all the way forward to now (the original catch-up
+ *       behavior). When provided, bounds the backfill to a specific window
+ *       (e.g. re-syncing one past month) — this intentionally does NOT
+ *       advance stores.last_synced_at, since that field drives where the
+ *       incremental cron resumes and must reflect true wall-clock progress,
+ *       not an arbitrary backfill target.
  *
  * Returns: { orders, errors, chunk_start, chunk_end, next_chunk_start }
- * When next_chunk_start is null, the full historical import is complete.
+ * When next_chunk_start is null, the requested import is complete.
  *
  * 7-day chunks keep each invocation under ~20s (compatible with 60s limit).
  * For 12 months run the loop ~52 times.
@@ -36,13 +42,16 @@ interface ShopifyOrder {
   subtotal_price: string
   total_tax: string
   total_discounts: string
+  discount_codes: Array<{ code: string; amount: string; type: string }> | null
   currency: string
   customer?: { id: number }
   line_items: {
     id: number
     title: string
+    variant_title: string | null
     quantity: number
     price: string
+    total_discount: string
     sku: string | null
     variant_id: number | null
     product_id: number | null
@@ -130,8 +139,10 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  // Parse request body for chunk_start
+  // Parse request body for chunk_start / end
   let chunkStart: Date
+  let targetEnd: Date
+  let hasExplicitEnd: boolean
   try {
     const body = await req.json().catch(() => ({}))
     chunkStart = body.chunk_start ? new Date(body.chunk_start) : (() => {
@@ -139,6 +150,8 @@ export async function POST(req: NextRequest) {
       d.setMonth(d.getMonth() - SYNC_MONTHS_BACK)
       return d
     })()
+    hasExplicitEnd = !!body.end
+    targetEnd = hasExplicitEnd ? new Date(body.end) : new Date()
   } catch {
     return Response.json({ error: 'Invalid request body' }, { status: 400 })
   }
@@ -146,9 +159,8 @@ export async function POST(req: NextRequest) {
   const chunkEnd = new Date(chunkStart)
   chunkEnd.setDate(chunkEnd.getDate() + CHUNK_DAYS)
 
-  const now = new Date()
-  const isLastChunk = chunkEnd >= now
-  const effectiveEnd = isLastChunk ? now : chunkEnd
+  const isLastChunk = chunkEnd >= targetEnd
+  const effectiveEnd = isLastChunk ? targetEnd : chunkEnd
 
   const createdAtMin = chunkStart.toISOString()
   const createdAtMax = effectiveEnd.toISOString()
@@ -171,14 +183,17 @@ export async function POST(req: NextRequest) {
       subtotal_price: parseFloat(order.subtotal_price),
       total_tax: parseFloat(order.total_tax),
       total_discounts: parseFloat(order.total_discounts),
+      discount_codes: order.discount_codes ?? [],
       currency: order.currency,
       customer_id: order.customer?.id ?? null,
       line_items_count: order.line_items.length,
       line_items: order.line_items.map((li) => ({
         id: li.id,
         title: li.title,
+        variant_title: li.variant_title ?? null,
         quantity: li.quantity,
         price: li.price,
+        total_discount: li.total_discount,
         sku: li.sku,
         variant_id: li.variant_id,
         product_id: li.product_id,
@@ -205,8 +220,9 @@ export async function POST(req: NextRequest) {
       return Response.json({ ...results, next_chunk_start: createdAtMin }, { status: 207 })
   }
 
-  // Update last_synced_at if this is the final chunk
-  if (isLastChunk) {
+  // Update last_synced_at only for the default open-ended catch-up import —
+  // a bounded backfill (explicit end) must not advance the incremental cursor.
+  if (isLastChunk && !hasExplicitEnd) {
     await supabase
       .from('stores')
       .update({ last_synced_at: new Date().toISOString() })
