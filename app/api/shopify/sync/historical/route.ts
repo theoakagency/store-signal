@@ -43,6 +43,8 @@ interface ShopifyOrder {
   total_tax: string
   total_discounts: string
   discount_codes: Array<{ code: string; amount: string; type: string }> | null
+  total_shipping_price_set: { shop_money: { amount: string } } | null
+  shipping_address: { province_code: string | null } | null
   currency: string
   customer?: { id: number }
   line_items: {
@@ -184,6 +186,10 @@ export async function POST(req: NextRequest) {
       total_tax: parseFloat(order.total_tax),
       total_discounts: parseFloat(order.total_discounts),
       discount_codes: order.discount_codes ?? [],
+      shipping_state: order.shipping_address?.province_code ?? null,
+      shipping_charged: order.total_shipping_price_set?.shop_money?.amount
+        ? parseFloat(order.total_shipping_price_set.shop_money.amount)
+        : null,
       currency: order.currency,
       customer_id: order.customer?.id ?? null,
       line_items_count: order.line_items.length,
