@@ -46,7 +46,11 @@ export default async function CustomersPage({
       { count: 'exact' },
     )
     .eq('tenant_id', TENANT_ID)
+    // total_revenue is not unique, so ties can reshuffle between page fetches and
+    // make a row skip or repeat when paging. email (unique per tenant) breaks ties
+    // to keep paging stable; the revenue ranking itself is unchanged.
     .order('total_revenue', { ascending: false })
+    .order('email', { ascending: true })
     .range(offset, offset + pageSize - 1)
 
   // Segment filter (lifecycle segment: vip / active / at_risk / lapsed / new)

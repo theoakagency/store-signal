@@ -54,6 +54,8 @@ export async function POST(req: NextRequest) {
         .from('recharge_subscriptions')
         .select('customer_email, status, price, charge_interval_frequency, order_interval_unit')
         .eq('tenant_id', TENANT_ID)
+        // Stable order so .range() paging is complete (no dropped/duplicated rows).
+        .order('id', { ascending: true })
         .range(from, from + 999)
       if (!data || data.length === 0) break
       allSubs.push(...(data as SubRow[]))
@@ -71,6 +73,7 @@ export async function POST(req: NextRequest) {
         .from('loyalty_customers')
         .select('email, tier, points_balance, points_spent_total')
         .eq('tenant_id', TENANT_ID)
+        .order('id', { ascending: true })
         .range(from, from + 999)
       if (!data || data.length === 0) break
       allLoyalty.push(...(data as LoyaltyRow[]))
@@ -90,6 +93,10 @@ export async function POST(req: NextRequest) {
       .eq('financial_status', 'paid')
       .neq('test', true)
       .is('cancelled_at', null)
+      // (processed_at, shopify_order_id) rides orders_store_status_date_idx and is
+      // fully deterministic — without it .range() paging drops/duplicates orders.
+      .order('processed_at', { ascending: true })
+      .order('shopify_order_id', { ascending: true })
       .range(from, from + PAGE - 1)
     if (error || !data || data.length === 0) break
     orders.push(...(data as OrderRow[]))
@@ -289,6 +296,7 @@ export async function POST(req: NextRequest) {
         .from('customer_profiles')
         .select('is_subscriber, is_loyalty_member, total_revenue, segment, ltv_segment')
         .eq('tenant_id', TENANT_ID)
+        .order('email', { ascending: true })
         .range(profFrom, profFrom + 999)
       if (!chunk || chunk.length === 0) break
       allProfiles.push(...(chunk as typeof allProfiles))

@@ -130,6 +130,10 @@ export async function runLoyaltySync(token: string, secret: string | null) {
         .select('email, total_price')
         .eq('store_id', STORE_ID)
         .eq('financial_status', 'paid').neq('test', true).is('cancelled_at', null)
+        // Stable order (rides orders_store_status_date_idx) so .range() paging sums
+        // every paid order — heap order would drop/duplicate rows and skew tier LTV.
+        .order('processed_at', { ascending: true })
+        .order('shopify_order_id', { ascending: true })
         .range(from, from + 999)
       if (!data || data.length === 0) break
       for (const o of data) {
@@ -193,6 +197,8 @@ export async function runLoyaltySync(token: string, secret: string | null) {
         .select('email, created_at')
         .eq('store_id', STORE_ID)
         .eq('financial_status', 'paid').neq('test', true).is('cancelled_at', null)
+        .order('processed_at', { ascending: true })
+        .order('shopify_order_id', { ascending: true })
         .range(from, from + 999)
       if (!data || data.length === 0) break
       for (const o of data) if (o.email) allOrderRows.push({ email: (o.email as string).toLowerCase().trim(), created_at: o.created_at as string })

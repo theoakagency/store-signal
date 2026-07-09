@@ -46,6 +46,14 @@ async function paginateOrders<T extends Record<string, unknown>>(
       .neq('test', true)
       .is('cancelled_at', null)
       .gte('processed_at', gte)
+      // Stable, deterministic order is REQUIRED for correct .range() pagination.
+      // Without it PostgREST returns rows in physical-heap order, so paging past
+      // 1,000 rows silently drops and duplicates orders (revenue comes out wrong).
+      // (processed_at, shopify_order_id) rides orders_store_status_date_idx — an
+      // index-ordered scan, so it stays fast — and shopify_order_id (unique per
+      // store, NOT NULL) breaks processed_at ties to guarantee a total order.
+      .order('processed_at', { ascending: true })
+      .order('shopify_order_id', { ascending: true })
       .range(from, from + PAGE - 1)
     if (lt) q = q.lt('processed_at', lt)
     const { data } = await q
