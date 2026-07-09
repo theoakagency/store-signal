@@ -12,7 +12,7 @@ function getSeason(month: number): string {
   return 'winter'
 }
 
-// Public endpoint — no user auth required (LBLA team tool)
+// Requires a signed-in user; /lbla + /api/lbla are gated behind Supabase login in proxy.ts (LBLA team tool)
 export async function POST(req: NextRequest) {
   const service = createSupabaseServiceClient()
 

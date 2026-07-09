@@ -6,13 +6,24 @@ export const metadata = {
   title: 'Sign in — Store Signal',
 }
 
-export default async function LoginPage() {
+function safeNext(next: string | undefined): string {
+  if (next && next.startsWith('/') && !next.startsWith('//')) return next
+  return '/dashboard'
+}
+
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ next?: string }>
+}) {
+  const next = safeNext((await searchParams).next)
+
   const supabase = await createSupabaseServerClient()
   const {
     data: { user },
   } = await supabase.auth.getUser()
 
-  if (user) redirect('/dashboard')
+  if (user) redirect(next)
 
   return (
     <main className="min-h-screen bg-charcoal flex items-center justify-center px-4">
@@ -28,7 +39,7 @@ export default async function LoginPage() {
         {/* Card */}
         <div className="rounded-2xl border border-white/[0.08] bg-charcoal-800 px-8 py-8 shadow-xl">
           <h1 className="mb-6 font-display text-lg font-semibold text-cream">Sign in to your account</h1>
-          <LoginForm />
+          <LoginForm next={next} />
         </div>
 
         <p className="mt-6 text-center font-data text-xs text-cream/30">

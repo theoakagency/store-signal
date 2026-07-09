@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server'
 import { createSupabaseServiceClient } from '@/lib/supabase'
 
-// Public endpoint — no user auth required (LBLA team tool)
+// Requires a signed-in user; /lbla + /api/lbla are gated behind Supabase login in proxy.ts (LBLA team tool)
 
 const TENANT_ID = '00000000-0000-0000-0000-000000000001'
 

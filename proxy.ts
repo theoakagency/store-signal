@@ -23,13 +23,34 @@ export async function proxy(request: NextRequest) {
     }
   )
 
-  // Refresh session tokens and gate /dashboard routes
+  // Refresh session tokens and gate authenticated areas.
   const {
     data: { user },
   } = await supabase.auth.getUser()
 
-  if (!user && request.nextUrl.pathname.startsWith('/dashboard')) {
-    return NextResponse.redirect(new URL('/login', request.url))
+  const { pathname, search } = request.nextUrl
+
+  // Protected page areas — the dashboard and the LBLA team tools. /lbla was
+  // previously public; it is now behind the same Supabase login as /dashboard.
+  const isProtectedPage =
+    pathname.startsWith('/dashboard') || pathname.startsWith('/lbla')
+
+  // Data endpoints backing the LBLA tools. These serve the same sensitive data
+  // as the pages (KLL royalty, shipping margin, etc.), so gating the pages alone
+  // would leave the data reachable by calling the API directly.
+  const isProtectedApi =
+    pathname.startsWith('/api/lbla') || pathname.startsWith('/api/skuvault')
+
+  if (!user && (isProtectedPage || isProtectedApi)) {
+    // API callers get a 401 (redirecting an API call to an HTML login page is
+    // useless); page requests redirect to /login with ?next so the user lands
+    // back on the page they asked for after signing in.
+    if (isProtectedApi) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    const loginUrl = new URL('/login', request.url)
+    loginUrl.searchParams.set('next', pathname + search)
+    return NextResponse.redirect(loginUrl)
   }
 
   return response

@@ -1,6 +1,6 @@
 /**
  * GET /api/lbla/reports/kll-royalty?month=YYYY-MM
- * Public endpoint — no user auth required (LBLA team tool)
+ * Requires a signed-in user; /lbla + /api/lbla are gated behind Supabase login in proxy.ts (LBLA team tool)
  *
  * Computes the KLL royalty report for one calendar month:
  * gross/net sales and royalty (10% of Final Net) per target-SKU line

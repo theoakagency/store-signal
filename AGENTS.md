@@ -435,7 +435,7 @@ All migrations live in `supabase/migrations/`. Apply via Supabase SQL Editor or 
 
 ## LBLA Team Tools (`/lbla`)
 
-A separate lightweight interface for the LashBox LA internal team. No sidebar, no auth required. Mobile-first.
+A separate lightweight interface for the LashBox LA internal team. No sidebar. Mobile-first. Gated behind the same Supabase login as `/dashboard` (see `proxy.ts`) — previously public, now sign-in required.
 
 | Page | Route | Purpose |
 |---|---|---|
@@ -446,12 +446,13 @@ A separate lightweight interface for the LashBox LA internal team. No sidebar, n
 ### API routes for LBLA
 | Route | Purpose |
 |---|---|
-| `POST /api/lbla/generate` | Public (no auth) content generation — reads `style_guide_rules` via service client, calls Claude, does NOT save to DB |
+| `POST /api/lbla/generate` | Content generation (requires a signed-in user — gated in `proxy.ts`) — reads `style_guide_rules` via service client, calls Claude, does NOT save to DB |
 | `POST /api/skuvault/sales` | SKU Vault sales aggregation — streams SSE chunk progress, reads `SKUVAULT_TENANT_TOKEN` + `SKUVAULT_USER_TOKEN` from env |
 
 ### LBLA notes
-- All `/lbla` routes are **public** — no auth middleware
-- The `/api/lbla/generate` endpoint is intentionally unauthenticated — rate limiting may be needed if exposed beyond the team
+- All `/lbla` pages **and** the `/api/lbla` + `/api/skuvault` endpoints are gated behind the same Supabase login as `/dashboard`, enforced centrally in `proxy.ts`. Unauthenticated page requests redirect to `/login?next=<path>` (and land back on the page after sign-in); unauthenticated API calls get a `401`.
+- **Known gap — broader team access is not built yet.** There is no self-serve signup/invite flow; accounts are created out-of-band in the Supabase dashboard. So only users who already have a login can reach `/lbla`. Provisioning accounts (or building an invite flow) for additional team members is a future piece of work.
+- `/api/lbla/generate` is no longer publicly exposed now that `/lbla` is gated (was previously flagged as intentionally unauthenticated).
 - SKU Vault splits date ranges into 7-day chunks (API cap); long ranges may take up to 5 minutes
 - "Team Tools →" link lives in the sidebar footer on the main dashboard
 
