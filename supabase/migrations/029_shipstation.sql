@@ -16,7 +16,7 @@ ALTER TABLE public.stores ADD COLUMN IF NOT EXISTS shipstation_last_synced_at ti
 CREATE TABLE IF NOT EXISTS public.shipstation_shipments (
   id                 text        PRIMARY KEY,   -- ShipStation label_id
   tenant_id          uuid        NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
-  shopify_order_id   bigint,                     -- from labels.external_order_id; join key to orders.shopify_order_id
+  shopify_order_id   bigint,                     -- join key to orders.shopify_order_id; derived from the first "-"-delimited segment of labels.external_shipment_id (see commit 2149928 / lib/syncShipStation.ts). external_order_id is null for orders synced via the native Shopify-ShipStation connection.
   shipment_cost      numeric(12, 2),
   currency           text,
   ship_date          timestamptz,

@@ -29,7 +29,18 @@ export interface ShipStationLabel {
   carrier_id: string | null
   service_code: string | null
   shipment_cost: { currency: string; amount: number } | null
+  // Insurance is billed as a SEPARATE money field in v2 — NOT inside
+  // shipment_cost. Total carrier cost = shipment_cost + insurance_cost.
+  insurance_cost: { currency: string; amount: number } | null
+  // Label lifecycle status ("completed", "voided", "processing", ...).
+  // Voided labels must be excluded from cost sums.
   status: string
+  // Optional fields — present on the label object when ShipStation returns
+  // them; typed loosely and read defensively since the /v2/labels list
+  // payload's inclusion of ship_to/weight is not guaranteed.
+  is_return_label?: boolean | null
+  ship_to?: { state_province?: string | null; postal_code?: string | null } | null
+  weight?: { value?: number | null; unit?: string | null } | null
 }
 
 // ── Date range helpers ───────────────────────────────────────────────────────
