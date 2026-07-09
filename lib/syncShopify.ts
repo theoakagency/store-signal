@@ -23,6 +23,11 @@ export interface ShopifyOrder {
   total_tax: string
   total_discounts: string
   discount_codes: Array<{ code: string; amount: string; type: string }> | null
+  // Order-level discount applications, indexed. Each line-item discount
+  // allocation references one of these by position (discount_application_index).
+  // discount_code applications carry a `code`; automatic/script discounts carry
+  // a `title` and no code.
+  discount_applications: ShopifyDiscountApplication[] | null
   total_shipping_price_set: { shop_money: { amount: string } } | null
   shipping_address: { province_code: string | null } | null
   currency: string
@@ -47,9 +52,24 @@ export interface ShopifyLineItem {
   quantity: number
   price: string
   total_discount: string
+  // Per-line discount amounts. Shopify reports total_discount = "0.00" for
+  // order-level code discounts; the real per-line amount lives here, one entry
+  // per discount application that touched this line.
+  discount_allocations: ShopifyDiscountAllocation[] | null
   sku: string | null
   variant_id: number | null
   product_id: number | null
+}
+
+export interface ShopifyDiscountAllocation {
+  amount: string
+  discount_application_index: number
+}
+
+export interface ShopifyDiscountApplication {
+  type: string // 'discount_code' | 'automatic' | 'manual' | 'script'
+  code?: string
+  title?: string
 }
 
 export interface ShopifyCustomer {
@@ -197,6 +217,16 @@ export function mapOrder(order: ShopifyOrder) {
       quantity: li.quantity,
       price: li.price,
       total_discount: li.total_discount,
+      // Resolve each per-line discount allocation to the code that produced it.
+      // Shopify leaves line_items[].total_discount = "0.00" for order-level code
+      // discounts and puts the real amount in discount_allocations, each keyed by
+      // discount_application_index into the order's discount_applications. Resolving
+      // the code here (null for automatic/script discounts, which have no code)
+      // lets downstream reports credit each stacked code independently.
+      discount_allocations: (li.discount_allocations ?? []).map((a) => ({
+        code: order.discount_applications?.[a.discount_application_index]?.code ?? null,
+        amount: a.amount,
+      })),
       sku: li.sku,
       variant_id: li.variant_id,
       product_id: li.product_id,
