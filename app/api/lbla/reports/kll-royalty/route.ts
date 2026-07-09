@@ -145,10 +145,14 @@ export async function GET(req: NextRequest) {
       .is('cancelled_at', null)
       .gte('processed_at', start)
       .lt('processed_at', end)
-      // Stable sort is REQUIRED for correct .range() pagination — without an
-      // explicit order, PostgREST returns rows in unstable physical-heap order,
-      // so paging across the 6k+ paid orders silently drops and duplicates rows
-      // (the report otherwise returns an arbitrary, run-dependent subset).
+      // Stable, deterministic order is REQUIRED for correct .range() pagination.
+      // Without it PostgREST returns rows in physical-heap order, so paging past
+      // 1,000 rows silently drops and duplicates orders. (processed_at, shopify_order_id)
+      // rides orders_store_status_date_idx — an index-ordered scan, so it stays fast —
+      // and shopify_order_id (unique per store, NOT NULL) breaks processed_at ties to
+      // guarantee a total order. Sorting by shopify_order_id alone forces a full
+      // per-page re-sort and times out on live data.
+      .order('processed_at', { ascending: true })
       .order('shopify_order_id', { ascending: true })
       .range(from, from + PAGE - 1)
 
