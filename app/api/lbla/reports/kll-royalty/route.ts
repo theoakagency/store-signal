@@ -176,13 +176,20 @@ export async function GET(req: NextRequest) {
     const chunk = shopifyOrderIds.slice(i, i + 500)
     const { data, error } = await service
       .from('shipstation_shipments')
-      .select('shopify_order_id, shipment_cost')
+      .select('shopify_order_id, shipment_cost, status, is_return_label')
       .eq('tenant_id', TENANT_ID)
       .in('shopify_order_id', chunk)
 
     if (error) return Response.json({ error: `ShipStation query failed: ${error.message}` }, { status: 500 })
-    for (const row of (data ?? []) as { shopify_order_id: number | null; shipment_cost: number | null }[]) {
+    for (const row of (data ?? []) as { shopify_order_id: number | null; shipment_cost: number | null; status: string | null; is_return_label: boolean | null }[]) {
       if (row.shopify_order_id === null) continue
+      // Exclude voided labels (a voided-then-reprinted label would otherwise
+      // double-count its cost) and return labels (not an outbound cost for the
+      // sale). Filtered here in JS rather than with a .neq() query filter so a
+      // row with a NULL status / is_return_label is kept, not silently dropped
+      // (SQL `status <> 'voided'` is NULL — i.e. false — for a NULL status).
+      if (row.status === 'voided') continue
+      if (row.is_return_label === true) continue
       const prev = shipmentCostByOrderId.get(row.shopify_order_id) ?? 0
       shipmentCostByOrderId.set(row.shopify_order_id, prev + (row.shipment_cost ?? 0))
     }
