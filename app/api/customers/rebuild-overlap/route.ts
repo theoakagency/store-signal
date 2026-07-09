@@ -33,6 +33,8 @@ export async function POST(_req: NextRequest) {
         .from('recharge_subscriptions')
         .select('customer_email, status')
         .eq('tenant_id', TENANT_ID)
+        // Stable order so .range() paging is complete (no dropped/duplicated rows).
+        .order('id', { ascending: true })
         .range(from, from + 999)
       if (!data || data.length === 0) break
       for (const row of data) {
@@ -54,6 +56,7 @@ export async function POST(_req: NextRequest) {
         .from('loyalty_customers')
         .select('email')
         .eq('tenant_id', TENANT_ID)
+        .order('id', { ascending: true })
         .range(from, from + 999)
       if (!data || data.length === 0) break
       for (const row of data) {
@@ -74,6 +77,7 @@ export async function POST(_req: NextRequest) {
         .from('customer_profiles')
         .select('email, total_revenue')
         .eq('tenant_id', TENANT_ID)
+        .order('email', { ascending: true })
         .range(from, from + 999)
       if (!data || data.length === 0) break
       allProfiles.push(...(data as ProfileRow[]))

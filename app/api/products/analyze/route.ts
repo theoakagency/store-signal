@@ -61,7 +61,10 @@ export async function POST(_req: NextRequest) {
       .eq('financial_status', 'paid')
       .neq('test', true)
       .is('cancelled_at', null)
+      // processed_at alone is not unique — add shopify_order_id (unique per store)
+      // so a page boundary landing between same-timestamp orders can't drop/dupe rows.
       .order('processed_at', { ascending: true })
+      .order('shopify_order_id', { ascending: true })
       .range(from, from + PAGE - 1)
     if (error || !data || data.length === 0) break
     orders.push(...(data as unknown as OrderRow[]))

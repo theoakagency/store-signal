@@ -169,6 +169,9 @@ export async function runRechargeSync(apiToken: string): Promise<{
         .from('customer_profiles')
         .select('email, total_revenue, total_orders, avg_order_value')
         .eq('tenant_id', TENANT_ID)
+        // Stable order so .range() paging loads every profile (heap order would
+        // drop/duplicate rows and skew subscriber-vs-non-subscriber LTV).
+        .order('email', { ascending: true })
         .range(from, from + 999)
       if (!data || data.length === 0) break
       allProfiles.push(...(data as ProfileLtv[]))

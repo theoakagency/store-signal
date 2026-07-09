@@ -20,7 +20,7 @@ export async function runProfileBatch(batch: number) {
   {
     let from = 0
     while (true) {
-      const { data } = await service.from('recharge_subscriptions').select('customer_email, status, price, charge_interval_frequency, order_interval_unit').eq('tenant_id', TENANT_ID).range(from, from + 999)
+      const { data } = await service.from('recharge_subscriptions').select('customer_email, status, price, charge_interval_frequency, order_interval_unit').eq('tenant_id', TENANT_ID).order('id', { ascending: true }).range(from, from + 999)
       if (!data || data.length === 0) break
       allSubs.push(...(data as SubRow[]))
       if (data.length < 1000) break
@@ -33,7 +33,7 @@ export async function runProfileBatch(batch: number) {
   {
     let from = 0
     while (true) {
-      const { data } = await service.from('loyalty_customers').select('email, tier, points_balance, points_spent_total').eq('tenant_id', TENANT_ID).range(from, from + 999)
+      const { data } = await service.from('loyalty_customers').select('email, tier, points_balance, points_spent_total').eq('tenant_id', TENANT_ID).order('id', { ascending: true }).range(from, from + 999)
       if (!data || data.length === 0) break
       allLoyalty.push(...(data as LoyaltyRow[]))
       if (data.length < 1000) break
@@ -44,7 +44,7 @@ export async function runProfileBatch(batch: number) {
   const orders: OrderRow[] = []
   let from = 0
   while (true) {
-    const { data, error } = await service.from('orders').select('email, total_price, processed_at, created_at').eq('store_id', STORE_ID).eq('financial_status', 'paid').neq('test', true).is('cancelled_at', null).range(from, from + 999)
+    const { data, error } = await service.from('orders').select('email, total_price, processed_at, created_at').eq('store_id', STORE_ID).eq('financial_status', 'paid').neq('test', true).is('cancelled_at', null).order('processed_at', { ascending: true }).order('shopify_order_id', { ascending: true }).range(from, from + 999)
     if (error || !data || data.length === 0) break
     orders.push(...(data as OrderRow[]))
     if (data.length < 1000) break
@@ -204,7 +204,7 @@ export async function runProfileBatch(batch: number) {
     const allProfiles: { is_subscriber: boolean; is_loyalty_member: boolean; total_revenue: number; segment: string | null; ltv_segment: string | null }[] = []
     let profFrom = 0
     while (true) {
-      const { data: chunk } = await service.from('customer_profiles').select('is_subscriber, is_loyalty_member, total_revenue, segment, ltv_segment').eq('tenant_id', TENANT_ID).range(profFrom, profFrom + 999)
+      const { data: chunk } = await service.from('customer_profiles').select('is_subscriber, is_loyalty_member, total_revenue, segment, ltv_segment').eq('tenant_id', TENANT_ID).order('email', { ascending: true }).range(profFrom, profFrom + 999)
       if (!chunk || chunk.length === 0) break
       allProfiles.push(...(chunk as typeof allProfiles))
       if (chunk.length < 1000) break

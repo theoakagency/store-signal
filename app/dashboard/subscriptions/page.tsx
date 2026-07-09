@@ -36,6 +36,8 @@ export default async function SubscriptionsPage() {
       .select('created_at, status')
       .eq('tenant_id', TENANT_ID)
       .gte('created_at', thirteenMonthsAgo.toISOString())
+      // Stable order so .range() paging covers every cohort row (no dropped/dupes).
+      .order('id', { ascending: true })
       .range(from, from + PAGE - 1)
     if (!data || data.length === 0) break
     cohortSubs.push(...(data as { created_at: string; status: string }[]))

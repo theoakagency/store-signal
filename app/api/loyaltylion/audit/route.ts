@@ -70,6 +70,9 @@ export async function POST(_req: NextRequest) {
         .from('customer_profiles')
         .select('email')
         .eq('tenant_id', TENANT_ID)
+        // Stable order so .range() paging loads every email (dropped rows would
+        // otherwise show up as false "foreign" activity emails in this audit).
+        .order('email', { ascending: true })
         .range(from, from + 999)
       if (!data || data.length === 0) break
       for (const row of data) profileEmailsRaw.push(row.email as string)
@@ -90,6 +93,8 @@ export async function POST(_req: NextRequest) {
         .eq('financial_status', 'paid')
         .neq('test', true)
         .is('cancelled_at', null)
+        .order('processed_at', { ascending: true })
+        .order('shopify_order_id', { ascending: true })
         .range(from, from + 999)
       if (!data || data.length === 0) break
       for (const row of data) if (row.email) orderEmailsRaw.push(row.email as string)
