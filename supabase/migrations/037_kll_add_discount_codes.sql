@@ -10,15 +10,20 @@
 --   COMEBACK20 — exact, NON-kit-eligible (win-back code; same kit treatment
 --                as WELCOME15/WELCOME20 — confirmed allowed on non-kit target
 --                SKUs only).
---   KLLEVENT   — exact, NON-kit-eligible (DEFAULT — kit-eligibility not yet
---                confirmed; defaulted to non-kit like most codes. ⚑ FLAG:
---                flip kit_eligible to true if this event code should apply to
---                kit SKUs). Not currently used on any order in the data.
+--   KLLEVENT   — exact, KIT-ELIGIBLE (confirmed). 100%-off event/giveaway code.
+--                ⚠ KNOWN GAP: in the data KLLEVENT is applied as a Shopify
+--                *manual* discount, so the code lives in
+--                discount_applications.title (not .code). mapOrder resolves the
+--                per-line allocation code from .code only, so it stores
+--                code=null and the KLL report cannot credit it — the 52 May
+--                giveaway kit orders still show full royalty despite this flag.
+--                Fully crediting them requires a separate mapOrder title-
+--                fallback fix + re-backfill; tracked separately.
 --
 -- Unchanged: DT (prefix, kit-eligible), WELCOME15/WELCOME20, LASHBOXJENNA.
 
 INSERT INTO public.allowed_discount_codes (code_pattern, match_type, kit_eligible, category, notes)
 VALUES
   ('COMEBACK20', 'exact', false, 'comeback', 'Win-back code — not applicable to kit SKUs'),
-  ('KLLEVENT',   'exact', false, 'promo',    'Event code — kit-eligibility unconfirmed, defaulted to non-kit-eligible pending confirmation')
+  ('KLLEVENT',   'exact', true,  'promo',    'Event/giveaway code (100% off, applied as a manual discount) — kit-eligible (confirmed)')
 ON CONFLICT (tenant_id, code_pattern) DO NOTHING;
