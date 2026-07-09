@@ -29,6 +29,11 @@ export interface ShopifyOrder {
   // a `title` and no code.
   discount_applications: ShopifyDiscountApplication[] | null
   total_shipping_price_set: { shop_money: { amount: string } } | null
+  // Per-tier shipping lines. `title` is the tier the customer picked
+  // ("Free Shipping", "Standard", ...). `price` is the tier's pre-discount
+  // price; `discounted_price` is what it became after any shipping discount
+  // (code/promo) was applied. Present in every order payload.
+  shipping_lines: Array<{ title: string | null; price: string | null; discounted_price: string | null }> | null
   shipping_address: { province_code: string | null } | null
   currency: string
   customer?: { id: number }
@@ -206,6 +211,21 @@ export function mapOrder(order: ShopifyOrder) {
     shipping_state: order.shipping_address?.province_code ?? null,
     shipping_charged: order.total_shipping_price_set?.shop_money?.amount
       ? parseFloat(order.total_shipping_price_set.shop_money.amount)
+      : null,
+    // The tier the customer selected at checkout. Group shipping margin by this.
+    shipping_method: order.shipping_lines?.[0]?.title ?? null,
+    // Total discount applied to shipping = sum of (price - discounted_price)
+    // across shipping lines, clamped >= 0. Uses `discounted_price` per the
+    // shipping-margin spec. > 0 means a code/promo reduced the shipping charge,
+    // which distinguishes code-driven free shipping from a threshold-driven
+    // "Free Shipping" tier that was simply priced at 0. null when the order has
+    // no shipping lines at all (e.g. digital-only / local pickup).
+    shipping_discounted: order.shipping_lines?.length
+      ? order.shipping_lines.reduce((sum, line) => {
+          const price = parseFloat(line.price ?? '0')
+          const discounted = parseFloat(line.discounted_price ?? line.price ?? '0')
+          return sum + Math.max(0, (Number.isNaN(price) ? 0 : price) - (Number.isNaN(discounted) ? 0 : discounted))
+        }, 0)
       : null,
     currency: order.currency,
     customer_id: order.customer?.id ?? null,
