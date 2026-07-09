@@ -40,6 +40,20 @@ const TOOLS = [
     description: 'Generate quantity sold by SKU directly from SKU Vault.',
     cta: 'Open',
   },
+  {
+    href: '/lbla/reports/shipping-margin',
+    icon: (
+      <svg className="h-8 w-8 text-teal" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+        <path d="M2 7a1 1 0 0 1 1-1h9v9H3a1 1 0 0 1-1-1z" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M12 9h4l3 3v3h-7z" strokeLinecap="round" strokeLinejoin="round" />
+        <circle cx="6.5" cy="17" r="1.5" />
+        <circle cx="16.5" cy="17" r="1.5" />
+      </svg>
+    ),
+    title: 'Shipping Margin',
+    description: 'Shipping collected vs. carrier cost by tier and order value, from ShipStation.',
+    cta: 'Open',
+  },
 ]
 
 export default function LblaHome() {
