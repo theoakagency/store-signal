@@ -159,7 +159,7 @@ export default function KllRoyaltyReportPage() {
   useEffect(() => { fetchReport(month) }, [month, fetchReport])
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
+    <div className="mx-auto max-w-[1280px] px-4 py-8 sm:px-6 lg:px-8">
 
       {/* Header */}
       <div className="mb-6">
@@ -244,51 +244,67 @@ export default function KllRoyaltyReportPage() {
 
           <div className="overflow-hidden rounded-2xl border border-cream-3 bg-white shadow-sm">
             <div className="overflow-x-auto">
-              <table className="min-w-full text-sm">
+              <table className="w-full table-fixed text-sm">
+                <colgroup>
+                  <col className="w-[90px]" />
+                  <col className="w-[220px]" />
+                  <col className="w-[50px]" />
+                  <col className="w-[95px]" />
+                  <col className="w-[95px]" />
+                  <col className="w-[140px]" />
+                  <col className="w-[85px]" />
+                  <col className="w-[95px]" />
+                  <col className="w-[90px]" />
+                  <col className="w-[95px]" />
+                  <col className="w-[90px]" />
+                </colgroup>
                 <thead>
                   <tr className="border-b border-cream-2 bg-cream">
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-ink-3 whitespace-nowrap">Order</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-ink-3 whitespace-nowrap">SKU / Product</th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-ink-3 whitespace-nowrap">Qty</th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-ink-3 whitespace-nowrap">Unit Price</th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-ink-3 whitespace-nowrap">Gross Sales</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-ink-3 whitespace-nowrap">Discount Code</th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-ink-3 whitespace-nowrap">Discount Amt</th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-ink-3 whitespace-nowrap">GWP Cost</th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-ink-3 whitespace-nowrap">Net Sales</th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-ink-3 whitespace-nowrap">Item Shipping</th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-ink-3 whitespace-nowrap">Final Net</th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-ink-3 whitespace-nowrap">Royalty</th>
+                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-ink-3 whitespace-nowrap">Order</th>
+                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-ink-3 whitespace-nowrap">SKU / Product</th>
+                    <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-ink-3 whitespace-nowrap">Qty</th>
+                    <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-ink-3 whitespace-nowrap">Unit Price</th>
+                    <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-ink-3 whitespace-nowrap">Gross</th>
+                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-ink-3 whitespace-nowrap">Discount</th>
+                    <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-ink-3 whitespace-nowrap">GWP</th>
+                    <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-ink-3 whitespace-nowrap">Net Sales</th>
+                    <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-ink-3 whitespace-nowrap">Shipping</th>
+                    <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-ink-3 whitespace-nowrap">Final Net</th>
+                    <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-ink-3 whitespace-nowrap">Royalty</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-cream-2">
                   {report.rows.map((r, i) => (
                     <tr key={`${r.order_number}-${r.sku}-${i}`} className={i % 2 === 0 ? 'bg-white' : 'bg-cream/40'}>
-                      <td className="px-4 py-3 font-data text-xs text-ink whitespace-nowrap">{r.order_number}</td>
-                      <td className="px-4 py-3 text-xs text-ink whitespace-nowrap max-w-xs truncate" title={r.product_title}>
+                      <td className="px-3 py-3 font-data text-xs text-ink truncate">{r.order_number}</td>
+                      <td className="px-3 py-3 text-xs text-ink truncate" title={r.product_title}>
                         <span className="font-data">{r.sku}</span>
                         <span className="block text-ink-3 truncate">{r.product_title}</span>
                       </td>
-                      <td className="px-4 py-3 text-right font-data text-xs text-ink">{r.qty}</td>
-                      <td className="px-4 py-3 text-right font-data text-xs text-ink">{fmtCurrency(r.unit_price)}</td>
-                      <td className="px-4 py-3 text-right font-data text-xs text-ink">{fmtCurrency(r.gross_sales)}</td>
-                      <td className="px-4 py-3 text-xs text-ink-2 whitespace-nowrap">{r.discount_code || '—'}</td>
-                      <td className="px-4 py-3 text-right font-data text-xs text-ink">{fmtCurrency(r.discount_amount)}</td>
-                      <td className="px-4 py-3 text-right font-data text-xs text-ink">{fmtCurrency(r.gwp_cost)}</td>
-                      <td className="px-4 py-3 text-right font-data text-xs text-ink">{fmtCurrency(r.net_sales)}</td>
-                      <td className="px-4 py-3 text-right font-data text-xs text-ink">{fmtCurrency(r.item_shipping_cost)}</td>
-                      <td className="px-4 py-3 text-right font-data text-xs text-ink">{fmtCurrency(r.final_net)}</td>
-                      <td className="px-4 py-3 text-right font-data text-xs font-semibold text-teal-deep">{fmtCurrency(r.royalty)}</td>
+                      <td className="px-3 py-3 text-right font-data text-xs text-ink">{r.qty}</td>
+                      <td className="px-3 py-3 text-right font-data text-xs text-ink">{fmtCurrency(r.unit_price)}</td>
+                      <td className="px-3 py-3 text-right font-data text-xs text-ink">{fmtCurrency(r.gross_sales)}</td>
+                      <td className="px-3 py-3 text-xs text-ink-2 truncate">
+                        {r.discount_code || '—'}
+                        {r.discount_amount > 0 && (
+                          <span className="block font-data text-ink-3">-{fmtCurrency(r.discount_amount)}</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-3 text-right font-data text-xs text-ink">{fmtCurrency(r.gwp_cost)}</td>
+                      <td className="px-3 py-3 text-right font-data text-xs text-ink">{fmtCurrency(r.net_sales)}</td>
+                      <td className="px-3 py-3 text-right font-data text-xs text-ink">{fmtCurrency(r.item_shipping_cost)}</td>
+                      <td className="px-3 py-3 text-right font-data text-xs text-ink">{fmtCurrency(r.final_net)}</td>
+                      <td className="px-3 py-3 text-right font-data text-xs font-semibold text-teal-deep">{fmtCurrency(r.royalty)}</td>
                     </tr>
                   ))}
                 </tbody>
                 <tfoot>
                   <tr className="border-t-2 border-cream-3 bg-cream">
-                    <td colSpan={8} className="px-4 py-3 text-xs font-semibold text-ink">Total</td>
-                    <td className="px-4 py-3 text-right font-data text-xs font-semibold text-ink">{fmtCurrency(report.summary.net_sales)}</td>
+                    <td colSpan={7} className="px-3 py-3 text-xs font-semibold text-ink">Total</td>
+                    <td className="px-3 py-3 text-right font-data text-xs font-semibold text-ink">{fmtCurrency(report.summary.net_sales)}</td>
                     <td />
                     <td />
-                    <td className="px-4 py-3 text-right font-data text-xs font-semibold text-teal-deep">{fmtCurrency(report.summary.royalty)}</td>
+                    <td className="px-3 py-3 text-right font-data text-xs font-semibold text-teal-deep">{fmtCurrency(report.summary.royalty)}</td>
                   </tr>
                 </tfoot>
               </table>
