@@ -241,12 +241,19 @@ export function mapOrder(order: ShopifyOrder) {
       // Shopify leaves line_items[].total_discount = "0.00" for order-level code
       // discounts and puts the real amount in discount_allocations, each keyed by
       // discount_application_index into the order's discount_applications. Resolving
-      // the code here (null for automatic/script discounts, which have no code)
-      // lets downstream reports credit each stacked code independently.
-      discount_allocations: (li.discount_allocations ?? []).map((a) => ({
-        code: order.discount_applications?.[a.discount_application_index]?.code ?? null,
-        amount: a.amount,
-      })),
+      // the code here lets downstream reports credit each stacked code independently.
+      //
+      // `discount_code` applications carry the code in `.code`. MANUAL discounts
+      // (e.g. staff applying a 100%-off event code like KLLEVENT) have no `.code`
+      // — the identifier lives in `.title` — so fall back to the title for manual
+      // applications ONLY. Automatic/script discounts are deliberately left null
+      // (non-deductible) so a coincidental title match can never start crediting
+      // them.
+      discount_allocations: (li.discount_allocations ?? []).map((a) => {
+        const app = order.discount_applications?.[a.discount_application_index]
+        const code = app?.code ?? (app?.type === 'manual' ? app?.title ?? null : null)
+        return { code, amount: a.amount }
+      }),
       sku: li.sku,
       variant_id: li.variant_id,
       product_id: li.product_id,
