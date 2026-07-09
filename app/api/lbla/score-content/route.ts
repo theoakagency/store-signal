@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createSupabaseServiceClient } from '@/lib/supabase'
 
-// Public endpoint — no user auth required (LBLA team tool)
+// Requires a signed-in user; /lbla + /api/lbla are gated behind Supabase login in proxy.ts (LBLA team tool)
 // Secondary Claude call for brand-voice scoring. Non-blocking from the caller's
 // perspective; generation does not wait for this result.
 

@@ -3,7 +3,7 @@
 import { useActionState } from 'react'
 import { signIn } from '@/app/actions/auth'
 
-export default function LoginForm() {
+export default function LoginForm({ next }: { next: string }) {
   const [state, action, isPending] = useActionState(signIn, null)
 
   const inputCls =
@@ -11,6 +11,7 @@ export default function LoginForm() {
 
   return (
     <form action={action} className="flex flex-col gap-4">
+      <input type="hidden" name="next" value={next} />
       {state?.error && (
         <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
           {state.error}

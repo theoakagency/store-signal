@@ -4,7 +4,7 @@ import { createSupabaseServiceClient } from '@/lib/supabase'
 
 const STORE_ID = '00000000-0000-0000-0000-000000000002'
 
-// Public endpoint — no user auth required (LBLA team tool)
+// Requires a signed-in user; /lbla + /api/lbla are gated behind Supabase login in proxy.ts (LBLA team tool)
 export async function POST(req: NextRequest) {
   const service = createSupabaseServiceClient()
 
