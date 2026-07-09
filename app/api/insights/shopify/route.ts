@@ -27,8 +27,8 @@ export async function POST(_req: NextRequest) {
     { data: channels },
     { data: metricsCache },
   ] = await Promise.all([
-    service.from('orders').select('total_price, financial_status, fulfillment_status, processed_at').eq('store_id', STORE_ID).eq('financial_status', 'paid').gte('processed_at', thirtyDaysAgo.toISOString()),
-    service.from('orders').select('total_price').eq('store_id', STORE_ID).eq('financial_status', 'paid').gte('processed_at', sixtyDaysAgo.toISOString()).lt('processed_at', thirtyDaysAgo.toISOString()),
+    service.from('orders').select('total_price, financial_status, fulfillment_status, processed_at').eq('store_id', STORE_ID).eq('financial_status', 'paid').neq('test', true).gte('processed_at', thirtyDaysAgo.toISOString()),
+    service.from('orders').select('total_price').eq('store_id', STORE_ID).eq('financial_status', 'paid').neq('test', true).gte('processed_at', sixtyDaysAgo.toISOString()).lt('processed_at', thirtyDaysAgo.toISOString()),
     service.from('sales_channel_cache').select('channel_name, revenue, order_count, avg_order_value').eq('tenant_id', TENANT_ID).eq('period', 'last_30d'),
     service.from('metrics_cache').select('metric_name, metric_value, metric_metadata').eq('store_id', STORE_ID).in('metric_name', ['revenue_by_month', 'customer_count']),
   ])

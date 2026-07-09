@@ -88,6 +88,7 @@ export async function POST(_req: NextRequest) {
         .select('email')
         .eq('store_id', STORE_ID)
         .eq('financial_status', 'paid')
+        .neq('test', true)
         .range(from, from + 999)
       if (!data || data.length === 0) break
       for (const row of data) if (row.email) orderEmailsRaw.push(row.email as string)

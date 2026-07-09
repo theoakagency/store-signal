@@ -20,49 +20,16 @@
 
 import { NextRequest } from 'next/server'
 import { createSupabaseServiceClient } from '@/lib/supabase'
+import { mapOrder, type ShopifyOrder } from '@/lib/syncShopify'
 
 export const maxDuration = 300
 
 const SHOPIFY_STORE = (process.env.SHOPIFY_RETAIL_STORE ?? '').trim()
 const SYNC_MONTHS_BACK = parseInt(process.env.SHOPIFY_SYNC_MONTHS_BACK ?? '12', 10)
 
-const TENANT_ID = '00000000-0000-0000-0000-000000000001'
 const STORE_ID = '00000000-0000-0000-0000-000000000002'
 
 const CHUNK_DAYS = 7
-
-interface ShopifyOrder {
-  id: number
-  order_number: number
-  name: string
-  email: string | null
-  financial_status: string
-  fulfillment_status: string | null
-  total_price: string
-  subtotal_price: string
-  total_tax: string
-  total_discounts: string
-  discount_codes: Array<{ code: string; amount: string; type: string }> | null
-  total_shipping_price_set: { shop_money: { amount: string } } | null
-  shipping_address: { province_code: string | null } | null
-  currency: string
-  customer?: { id: number }
-  line_items: {
-    id: number
-    title: string
-    variant_title: string | null
-    quantity: number
-    price: string
-    total_discount: string
-    sku: string | null
-    variant_id: number | null
-    product_id: number | null
-  }[]
-  tags: string
-  processed_at: string | null
-  created_at: string
-  updated_at: string
-}
 
 async function shopifyFetch(path: string, token: string) {
   return fetch(`https://${SHOPIFY_STORE}/admin/api/2024-10/${path}`, {
@@ -173,41 +140,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const orders = await fetchOrdersInWindow(token, createdAtMin, createdAtMax)
-    const mapped = orders.map((order) => ({
-      tenant_id: TENANT_ID,
-      store_id: STORE_ID,
-      shopify_order_id: order.id,
-      order_number: order.name,
-      email: order.email ?? null,
-      financial_status: order.financial_status ?? null,
-      fulfillment_status: order.fulfillment_status ?? null,
-      total_price: parseFloat(order.total_price),
-      subtotal_price: parseFloat(order.subtotal_price),
-      total_tax: parseFloat(order.total_tax),
-      total_discounts: parseFloat(order.total_discounts),
-      discount_codes: order.discount_codes ?? [],
-      shipping_state: order.shipping_address?.province_code ?? null,
-      shipping_charged: order.total_shipping_price_set?.shop_money?.amount
-        ? parseFloat(order.total_shipping_price_set.shop_money.amount)
-        : null,
-      currency: order.currency,
-      customer_id: order.customer?.id ?? null,
-      line_items_count: order.line_items.length,
-      line_items: order.line_items.map((li) => ({
-        id: li.id,
-        title: li.title,
-        variant_title: li.variant_title ?? null,
-        quantity: li.quantity,
-        price: li.price,
-        total_discount: li.total_discount,
-        sku: li.sku,
-        variant_id: li.variant_id,
-        product_id: li.product_id,
-      })),
-      tags: order.tags ? order.tags.split(', ').filter(Boolean) : [],
-      processed_at: order.processed_at ?? null,
-      updated_at: order.updated_at,
-    }))
+    const mapped = orders.map(mapOrder)
 
     for (let i = 0; i < mapped.length; i += 500) {
       const batch = mapped.slice(i, i + 500)

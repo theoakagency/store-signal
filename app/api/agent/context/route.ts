@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
     { data: loyaltyMetrics },
   ] = await Promise.all([
     service.from('stores').select('shopify_domain, name, klaviyo_api_key, gsc_refresh_token, meta_access_token, google_ads_refresh_token, ga4_refresh_token, last_synced_at, recharge_api_token, loyaltylion_token').eq('id', STORE_ID).single(),
-    service.from('orders').select('total_price, created_at').eq('tenant_id', TENANT_ID).eq('financial_status', 'paid').gte('created_at', new Date(Date.now() - 30 * 86400000).toISOString()),
+    service.from('orders').select('total_price, created_at').eq('tenant_id', TENANT_ID).eq('financial_status', 'paid').neq('test', true).gte('created_at', new Date(Date.now() - 30 * 86400000).toISOString()),
     service.from('customers').select('total_spent, orders_count, updated_at').eq('tenant_id', TENANT_ID),
     service.from('meta_campaigns').select('spend, roas, purchase_value, purchases, status').eq('tenant_id', TENANT_ID),
     service.from('google_campaigns').select('conversion_value, conversions, data_source').eq('tenant_id', TENANT_ID),

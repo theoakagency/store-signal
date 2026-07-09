@@ -137,6 +137,7 @@ export async function GET(req: NextRequest) {
       .select('id, shopify_order_id, order_number, line_items, line_items_count, discount_codes')
       .eq('store_id', STORE_ID)
       .eq('financial_status', 'paid')
+      .neq('test', true)
       .gte('processed_at', start)
       .lt('processed_at', end)
       .range(from, from + PAGE - 1)

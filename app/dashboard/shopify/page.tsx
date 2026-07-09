@@ -27,8 +27,8 @@ export default async function ShopifyPage() {
     { data: insightsCache },
   ] = await Promise.all([
     supabase.from('stores').select('name, domain, last_synced_at').eq('id', STORE_ID).single(),
-    supabase.from('orders').select('total_price, email, processed_at').eq('store_id', STORE_ID).eq('financial_status', 'paid').gte('processed_at', thirtyDaysAgo.toISOString()),
-    supabase.from('orders').select('total_price').eq('store_id', STORE_ID).eq('financial_status', 'paid').gte('processed_at', sixtyDaysAgo.toISOString()).lt('processed_at', thirtyDaysAgo.toISOString()),
+    supabase.from('orders').select('total_price, email, processed_at').eq('store_id', STORE_ID).eq('financial_status', 'paid').neq('test', true).gte('processed_at', thirtyDaysAgo.toISOString()),
+    supabase.from('orders').select('total_price').eq('store_id', STORE_ID).eq('financial_status', 'paid').neq('test', true).gte('processed_at', sixtyDaysAgo.toISOString()).lt('processed_at', thirtyDaysAgo.toISOString()),
     supabase.from('orders').select('total_price').eq('store_id', STORE_ID).eq('financial_status', 'refunded').gte('processed_at', thirtyDaysAgo.toISOString()),
     service.from('orders').select('id, order_number, email, financial_status, fulfillment_status, total_price, processed_at').eq('store_id', STORE_ID).order('processed_at', { ascending: false }).limit(200),
     supabase.from('customers').select('shopify_customer_id, email, first_name, last_name, orders_count, total_spent').order('total_spent', { ascending: false }).limit(200),
