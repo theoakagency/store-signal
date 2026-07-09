@@ -55,6 +55,12 @@ interface OrderRow {
   line_items: LineItem[]
   line_items_count: number
   discount_codes: Array<{ code: string; amount: string; type: string }> | null
+  // shipping_charged is the PRE-discount shipping price (Shopify
+  // total_shipping_price_set); shipping_discounted is the total shipping
+  // discount (sum of shipping_lines price - discounted_price). What the
+  // customer actually paid for shipping = shipping_charged - shipping_discounted.
+  shipping_charged: number | null
+  shipping_discounted: number | null
 }
 
 interface AllowedCodeRule {
@@ -138,7 +144,7 @@ export async function GET(req: NextRequest) {
   while (true) {
     const { data, error } = await service
       .from('orders')
-      .select('id, shopify_order_id, order_number, line_items, line_items_count, discount_codes')
+      .select('id, shopify_order_id, order_number, line_items, line_items_count, discount_codes, shipping_charged, shipping_discounted')
       .eq('store_id', STORE_ID)
       .eq('financial_status', 'paid')
       .neq('test', true)
@@ -168,32 +174,22 @@ export async function GET(req: NextRequest) {
     (o.line_items ?? []).some((li) => li.sku && TARGET_SKUS.has(li.sku.trim().toUpperCase()))
   )
 
-  // ── Fetch matched ShipStation shipment cost per order ──────────────────────
-  const shopifyOrderIds = [...new Set(inScopeOrders.map((o) => o.shopify_order_id))]
-  const shipmentCostByOrderId = new Map<number, number>()
-
-  for (let i = 0; i < shopifyOrderIds.length; i += 500) {
-    const chunk = shopifyOrderIds.slice(i, i + 500)
-    const { data, error } = await service
-      .from('shipstation_shipments')
-      .select('shopify_order_id, shipment_cost, status, is_return_label')
-      .eq('tenant_id', TENANT_ID)
-      .in('shopify_order_id', chunk)
-
-    if (error) return Response.json({ error: `ShipStation query failed: ${error.message}` }, { status: 500 })
-    for (const row of (data ?? []) as { shopify_order_id: number | null; shipment_cost: number | null; status: string | null; is_return_label: boolean | null }[]) {
-      if (row.shopify_order_id === null) continue
-      // Exclude voided labels (a voided-then-reprinted label would otherwise
-      // double-count its cost) and return labels (not an outbound cost for the
-      // sale). Filtered here in JS rather than with a .neq() query filter so a
-      // row with a NULL status / is_return_label is kept, not silently dropped
-      // (SQL `status <> 'voided'` is NULL — i.e. false — for a NULL status).
-      if (row.status === 'voided') continue
-      if (row.is_return_label === true) continue
-      const prev = shipmentCostByOrderId.get(row.shopify_order_id) ?? 0
-      shipmentCostByOrderId.set(row.shopify_order_id, prev + (row.shipment_cost ?? 0))
-    }
-  }
+  // Shipping deduction basis: per the contract, only shipping the customer
+  // actually PAID is deductible from the royalty base. That is
+  // shipping_charged - shipping_discounted (see OrderRow) — NOT the ShipStation
+  // carrier cost, which LashBox pays regardless of what the customer was charged.
+  // So free shipping (threshold, promo, ProClub perk, or loyalty reward) yields
+  // a $0 deduction even though a real label was still paid for. The ShipStation
+  // shipment_cost lookup that formerly drove this is intentionally gone.
+  //
+  // KNOWN LIMITATION — loyalty-points-paid shipping: when a customer redeems
+  // LoyaltyLion points for a free-shipping reward, the client wants that treated
+  // as customer-paid and still deducted. That reward IS distinguishable in the
+  // raw Shopify payload (an LL- discount_code with target_type='shipping_line')
+  // but NOT in the data we currently store — so those orders compute a $0
+  // deduction here, same as ordinary free shipping. Measured exposure is tiny
+  // (June 2026: 2 orders, $27.80 shipping, ~$2.78 royalty). Capturing the
+  // LL-shipping reward source is a separate follow-up (Option B).
 
   // ── Fetch allowed discount code rules ───────────────────────────────────────
   const { data: rulesData, error: rulesError } = await service
@@ -209,9 +205,11 @@ export async function GET(req: NextRequest) {
 
   for (const order of inScopeOrders) {
     const orderCodes = (order.discount_codes ?? []).map((c) => c.code.trim().toUpperCase())
-    const shipmentCost = shipmentCostByOrderId.get(order.shopify_order_id) ?? 0
+    // What the customer actually paid for shipping (>= 0), split evenly across
+    // the order's line items exactly as the carrier-cost basis was before.
+    const customerPaidShipping = Math.max(0, (order.shipping_charged ?? 0) - (order.shipping_discounted ?? 0))
     const lineItemsCount = order.line_items_count || (order.line_items ?? []).length || 1
-    const itemShippingCost = shipmentCost / lineItemsCount
+    const itemShippingCost = customerPaidShipping / lineItemsCount
 
     for (const li of order.line_items ?? []) {
       const sku = li.sku?.trim().toUpperCase()
