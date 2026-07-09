@@ -138,6 +138,7 @@ export async function GET(req: NextRequest) {
       .eq('store_id', STORE_ID)
       .eq('financial_status', 'paid')
       .neq('test', true)
+      .is('cancelled_at', null)
       .gte('processed_at', start)
       .lt('processed_at', end)
       .range(from, from + PAGE - 1)

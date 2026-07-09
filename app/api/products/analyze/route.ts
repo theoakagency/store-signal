@@ -60,6 +60,7 @@ export async function POST(_req: NextRequest) {
       .eq('store_id', STORE_ID)
       .eq('financial_status', 'paid')
       .neq('test', true)
+      .is('cancelled_at', null)
       .order('processed_at', { ascending: true })
       .range(from, from + PAGE - 1)
     if (error || !data || data.length === 0) break

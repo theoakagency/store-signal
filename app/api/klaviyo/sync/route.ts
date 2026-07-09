@@ -131,7 +131,7 @@ export async function POST(req: NextRequest) {
       .from('orders')
       .select('total_price')
       .eq('store_id', STORE_ID)
-      .eq('financial_status', 'paid').neq('test', true)
+      .eq('financial_status', 'paid').neq('test', true).is('cancelled_at', null)
 
     const { data: custStats } = await service
       .from('customers')
@@ -239,7 +239,7 @@ export async function POST(req: NextRequest) {
       .from('orders')
       .select('total_price')
       .eq('store_id', STORE_ID)
-      .eq('financial_status', 'paid').neq('test', true)
+      .eq('financial_status', 'paid').neq('test', true).is('cancelled_at', null)
     const shopifyRevenue = (shopifyRevRows ?? []).reduce((s, r) => s + Number(r.total_price), 0)
 
     const { data: campaignRevenueRow } = await service
