@@ -42,10 +42,26 @@ export async function POST(_req: NextRequest) {
   // Fetch all subscriptions regardless of status — a customer who subscribed
   // and later cancelled still counts as having converted. Filtering to active-only
   // causes 0% rates for products where most subscribers have churned.
-  const { data: subsData } = await service
-    .from('recharge_subscriptions')
-    .select('customer_email, product_title')
-    .eq('tenant_id', TENANT_ID)
+  // Paginate: there are 23k+ subscriptions, so a single un-paginated select was
+  // silently capped at the first 1,000 rows by PostgREST, badly undercounting
+  // subscriber conversion (only ~24 of 57 subscribed products were visible). The
+  // stable .order('id') keeps paging complete (no dropped/duplicated rows).
+  const subsData: { customer_email: string | null; product_title: string | null }[] = []
+  {
+    let subFrom = 0
+    while (true) {
+      const { data } = await service
+        .from('recharge_subscriptions')
+        .select('customer_email, product_title')
+        .eq('tenant_id', TENANT_ID)
+        .order('id', { ascending: true })
+        .range(subFrom, subFrom + 999)
+      if (!data || data.length === 0) break
+      subsData.push(...(data as typeof subsData))
+      if (data.length < 1000) break
+      subFrom += 1000
+    }
+  }
 
   // Paginate through orders to bypass PostgREST max-rows limit.
   // line_items JSONB is needed for product analysis so we keep it,
