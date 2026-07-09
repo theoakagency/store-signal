@@ -77,7 +77,7 @@ export async function runKlaviyoSync(apiKey: string) {
     const bestCampaign = sortedByRevenue[0]
     const worstCampaign = sortedByRevenue[sortedByRevenue.length - 1]
 
-    const { data: orderStats } = await service.from('orders').select('total_price').eq('store_id', STORE_ID).eq('financial_status', 'paid')
+    const { data: orderStats } = await service.from('orders').select('total_price').eq('store_id', STORE_ID).eq('financial_status', 'paid').neq('test', true).is('cancelled_at', null)
     const { data: custStats } = await service.from('customers').select('total_spent').eq('store_id', STORE_ID)
     const totalOrderRevenue = (orderStats ?? []).reduce((s, r) => s + Number(r.total_price), 0)
     const totalCustomers = (custStats ?? []).length
@@ -157,7 +157,7 @@ export async function runKlaviyoSync(apiKey: string) {
     const sortedFlows = [...flows].sort((a, b) => b.revenue_attributed - a.revenue_attributed)
     const bestFlow = sortedFlows[0]
 
-    const { data: shopifyRevRows } = await service.from('orders').select('total_price').eq('store_id', STORE_ID).eq('financial_status', 'paid')
+    const { data: shopifyRevRows } = await service.from('orders').select('total_price').eq('store_id', STORE_ID).eq('financial_status', 'paid').neq('test', true).is('cancelled_at', null)
     const shopifyRevenue = (shopifyRevRows ?? []).reduce((s, r) => s + Number(r.total_price), 0)
     const { data: campaignRevenueRow } = await service.from('klaviyo_metrics_cache').select('metric_value').eq('tenant_id', TENANT_ID).eq('metric_name', 'total_campaign_revenue').single()
     const campaignRevenue = Number(campaignRevenueRow?.metric_value ?? 0)

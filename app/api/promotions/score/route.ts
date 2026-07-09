@@ -40,7 +40,9 @@ export async function POST(req: NextRequest) {
       .from('orders')
       .select('total_price, financial_status')
       .eq('store_id', STORE_ID)
-      .eq('financial_status', 'paid'),
+      .eq('financial_status', 'paid')
+      .neq('test', true)
+      .is('cancelled_at', null),
     service
       .from('customers')
       .select('total_spent, orders_count')

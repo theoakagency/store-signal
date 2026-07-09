@@ -44,7 +44,7 @@ export async function runProfileBatch(batch: number) {
   const orders: OrderRow[] = []
   let from = 0
   while (true) {
-    const { data, error } = await service.from('orders').select('email, total_price, processed_at, created_at').eq('store_id', STORE_ID).eq('financial_status', 'paid').range(from, from + 999)
+    const { data, error } = await service.from('orders').select('email, total_price, processed_at, created_at').eq('store_id', STORE_ID).eq('financial_status', 'paid').neq('test', true).is('cancelled_at', null).range(from, from + 999)
     if (error || !data || data.length === 0) break
     orders.push(...(data as OrderRow[]))
     if (data.length < 1000) break

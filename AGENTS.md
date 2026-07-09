@@ -423,6 +423,10 @@ All migrations live in `supabase/migrations/`. Apply via Supabase SQL Editor or 
 | 027 | `027_style_guide.sql` | `style_guide_rules` table for Content Studio |
 | 028 | `028_lbla_generation_log.sql` | `lbla_generation_log` table — service-client-only log for the public `/lbla` content generator |
 | 029 | `029_shipstation.sql` | ShipStation credentials (`shipstation_api_key`, `shipstation_last_synced_at`) on `stores`; `shipstation_shipments` table (label cost, ship date, carrier, service, joined to Shopify orders via `shopify_order_id`) |
+| 030 | `030_order_discount_codes.sql` | Adds `discount_codes jsonb` to `orders` (for the KLL royalty report) |
+| 031 | `031_allowed_discount_codes.sql` | `allowed_discount_codes` table + seed rules (KLL royalty discount allowlist) |
+| 032 | `032_order_shipping_data.sql` | Adds `shipping_state` + `shipping_charged` to `orders` (customer-charged shipping) |
+| 033 | `033_order_refund_cancellation.sql` | Adds `cancelled_at`, `total_refunded`, `test` to `orders`; excludes test orders from `get_monthly_revenue`. Incremental sync now filters Shopify on `updated_at_min` so refunds/cancellations reach the DB |
 
 ---
 

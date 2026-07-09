@@ -16,6 +16,9 @@ export interface ShopifyOrder {
   financial_status: string
   fulfillment_status: string | null
   total_price: string
+  // current_total_price reflects the order total after refunds/edits;
+  // total_price is the original sale total. The difference is what was refunded.
+  current_total_price: string | null
   subtotal_price: string
   total_tax: string
   total_discounts: string
@@ -29,6 +32,8 @@ export interface ShopifyOrder {
   processed_at: string | null
   created_at: string
   updated_at: string
+  cancelled_at: string | null
+  test: boolean
   source_name: string | null
   referring_site: string | null
   landing_site: string | null
@@ -75,10 +80,14 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-async function fetchAllOrders(token: string, createdAtMin?: string): Promise<ShopifyOrder[]> {
+// Incremental sync filters on updated_at_min (NOT created_at_min) so that
+// orders refunded or cancelled after their initial sync get re-fetched and
+// their financial_status corrected — created_at_min would only ever return
+// brand-new orders, leaving stale 'paid' status on refunded orders forever.
+async function fetchAllOrders(token: string, updatedAtMin?: string): Promise<ShopifyOrder[]> {
   const orders: ShopifyOrder[] = []
   const baseParams = new URLSearchParams({ limit: '250', status: 'any' })
-  if (createdAtMin) baseParams.set('created_at_min', createdAtMin)
+  if (updatedAtMin) baseParams.set('updated_at_min', updatedAtMin)
 
   let url: string | null = `orders.json?${baseParams.toString()}`
   let isFirst = true
@@ -148,7 +157,18 @@ function extractUtm(landingSite: string | null, param: string): string | null {
 
 // ── Upsert helpers ────────────────────────────────────────────────────────────
 
-function mapOrder(order: ShopifyOrder) {
+// Shared order → DB row mapper. Exported so the manual and historical Shopify
+// sync routes use the exact same mapping (previously three near-identical copies
+// that drifted apart — the historical copy silently dropped source_name/UTM).
+export function mapOrder(order: ShopifyOrder) {
+  // Amount refunded (or removed via order edit) since the sale. current_total_price
+  // is the order's value after refunds/edits; total_price is the original sale
+  // total. Clamp at 0 so an edit that *increased* the total never reads negative.
+  const totalPrice = parseFloat(order.total_price)
+  const currentTotal =
+    order.current_total_price != null ? parseFloat(order.current_total_price) : totalPrice
+  const totalRefunded = Math.max(0, totalPrice - currentTotal)
+
   return {
     tenant_id: TENANT_ID,
     store_id: STORE_ID,
@@ -157,10 +177,11 @@ function mapOrder(order: ShopifyOrder) {
     email: order.email ?? null,
     financial_status: order.financial_status ?? null,
     fulfillment_status: order.fulfillment_status ?? null,
-    total_price: parseFloat(order.total_price),
+    total_price: totalPrice,
     subtotal_price: parseFloat(order.subtotal_price),
     total_tax: parseFloat(order.total_tax),
     total_discounts: parseFloat(order.total_discounts),
+    total_refunded: totalRefunded,
     discount_codes: order.discount_codes ?? [],
     shipping_state: order.shipping_address?.province_code ?? null,
     shipping_charged: order.total_shipping_price_set?.shop_money?.amount
@@ -181,8 +202,13 @@ function mapOrder(order: ShopifyOrder) {
       product_id: li.product_id,
     })),
     tags: order.tags ? order.tags.split(', ').filter(Boolean) : [],
+    // Shopify's real order-creation time. Without this the column falls back to
+    // its `default now()` (DB insert time), which breaks any created_at windowing.
+    created_at: order.created_at,
     processed_at: order.processed_at ?? null,
     updated_at: order.updated_at,
+    cancelled_at: order.cancelled_at ?? null,
+    test: order.test ?? false,
     source_name: order.source_name ?? null,
     referring_site: order.referring_site ?? null,
     landing_site: order.landing_site ?? null,
@@ -213,7 +239,7 @@ function mapCustomer(customer: ShopifyCustomer) {
 export async function runShopifySync(
   token: string,
   syncType: 'incremental' | 'historical',
-  createdAtMin?: string
+  updatedAtMin?: string
 ) {
   const supabase = createSupabaseServiceClient()
   const results = { orders: 0, customers: 0, errors: [] as string[] }
@@ -227,7 +253,7 @@ export async function runShopifySync(
 
   // ── Sync orders ───────────────────────────────────────────────────────────
   try {
-    const orders = await fetchAllOrders(token, createdAtMin)
+    const orders = await fetchAllOrders(token, updatedAtMin)
     const mapped = orders.map(mapOrder)
 
     for (let i = 0; i < mapped.length; i += 500) {

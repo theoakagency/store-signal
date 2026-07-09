@@ -43,6 +43,8 @@ async function paginateOrders<T extends Record<string, unknown>>(
       .select(select)
       .eq('store_id', STORE_ID)
       .eq('financial_status', 'paid')
+      .neq('test', true)
+      .is('cancelled_at', null)
       .gte('processed_at', gte)
       .range(from, from + PAGE - 1)
     if (lt) q = q.lt('processed_at', lt)

@@ -129,7 +129,7 @@ export async function runLoyaltySync(token: string, secret: string | null) {
         .from('orders')
         .select('email, total_price')
         .eq('store_id', STORE_ID)
-        .eq('financial_status', 'paid')
+        .eq('financial_status', 'paid').neq('test', true).is('cancelled_at', null)
         .range(from, from + 999)
       if (!data || data.length === 0) break
       for (const o of data) {
@@ -192,7 +192,7 @@ export async function runLoyaltySync(token: string, secret: string | null) {
         .from('orders')
         .select('email, created_at')
         .eq('store_id', STORE_ID)
-        .eq('financial_status', 'paid')
+        .eq('financial_status', 'paid').neq('test', true).is('cancelled_at', null)
         .range(from, from + 999)
       if (!data || data.length === 0) break
       for (const o of data) if (o.email) allOrderRows.push({ email: (o.email as string).toLowerCase().trim(), created_at: o.created_at as string })

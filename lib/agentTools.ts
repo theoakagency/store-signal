@@ -82,7 +82,7 @@ const getRevenueSummary: AgentTool = {
       .from('orders')
       .select('total_price, created_at')
       .eq('tenant_id', tenantId)
-      .eq('financial_status', 'paid')
+      .eq('financial_status', 'paid').neq('test', true).is('cancelled_at', null)
       .gte('created_at', period === 'all_time' ? '2000-01-01' : since)
 
     const totalRevenue = (current ?? []).reduce((s, o) => s + Number(o.total_price), 0)
@@ -101,7 +101,7 @@ const getRevenueSummary: AgentTool = {
         .from('orders')
         .select('total_price')
         .eq('tenant_id', tenantId)
-        .eq('financial_status', 'paid')
+        .eq('financial_status', 'paid').neq('test', true).is('cancelled_at', null)
         .gte('created_at', priorStart.toISOString())
         .lt('created_at', priorEnd.toISOString())
 
@@ -301,7 +301,7 @@ const getOrderTrends: AgentTool = {
       .from('orders')
       .select('total_price, created_at')
       .eq('tenant_id', tenantId)
-      .eq('financial_status', 'paid')
+      .eq('financial_status', 'paid').neq('test', true).is('cancelled_at', null)
       .gte('created_at', since)
       .order('created_at', { ascending: true })
 
@@ -679,7 +679,7 @@ const getSalesChannels: AgentTool = {
       .from('orders')
       .select('total_price, utm_source, utm_medium, source_name, landing_site')
       .eq('tenant_id', tenantId)
-      .eq('financial_status', 'paid')
+      .eq('financial_status', 'paid').neq('test', true).is('cancelled_at', null)
       .gte('created_at', since)
 
     const channels: Record<string, number> = {
@@ -751,7 +751,7 @@ const getBusinessHealthScore: AgentTool = {
       { data: klaviyoCampaigns },
       { data: store },
     ] = await Promise.all([
-      supabase.from('orders').select('total_price, created_at').eq('tenant_id', tenantId).eq('financial_status', 'paid').gte('created_at', daysAgo(30)),
+      supabase.from('orders').select('total_price, created_at').eq('tenant_id', tenantId).eq('financial_status', 'paid').neq('test', true).is('cancelled_at', null).gte('created_at', daysAgo(30)),
       supabase.from('customers').select('total_spent, orders_count, updated_at').eq('tenant_id', tenantId),
       supabase.from('meta_campaigns').select('spend, roas, status').eq('tenant_id', tenantId),
       supabase.from('google_campaigns').select('conversion_value, conversions').eq('tenant_id', tenantId),

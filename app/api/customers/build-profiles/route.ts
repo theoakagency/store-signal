@@ -88,6 +88,8 @@ export async function POST(req: NextRequest) {
       .select('email, total_price, processed_at, created_at')
       .eq('store_id', STORE_ID)
       .eq('financial_status', 'paid')
+      .neq('test', true)
+      .is('cancelled_at', null)
       .range(from, from + PAGE - 1)
     if (error || !data || data.length === 0) break
     orders.push(...(data as OrderRow[]))
