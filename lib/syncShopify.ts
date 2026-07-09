@@ -32,8 +32,16 @@ export interface ShopifyOrder {
   // Per-tier shipping lines. `title` is the tier the customer picked
   // ("Free Shipping", "Standard", ...). `price` is the tier's pre-discount
   // price; `discounted_price` is what it became after any shipping discount
-  // (code/promo) was applied. Present in every order payload.
-  shipping_lines: Array<{ title: string | null; price: string | null; discounted_price: string | null }> | null
+  // (code/promo) was applied. `discount_allocations` breaks that reduction
+  // down per discount_applications entry (by index) — needed to tell a
+  // loyalty-points shipping discount apart from any other discount that
+  // also targets the shipping line. Present in every order payload.
+  shipping_lines: Array<{
+    title: string | null
+    price: string | null
+    discounted_price: string | null
+    discount_allocations: ShopifyDiscountAllocation[] | null
+  }> | null
   shipping_address: { province_code: string | null } | null
   currency: string
   customer?: { id: number }
@@ -75,6 +83,10 @@ export interface ShopifyDiscountApplication {
   type: string // 'discount_code' | 'automatic' | 'manual' | 'script'
   code?: string
   title?: string
+  // 'line_item' | 'shipping_line'. Only present to distinguish a discount
+  // code that targets shipping (e.g. an LL- LoyaltyLion shipping reward)
+  // from one that targets products — not read anywhere before migration 038.
+  target_type?: string
 }
 
 export interface ShopifyCustomer {
@@ -180,6 +192,42 @@ function extractUtm(landingSite: string | null, param: string): string | null {
   }
 }
 
+// ── LoyaltyLion shipping-reward detection ─────────────────────────────────────
+
+// A discount_applications entry is the LoyaltyLion points-for-shipping reward
+// only if it's an actual code (not an automatic perk like "FREE ProClub
+// Shipping"), targets the shipping line specifically (not a product-discount
+// LL- code stacked on the same order), and the code has the LL- prefix
+// LoyaltyLion issues for its reward codes.
+function isLoyaltyShippingApplication(app: ShopifyDiscountApplication): boolean {
+  return app.type === 'discount_code' && app.target_type === 'shipping_line' && !!app.code?.trim().toUpperCase().startsWith('LL-')
+}
+
+// True only when EVERY shipping line's charge is fully accounted for by
+// discount_allocations tied to a loyalty-shipping application — i.e. the
+// discount amount exactly matches the shipping charge, not just "an LL- code
+// is present somewhere on this order." Verified against real orders: a
+// product-discount LL- code (target_type line_item) and an unrelated
+// automatic free-shipping perk can both coexist on an order without ever
+// satisfying this.
+function computeShippingLoyaltyCovered(order: ShopifyOrder): boolean {
+  const lines = order.shipping_lines
+  const apps = order.discount_applications
+  if (!lines?.length || !apps?.length) return false
+
+  const loyaltyIndices = new Set(apps.map((app, i) => (isLoyaltyShippingApplication(app) ? i : -1)).filter((i) => i >= 0))
+  if (loyaltyIndices.size === 0) return false
+
+  return lines.every((line) => {
+    const price = parseFloat(line.price ?? '0')
+    if (!(price > 0)) return true // nothing to cover on this line
+    const loyaltyAmount = (line.discount_allocations ?? [])
+      .filter((a) => loyaltyIndices.has(a.discount_application_index))
+      .reduce((sum, a) => sum + (parseFloat(a.amount ?? '0') || 0), 0)
+    return loyaltyAmount >= price - 0.01 // fully covered, allow for rounding
+  })
+}
+
 // ── Upsert helpers ────────────────────────────────────────────────────────────
 
 // Shared order → DB row mapper. Exported so the manual and historical Shopify
@@ -227,6 +275,11 @@ export function mapOrder(order: ShopifyOrder) {
           return sum + Math.max(0, (Number.isNaN(price) ? 0 : price) - (Number.isNaN(discounted) ? 0 : discounted))
         }, 0)
       : null,
+    // True when shipping was fully paid via an LL- LoyaltyLion points
+    // redemption targeting the shipping line — the one case the KLL royalty
+    // report treats as customer-paid shipping despite a $0 net charge. See
+    // computeShippingLoyaltyCovered and migration 038.
+    shipping_loyalty_covered: computeShippingLoyaltyCovered(order),
     currency: order.currency,
     customer_id: order.customer?.id ?? null,
     line_items_count: order.line_items.length,

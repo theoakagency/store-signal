@@ -430,6 +430,8 @@ All migrations live in `supabase/migrations/`. Apply via Supabase SQL Editor or 
 | 034 | `034_monthly_revenue_exclude_cancelled.sql` | Extends `get_monthly_revenue` to also exclude cancelled orders (`cancelled_at IS NULL`) |
 | 035 | `035_order_shipping_tier.sql` | Adds `shipping_discounted` + `shipping_method` to `orders` (shipping-margin report; `shipping_charged`/`shipping_state` already added in 032) |
 | 036 | `036_shipstation_cost_accuracy.sql` | Adds `status`, `insurance_cost`, `external_shipment_id` (+ optional `is_return_label`, `ship_to_state`, `ship_to_postal_code`, `weight_oz`) to `shipstation_shipments` — excludes voided labels + captures separately-billed insurance for the shipping-margin report |
+| 037 | `037_kll_add_discount_codes.sql` | Seeds `COMEBACK20` and `KLLEVENT` into `allowed_discount_codes` |
+| 038 | `038_order_shipping_loyalty_covered.sql` | Adds `shipping_loyalty_covered boolean` to `orders` — true when shipping was fully paid via an LL- LoyaltyLion points-redemption discount targeting the shipping line (vs. an automatic perk, threshold, or unrelated promo code that also zeroes shipping); the KLL royalty report treats this as customer-paid shipping |
 
 ---
 
