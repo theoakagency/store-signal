@@ -38,6 +38,11 @@ interface LineItem {
   quantity: number
   price: string
   total_discount: string
+  // Per-line discount amounts resolved to their originating code by the Shopify
+  // sync (lib/syncShopify.ts). Shopify reports total_discount = "0.00" for
+  // order-level code discounts, so the real per-line amount is read from here.
+  // code is null for automatic/script discounts (no code) — never deductible.
+  discount_allocations: Array<{ code: string | null; amount: string }> | null
   sku: string | null
   variant_id: number | null
   product_id: number | null
@@ -95,15 +100,14 @@ function codeMatchesRule(code: string, rule: AllowedCodeRule): boolean {
   return rule.match_type === 'exact' ? code === rule.code_pattern : code.startsWith(rule.code_pattern)
 }
 
-// An order's discount only counts if EVERY code applied to it matches an
-// allowed rule (with kit eligibility satisfied for this SKU) — a single
-// unapproved code zeroes the whole line's discount, conservatively.
-function isDiscountAllowed(orderCodes: string[], sku: string, rules: AllowedCodeRule[]): boolean {
-  if (orderCodes.length === 0) return false
+// Whether a single discount code is deductible for this SKU: it must match an
+// allowed rule, and for kit SKUs that rule must also be kit-eligible. Codes are
+// evaluated independently — an allowed code stacked with a non-allowed code (e.g.
+// an LL- LoyaltyLion code) still gets credit for its own allocation; only the
+// non-allowed code's amount is excluded.
+function codeAllowedForSku(code: string, sku: string, rules: AllowedCodeRule[]): boolean {
   const isKit = KIT_SKUS.has(sku)
-  return orderCodes.every((code) =>
-    rules.some((rule) => codeMatchesRule(code, rule) && (!isKit || rule.kit_eligible))
-  )
+  return rules.some((rule) => codeMatchesRule(code, rule) && (!isKit || rule.kit_eligible))
 }
 
 // ── GWP cost ──────────────────────────────────────────────────────────────────
@@ -141,6 +145,11 @@ export async function GET(req: NextRequest) {
       .is('cancelled_at', null)
       .gte('processed_at', start)
       .lt('processed_at', end)
+      // Stable sort is REQUIRED for correct .range() pagination — without an
+      // explicit order, PostgREST returns rows in unstable physical-heap order,
+      // so paging across the 6k+ paid orders silently drops and duplicates rows
+      // (the report otherwise returns an arbitrary, run-dependent subset).
+      .order('shopify_order_id', { ascending: true })
       .range(from, from + PAGE - 1)
 
     if (error) return Response.json({ error: `Orders query failed: ${error.message}` }, { status: 500 })
@@ -201,8 +210,18 @@ export async function GET(req: NextRequest) {
       const qty = li.quantity
       const grossSales = unitPrice * qty
 
-      const allowed = isDiscountAllowed(orderCodes, sku, rules)
-      const discountAmount = allowed ? (parseFloat(li.total_discount) || 0) : 0
+      // Sum only the per-line discount attributable to allowlisted codes. Each
+      // allocation is tied to exactly one code by the sync, so stacked codes are
+      // credited independently — a non-allowed code no longer zeroes an allowed
+      // one. Allocations with no code (automatic/script discounts) never match.
+      let discountAmount = 0
+      for (const alloc of li.discount_allocations ?? []) {
+        const code = alloc.code?.trim().toUpperCase()
+        if (!code) continue
+        if (codeAllowedForSku(code, sku, rules)) {
+          discountAmount += parseFloat(alloc.amount) || 0
+        }
+      }
 
       const gwp = gwpCost(sku, li.title, li.variant_title)
 
