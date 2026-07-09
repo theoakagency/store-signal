@@ -227,6 +227,7 @@ export async function GET(req: NextRequest) {
     const freeCount = ms.filter((m) => m.is_free).length
     return {
       label: b.label,
+      min: b.min,
       orders: ms.length,
       pct_free: ms.length ? freeCount / ms.length : 0,
       avg_label_cost: ms.length ? sum(ms.map((m) => m.paid)) / ms.length : 0,
@@ -234,6 +235,30 @@ export async function GET(req: NextRequest) {
       total_margin: sum(ms.map((m) => m.margin)),
     }
   })
+
+  // ── Detected free-shipping threshold ─────────────────────────────────────────
+  // The lowest order-value bucket where free shipping is the norm (>= 50% of
+  // orders) AND stays the norm for every higher bucket. Buckets with zero
+  // orders are skipped rather than counted as evidence either way. If no such
+  // bucket exists — free shipping isn't clearly tied to order value, or a
+  // higher bucket dips back under the line — detected is false, and callers
+  // (including the AI insights prompt) must not assume a threshold exists.
+  const DOMINANT_FREE_PCT = 0.5
+  const bucketsWithOrders = by_bucket.filter((b) => b.orders > 0)
+  const free_shipping_threshold = (() => {
+    for (let i = 0; i < bucketsWithOrders.length; i++) {
+      const rest = bucketsWithOrders.slice(i)
+      if (rest.every((b) => b.pct_free >= DOMINANT_FREE_PCT)) {
+        return {
+          detected: true,
+          subtotal_min: rest[0].min,
+          bucket_label: rest[0].label,
+          pct_free_at_threshold: rest[0].pct_free,
+        }
+      }
+    }
+    return { detected: false, subtotal_min: null, bucket_label: null, pct_free_at_threshold: null }
+  })()
 
   // ── Free-shipping cost (what threshold-free + code-free shipping costs us) ────
   const freeOrders = matched.filter((m) => m.is_free)
@@ -304,6 +329,7 @@ export async function GET(req: NextRequest) {
     summary,
     by_tier,
     by_bucket,
+    free_shipping_threshold,
     free_shipping,
     loss_leaders,
     cancelled_with_label,
