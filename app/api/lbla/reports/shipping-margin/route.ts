@@ -237,6 +237,11 @@ export async function GET(req: NextRequest) {
       min: b.min,
       orders: ms.length,
       pct_free: ms.length ? freeCount / ms.length : 0,
+      // Average order value (subtotal, pre-shipping/tax) for orders in this
+      // bucket. Computed from the same matched set as the other bucket figures
+      // — not a new data source. Lets the report (and the AI chat/insights that
+      // reason over these aggregates) tie free-shipping behavior to AOV.
+      avg_order_value: ms.length ? sum(ms.map((m) => m.subtotal)) / ms.length : 0,
       avg_label_cost: ms.length ? sum(ms.map((m) => m.paid)) / ms.length : 0,
       avg_margin: ms.length ? sum(ms.map((m) => m.margin)) / ms.length : 0,
       total_margin: sum(ms.map((m) => m.margin)),

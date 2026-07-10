@@ -6,7 +6,7 @@ import Link from 'next/link'
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface TierRow { method: string; orders: number; avg_charged: number; avg_paid: number; avg_margin: number; total_margin: number }
-interface BucketRow { label: string; min: number; orders: number; pct_free: number; avg_label_cost: number; avg_margin: number; total_margin: number }
+interface BucketRow { label: string; min: number; orders: number; pct_free: number; avg_order_value: number; avg_label_cost: number; avg_margin: number; total_margin: number }
 interface LossLeader { order_number: string; method: string; charged: number; paid: number; gap: number; subtotal: number }
 interface DetailRow { order_number: string; shipping_method: string; subtotal: number; charged: number; paid: number; margin: number }
 interface FreeShippingThreshold { detected: boolean; subtotal_min: number | null; bucket_label: string | null; pct_free_at_threshold: number | null }
@@ -35,6 +35,8 @@ interface InsightsResponse {
   summary: string
   suggestions: ShippingMarginSuggestion[]
 }
+
+interface ChatMessage { role: 'user' | 'assistant'; content: string }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -163,15 +165,21 @@ export default function ShippingMarginReportPage() {
   const [report, setReport] = useState<ReportResponse | null>(null)
   const [insights, setInsights] = useState<InsightsResponse | null>(null)
   const [insightsState, setInsightsState] = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
+  const [chatInput, setChatInput] = useState('')
+  const [chatState, setChatState] = useState<'idle' | 'loading' | 'error'>('idle')
 
   const fetchReport = useCallback(async (r: { start: string; end: string }) => {
     setIsLoading(true)
     setError(null)
-    // A new range invalidates any previously generated suggestions — they were
-    // grounded in the old data. Don't auto-regenerate; just clear back to idle
-    // so the button reappears (this is user-triggered only, never auto-fired).
+    // A new range invalidates any previously generated suggestions AND the chat
+    // history — both were grounded in the old data. Don't auto-regenerate; just
+    // clear back to idle (this is user-triggered only, never auto-fired).
     setInsights(null)
     setInsightsState('idle')
+    setChatMessages([])
+    setChatInput('')
+    setChatState('idle')
     try {
       const res = await fetch(`/api/lbla/reports/shipping-margin?start=${r.start}&end=${r.end}`)
       const data = await res.json()
@@ -209,6 +217,45 @@ export default function ShippingMarginReportPage() {
       setInsightsState('done')
     } catch {
       setInsightsState('error')
+    }
+  }
+
+  async function sendChat() {
+    const question = chatInput.trim()
+    if (!question || chatState === 'loading' || !report) return
+
+    // Append the user turn immediately and send the full history so the model
+    // keeps context across follow-ups. Only aggregates go to the server — never
+    // the per-order `detail` array (that's raw order data, not computed output).
+    const nextMessages: ChatMessage[] = [...chatMessages, { role: 'user', content: question }]
+    setChatMessages(nextMessages)
+    setChatInput('')
+    setChatState('loading')
+    try {
+      const res = await fetch('/api/lbla/reports/shipping-margin/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          report: {
+            range: report.range,
+            coverage: report.coverage,
+            summary: report.summary,
+            by_tier: report.by_tier,
+            by_bucket: report.by_bucket,
+            free_shipping_threshold: report.free_shipping_threshold,
+            free_shipping: report.free_shipping,
+            cancelled_with_label: report.cancelled_with_label,
+            loss_leaders: report.loss_leaders,
+          },
+          messages: nextMessages,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setChatState('error'); return }
+      setChatMessages([...nextMessages, { role: 'assistant', content: data.answer as string }])
+      setChatState('idle')
+    } catch {
+      setChatState('error')
     }
   }
 
@@ -335,6 +382,72 @@ export default function ShippingMarginReportPage() {
                 )}
               </section>
 
+              {/* Ask about this report — grounded multi-turn chat */}
+              <section className="space-y-3">
+                <div>
+                  <h2 className="font-display text-lg font-semibold text-ink">Ask about this report</h2>
+                  <p className="mt-1 text-xs text-ink-3">Answers are grounded strictly in the computed figures on this page for {fmtDate(report.range.start)}–{fmtDate(report.range.end)} — the tier, order-value, threshold, and loss-leader data. It can&apos;t pull anything new; if a question isn&apos;t answerable from these numbers, it&apos;ll say so.</p>
+                </div>
+                <div className="rounded-2xl border border-cream-3 bg-white shadow-sm overflow-hidden">
+                  {chatMessages.length > 0 && (
+                    <div className="divide-y divide-cream-2 max-h-[28rem] overflow-y-auto">
+                      {chatMessages.map((m, i) => (
+                        <div key={i} className={`px-5 py-4 ${m.role === 'user' ? 'bg-cream/40' : 'bg-white'}`}>
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-3 mb-1.5">
+                            {m.role === 'user' ? 'You' : 'Analyst'}
+                          </p>
+                          <p className="text-sm text-ink-2 leading-relaxed whitespace-pre-wrap">{m.content}</p>
+                        </div>
+                      ))}
+                      {chatState === 'loading' && (
+                        <div className="px-5 py-4 bg-white">
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-3 mb-1.5">Analyst</p>
+                          <div className="space-y-1.5">
+                            <div className="skeleton h-3 w-3/4" />
+                            <div className="skeleton h-3 w-1/2" />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {chatMessages.length === 0 && (
+                    <div className="px-5 py-4 border-b border-cream-2 bg-cream/40">
+                      <p className="text-xs text-ink-3">
+                        Try: <button type="button" onClick={() => setChatInput('What’s the best free-shipping threshold based on AOV and the other data points here?')} className="text-teal-deep hover:underline">&ldquo;What&rsquo;s the best free-shipping threshold based on AOV?&rdquo;</button> or <button type="button" onClick={() => setChatInput('Which shipping tier is losing us the most money, and why?')} className="text-teal-deep hover:underline">&ldquo;Which tier loses the most money?&rdquo;</button>
+                      </p>
+                    </div>
+                  )}
+
+                  <form
+                    onSubmit={(e) => { e.preventDefault(); sendChat() }}
+                    className="flex items-center gap-2 px-4 py-3 border-t border-cream-2 bg-cream/30"
+                  >
+                    <input
+                      type="text"
+                      value={chatInput}
+                      onChange={(e) => setChatInput(e.target.value)}
+                      placeholder="Ask a question about the numbers above…"
+                      disabled={chatState === 'loading'}
+                      className="flex-1 rounded-xl border border-cream-3 bg-white px-3 py-2.5 text-sm text-ink placeholder:text-ink-3/60 focus:border-teal focus:outline-none focus:ring-2 focus:ring-teal/20 transition disabled:opacity-60"
+                    />
+                    <button
+                      type="submit"
+                      disabled={chatState === 'loading' || !chatInput.trim()}
+                      className="rounded-xl bg-teal px-4 py-2.5 text-sm font-medium text-white transition hover:bg-teal-deep disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      {chatState === 'loading' ? 'Thinking…' : 'Ask'}
+                    </button>
+                  </form>
+
+                  {chatState === 'error' && (
+                    <div className="px-4 py-2.5 bg-red-50 border-t border-red-100 text-xs text-red-700">
+                      Couldn&apos;t get an answer. Check your ANTHROPIC_API_KEY and try again.
+                    </div>
+                  )}
+                </div>
+              </section>
+
               {/* Margin by tier */}
               <section className="space-y-3">
                 <div className="flex items-center justify-between">
@@ -397,6 +510,7 @@ export default function ShippingMarginReportPage() {
                         <tr className="border-b border-cream-2 bg-cream">
                           <th className={`${TH} text-left`}>Order Value</th>
                           <th className={`${TH} text-right`}>Orders</th>
+                          <th className={`${TH} text-right`}>Avg Order Value</th>
                           <th className={`${TH} text-right`}>% Free Shipping</th>
                           <th className={`${TH} text-right`}>Avg Label Cost</th>
                           <th className={`${TH} text-right`}>Avg Margin</th>
@@ -408,6 +522,7 @@ export default function ShippingMarginReportPage() {
                           <tr key={b.label} className={i % 2 === 0 ? 'bg-white' : 'bg-cream/40'}>
                             <td className="px-3 py-3 text-xs text-ink">{b.label}</td>
                             <td className="px-3 py-3 text-right font-data text-xs text-ink">{b.orders.toLocaleString()}</td>
+                            <td className="px-3 py-3 text-right font-data text-xs text-ink">{b.orders ? fmtCurrency(b.avg_order_value) : '—'}</td>
                             <td className="px-3 py-3 text-right font-data text-xs text-ink">{fmtPct(b.pct_free)}</td>
                             <td className="px-3 py-3 text-right font-data text-xs text-ink">{fmtCurrency(b.avg_label_cost)}</td>
                             <td className={`px-3 py-3 text-right font-data text-xs ${b.avg_margin < 0 ? 'text-red-600' : 'text-ink'}`}>{fmtCurrency(b.avg_margin)}</td>
