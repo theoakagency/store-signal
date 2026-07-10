@@ -6,9 +6,10 @@ import Link from 'next/link'
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface TierRow { method: string; orders: number; avg_charged: number; avg_paid: number; avg_margin: number; total_margin: number }
-interface BucketRow { label: string; orders: number; pct_free: number; avg_label_cost: number; avg_margin: number; total_margin: number }
+interface BucketRow { label: string; min: number; orders: number; pct_free: number; avg_label_cost: number; avg_margin: number; total_margin: number }
 interface LossLeader { order_number: string; method: string; charged: number; paid: number; gap: number; subtotal: number }
 interface DetailRow { order_number: string; shipping_method: string; subtotal: number; charged: number; paid: number; margin: number }
+interface FreeShippingThreshold { detected: boolean; subtotal_min: number | null; bucket_label: string | null; pct_free_at_threshold: number | null }
 
 interface ReportResponse {
   range: { start: string; end: string }
@@ -16,10 +17,23 @@ interface ReportResponse {
   summary: { shipping_collected: number; shipping_paid: number; net_margin: number; margin_pct: number | null; orders: number }
   by_tier: TierRow[]
   by_bucket: BucketRow[]
+  free_shipping_threshold: FreeShippingThreshold
   free_shipping: { orders: number; carrier_cost: number }
   loss_leaders: LossLeader[]
   cancelled_with_label: { orders: number; carrier_cost: number }
   detail: DetailRow[]
+}
+
+interface ShippingMarginSuggestion {
+  area: 'free_shipping_threshold' | 'tier_pricing' | 'rate_alignment'
+  supported: boolean
+  title: string
+  detail: string
+}
+
+interface InsightsResponse {
+  summary: string
+  suggestions: ShippingMarginSuggestion[]
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -147,10 +161,17 @@ export default function ShippingMarginReportPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [report, setReport] = useState<ReportResponse | null>(null)
+  const [insights, setInsights] = useState<InsightsResponse | null>(null)
+  const [insightsState, setInsightsState] = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
 
   const fetchReport = useCallback(async (r: { start: string; end: string }) => {
     setIsLoading(true)
     setError(null)
+    // A new range invalidates any previously generated suggestions — they were
+    // grounded in the old data. Don't auto-regenerate; just clear back to idle
+    // so the button reappears (this is user-triggered only, never auto-fired).
+    setInsights(null)
+    setInsightsState('idle')
     try {
       const res = await fetch(`/api/lbla/reports/shipping-margin?start=${r.start}&end=${r.end}`)
       const data = await res.json()
@@ -164,6 +185,32 @@ export default function ShippingMarginReportPage() {
   }, [])
 
   useEffect(() => { fetchReport(range) }, [range, fetchReport])
+
+  async function loadInsights() {
+    if (!report) return
+    setInsightsState('loading')
+    try {
+      const res = await fetch('/api/lbla/reports/shipping-margin/insights', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          range: report.range,
+          summary: report.summary,
+          by_tier: report.by_tier,
+          by_bucket: report.by_bucket,
+          free_shipping_threshold: report.free_shipping_threshold,
+          free_shipping: report.free_shipping,
+          loss_leaders: report.loss_leaders,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setInsightsState('error'); return }
+      setInsights(data as InsightsResponse)
+      setInsightsState('done')
+    } catch {
+      setInsightsState('error')
+    }
+  }
 
   const marginAccent = report && report.summary.net_margin < 0 ? 'red' : 'teal'
 
@@ -227,6 +274,67 @@ export default function ShippingMarginReportPage() {
 
           {report.summary.orders > 0 && (
             <>
+              {/* AI Suggestions */}
+              <section>
+                {insightsState === 'idle' && (
+                  <button
+                    onClick={loadInsights}
+                    className="w-full rounded-xl border border-dashed border-cream-3 bg-cream px-4 py-3 text-sm text-ink-3 hover:bg-cream-2 hover:text-ink-2 transition text-left"
+                  >
+                    <span className="font-medium text-teal-deep">Generate AI suggestions →</span>
+                    <span className="ml-2 text-xs">Reviews the tables below for threshold, tier pricing, and rate-alignment considerations</span>
+                  </button>
+                )}
+                {insightsState === 'loading' && (
+                  <div className="rounded-xl border border-cream-3 bg-cream px-4 py-4 space-y-2">
+                    {[1, 2, 3].map((i) => (
+                      <div key={i} className="flex gap-3 items-start">
+                        <div className="skeleton h-5 w-5 rounded-full shrink-0 mt-0.5" />
+                        <div className="flex-1 space-y-1.5">
+                          <div className="skeleton h-3 w-2/5" />
+                          <div className="skeleton h-3 w-full" />
+                          <div className="skeleton h-3 w-3/4" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {insightsState === 'done' && insights && (
+                  <div className="rounded-2xl border border-cream-3 bg-white shadow-sm overflow-hidden">
+                    <div className="px-5 py-4 border-b border-cream-2 bg-cream/40">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-ink-3 mb-1.5">AI Summary</p>
+                      <p className="text-sm text-ink-2 leading-relaxed">{insights.summary}</p>
+                    </div>
+                    <div className="divide-y divide-cream-2">
+                      {insights.suggestions.map((s, i) => (
+                        <div key={i} className="px-5 py-4">
+                          <div className="flex items-start gap-3">
+                            <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${s.supported ? 'bg-teal' : 'bg-ink-3/40'}`} />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap mb-1">
+                                <span className="font-semibold text-sm text-ink">{s.title}</span>
+                                <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${s.supported ? 'bg-teal-pale text-teal-deep' : 'bg-cream-2 text-ink-3'}`}>
+                                  {s.supported ? 'Worth considering' : 'Inconclusive'}
+                                </span>
+                              </div>
+                              <p className="text-xs text-ink-2 leading-relaxed">{s.detail}</p>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="px-5 py-2.5 bg-cream flex justify-end">
+                      <button onClick={loadInsights} className="text-xs text-ink-3 hover:text-ink transition">Regenerate</button>
+                    </div>
+                  </div>
+                )}
+                {insightsState === 'error' && (
+                  <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-700">
+                    Failed to generate suggestions. Check your ANTHROPIC_API_KEY.
+                  </div>
+                )}
+              </section>
+
               {/* Margin by tier */}
               <section className="space-y-3">
                 <div className="flex items-center justify-between">
