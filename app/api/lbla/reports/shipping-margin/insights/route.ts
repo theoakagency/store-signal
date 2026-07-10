@@ -75,8 +75,8 @@ export async function POST(req: NextRequest) {
     .join('\n')
 
   const thresholdSummary = free_shipping_threshold.detected
-    ? `Detected: free shipping becomes the norm (${pct(free_shipping_threshold.pct_free_at_threshold)}+ of orders) starting at the "${free_shipping_threshold.bucket_label}" bucket (order subtotal >= $${free_shipping_threshold.subtotal_min}) and stays the norm for every higher bucket.`
-    : 'Not detected: no order-value bucket shows free shipping becoming and staying the norm for all higher buckets. Free shipping in this data does not clearly track a single order-value threshold.'
+    ? `Detected: free shipping steps up to the norm (${pct(free_shipping_threshold.pct_free_at_threshold)} of orders) at the "${free_shipping_threshold.bucket_label}" bucket (order subtotal >= $${free_shipping_threshold.subtotal_min}), and a majority of those free orders rode a "Free Shipping"-named tier rather than a discount code — corroborating an order-value threshold rather than a promo effect.`
+    : 'Not detected: no order-value bucket shows a clear step up into free shipping being the norm, corroborated by orders actually riding a "Free Shipping"-named tier. Free shipping in this data does not clearly track a single order-value threshold.'
 
   const lossLeaderSummary = loss_leaders
     .slice(0, 10)

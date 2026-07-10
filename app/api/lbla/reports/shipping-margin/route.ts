@@ -244,27 +244,54 @@ export async function GET(req: NextRequest) {
   })
 
   // ── Detected free-shipping threshold ─────────────────────────────────────────
-  // The lowest order-value bucket where free shipping is the norm (>= 50% of
-  // orders) AND stays the norm for every higher bucket. Buckets with zero
-  // orders are skipped rather than counted as evidence either way. If no such
-  // bucket exists — free shipping isn't clearly tied to order value, or a
-  // higher bucket dips back under the line — detected is false, and callers
-  // (including the AI insights prompt) must not assume a threshold exists.
+  // Two signals must both hold before we call a threshold "detected":
+  //   1. Step detection — the single largest jump in pct_free between
+  //      adjacent order-value buckets, among jumps that land in a bucket
+  //      where free shipping is the norm (>= 50%). This locates the actual
+  //      step tied to order value, rather than just the first bucket that
+  //      happens to cross 50% — which can't tell a real threshold apart from
+  //      buckets that are gradually more free throughout the range.
+  //   2. shipping_method corroboration — of the free orders at/above the step
+  //      bucket, a majority must ride a shipping_method matching the "Free
+  //      Shipping" tier name (Shopify's automatic threshold-triggered rate),
+  //      not a paid tier (e.g. "Standard") zeroed out by a discount code.
+  //      Without this, a spike in code redemptions in one bucket could
+  //      masquerade as an order-value threshold.
+  // Buckets with zero orders are excluded from both signals. A store that's
+  // free-shipping-by-default from the very first bucket (no predecessor to
+  // jump from) will not register a step — there's no order-value threshold to
+  // detect in that case, just a blanket policy.
+  const MIN_STEP_DELTA = 0.2
   const DOMINANT_FREE_PCT = 0.5
+  const MIN_FREE_TIER_SHARE = 0.5
   const bucketsWithOrders = by_bucket.filter((b) => b.orders > 0)
-  const free_shipping_threshold = (() => {
-    for (let i = 0; i < bucketsWithOrders.length; i++) {
-      const rest = bucketsWithOrders.slice(i)
-      if (rest.every((b) => b.pct_free >= DOMINANT_FREE_PCT)) {
-        return {
-          detected: true,
-          subtotal_min: rest[0].min,
-          bucket_label: rest[0].label,
-          pct_free_at_threshold: rest[0].pct_free,
-        }
-      }
+
+  let stepIndex: number | null = null
+  let bestDelta = MIN_STEP_DELTA
+  for (let i = 1; i < bucketsWithOrders.length; i++) {
+    const delta = bucketsWithOrders[i].pct_free - bucketsWithOrders[i - 1].pct_free
+    if (delta >= bestDelta && bucketsWithOrders[i].pct_free >= DOMINANT_FREE_PCT) {
+      bestDelta = delta
+      stepIndex = i
     }
-    return { detected: false, subtotal_min: null, bucket_label: null, pct_free_at_threshold: null }
+  }
+
+  const free_shipping_threshold = (() => {
+    const notDetected = { detected: false, subtotal_min: null, bucket_label: null, pct_free_at_threshold: null }
+    if (stepIndex === null) return notDetected
+
+    const stepBucket = bucketsWithOrders[stepIndex]
+    const atOrAbove = matched.filter((m) => m.is_free && m.subtotal >= stepBucket.min)
+    const onFreeTier = atOrAbove.filter((m) => /free/i.test(m.method ?? ''))
+    const freeTierShare = atOrAbove.length ? onFreeTier.length / atOrAbove.length : 0
+    if (freeTierShare < MIN_FREE_TIER_SHARE) return notDetected
+
+    return {
+      detected: true,
+      subtotal_min: stepBucket.min,
+      bucket_label: stepBucket.label,
+      pct_free_at_threshold: stepBucket.pct_free,
+    }
   })()
 
   // ── Free-shipping cost (what threshold-free + code-free shipping costs us) ────
