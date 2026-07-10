@@ -266,7 +266,17 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // Stage totals for the monthly summary breakdown — pure column sums of the
+  // detail rows shown in the table (no new calculation). gross - discounts -
+  // gwp_cost === net_sales by construction (see per-row net_sales above);
+  // shipping is deducted after net_sales to form final_net, which drives
+  // royalty. net_sales and royalty are the same figures the summary cards and
+  // table footer already display.
   const summary = {
+    gross_sales: detailRows.reduce((sum, r) => sum + r.gross_sales, 0),
+    discounts: detailRows.reduce((sum, r) => sum + r.discount_amount, 0),
+    gwp_cost: detailRows.reduce((sum, r) => sum + r.gwp_cost, 0),
+    shipping: detailRows.reduce((sum, r) => sum + r.item_shipping_cost, 0),
     net_sales: detailRows.reduce((sum, r) => sum + r.net_sales, 0),
     royalty: detailRows.reduce((sum, r) => sum + r.royalty, 0),
   }
