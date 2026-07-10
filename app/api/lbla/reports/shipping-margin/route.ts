@@ -142,7 +142,14 @@ export async function GET(req: NextRequest) {
       .is('cancelled_at', null)
       .gte('processed_at', startISO)
       .lt('processed_at', endISO)
-      // Stable sort REQUIRED for correct .range() paging (see KLL route note).
+      // Stable sort REQUIRED for correct .range() paging. Sorting by
+      // shopify_order_id alone doesn't match orders_store_status_date_idx
+      // (store_id, financial_status, processed_at) and forces a full re-sort
+      // of the filtered set on every page — that's what was timing out in
+      // production. (processed_at, shopify_order_id) rides the index instead;
+      // shopify_order_id breaks ties to keep paging deterministic. Same fix
+      // as the KLL royalty report (app/api/lbla/reports/kll-royalty/route.ts).
+      .order('processed_at', { ascending: true })
       .order('shopify_order_id', { ascending: true })
       .range(from, from + PAGE - 1)
     if (error) return Response.json({ error: `Orders query failed: ${error.message}` }, { status: 500 })
@@ -268,6 +275,8 @@ export async function GET(req: NextRequest) {
       .not('cancelled_at', 'is', null)
       .gte('processed_at', startISO)
       .lt('processed_at', endISO)
+      // Same stable-sort fix as the query above — see that comment.
+      .order('processed_at', { ascending: true })
       .order('shopify_order_id', { ascending: true })
       .range(from, from + PAGE - 1)
     if (error) return Response.json({ error: `Cancelled orders query failed: ${error.message}` }, { status: 500 })
