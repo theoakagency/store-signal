@@ -23,7 +23,14 @@ interface DetailRow {
 
 interface ReportResponse {
   month: string
-  summary: { net_sales: number; royalty: number }
+  summary: {
+    gross_sales: number
+    discounts: number
+    gwp_cost: number
+    shipping: number
+    net_sales: number
+    royalty: number
+  }
   rows: DetailRow[]
 }
 
@@ -132,6 +139,26 @@ function TableSkeleton() {
   )
 }
 
+// ── Summary breakdown line ──────────────────────────────────────────────────────
+
+function SummaryLine({
+  label, value, subtotal, total,
+}: { label: string; value: number; subtotal?: boolean; total?: boolean }) {
+  const rowCls = total ? 'bg-cream/60' : subtotal ? 'bg-cream/30' : 'bg-white'
+  const labelCls = total || subtotal ? 'text-sm font-semibold text-ink' : 'text-sm text-ink-2'
+  const valueCls = total
+    ? 'font-data text-base font-semibold text-teal-deep'
+    : subtotal
+      ? 'font-data text-sm font-semibold text-ink'
+      : `font-data text-sm ${value < 0 ? 'text-ink-3' : 'text-ink'}`
+  return (
+    <div className={`flex items-center justify-between px-5 py-3 ${rowCls}`}>
+      <dt className={labelCls}>{label}</dt>
+      <dd className={valueCls}>{fmtCurrency(value)}</dd>
+    </div>
+  )
+}
+
 // ── Main page ──────────────────────────────────────────────────────────────────
 
 export default function KllRoyaltyReportPage() {
@@ -209,6 +236,31 @@ export default function KllRoyaltyReportPage() {
             <p className="text-xs font-semibold uppercase tracking-wide text-ink-3">Royalty (10%) — {displayMonth(report.month)}</p>
             <p className="mt-2 font-display text-3xl font-semibold text-teal-deep">{fmtCurrency(report.summary.royalty)}</p>
           </div>
+        </div>
+      )}
+
+      {/* Monthly totals breakdown — sums of the columns in the detail table below.
+          Order mirrors the detail table: Gross → Discounts → GWP → Net Sales
+          (subtotal) → Shipping → Royalty. Net Sales and Royalty are the same
+          totals shown in the cards above and the table footer. */}
+      {report && !error && report.rows.length > 0 && (
+        <div className="mb-6 overflow-hidden rounded-2xl border border-cream-3 bg-white shadow-sm">
+          <div className="border-b border-cream-2 bg-cream px-5 py-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-ink-2">Totals — {displayMonth(report.month)}</p>
+          </div>
+          <dl className="divide-y divide-cream-2">
+            <SummaryLine label="Gross Sales" value={report.summary.gross_sales} />
+            <SummaryLine label="Discounts" value={-report.summary.discounts} />
+            <SummaryLine label="Gift-With-Purchase Cost" value={-report.summary.gwp_cost} />
+            <SummaryLine label="Net Sales" value={report.summary.net_sales} subtotal />
+            <SummaryLine label="Shipping" value={-report.summary.shipping} />
+            <SummaryLine label="Royalty (10%)" value={report.summary.royalty} total />
+          </dl>
+          <p className="border-t border-cream-2 px-5 py-3 text-xs text-ink-3 leading-relaxed">
+            Net Sales is gross sales less approved discounts and gift-with-purchase cost. Royalty is 10% of each
+            item&apos;s net sales after its share of shipping (never below zero per item), so it can differ slightly
+            from 10% of Net Sales minus total shipping.
+          </p>
         </div>
       )}
 
