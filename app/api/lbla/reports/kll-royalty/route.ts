@@ -3,12 +3,17 @@
  * Requires a signed-in user; /lbla + /api/lbla are gated behind Supabase login in proxy.ts (LBLA team tool)
  *
  * Computes the KLL royalty report for one calendar month:
- * gross/net sales and royalty (10% of Final Net) per target-SKU line
+ * gross/net sales and royalty (10% of Net Sales) per target-SKU line
  * item, with discount amounts only counted when the order's discount
- * code is on the allowed_discount_codes list, GWP cost deducted for
- * kit SKUs based on title/variant text, and customer-paid shipping
- * (shipping_charged minus shipping_discounted, or the full charge when
- * loyalty points covered it) split evenly across the order's line items.
+ * code is on the allowed_discount_codes list and GWP cost deducted for
+ * kit SKUs based on title/variant text.
+ *
+ * SHIPPING IS NOT DEDUCTED. Per a July 2026 client policy change, shipping
+ * no longer reduces the royalty base and is not shown anywhere in the report
+ * UI. The customer-paid shipping figures are still computed and returned
+ * (item_shipping_cost, summary.shipping) so the deduction can be restored by
+ * putting them back into finalNet — see the FinalNet comment below — but
+ * nothing reads them today.
  */
 import { NextRequest } from 'next/server'
 import { createSupabaseServiceClient } from '@/lib/supabase'
@@ -182,19 +187,21 @@ export async function GET(req: NextRequest) {
     (o.line_items ?? []).some((li) => li.sku && TARGET_SKUS.has(li.sku.trim().toUpperCase()))
   )
 
-  // Shipping deduction basis: per the contract, only shipping the customer
-  // actually PAID is deductible from the royalty base. That is
+  // Shipping basis (RETAINED BUT UNUSED — see the file header). Shipping is no
+  // longer deducted from the royalty base, but the figure is still computed so
+  // the deduction can be reinstated without rebuilding it.
+  //
+  // The basis is what the customer actually PAID:
   // shipping_charged - shipping_discounted (see OrderRow) — NOT the ShipStation
   // carrier cost, which LashBox pays regardless of what the customer was charged.
-  // So free shipping (threshold, promo, or ProClub perk) yields a $0 deduction
-  // even though a real label was still paid for. The ShipStation shipment_cost
-  // lookup that formerly drove this is intentionally gone.
+  // So free shipping (threshold, promo, or ProClub perk) yields $0 even though a
+  // real label was still paid for.
   //
   // EXCEPTION — loyalty-points-paid shipping: when a customer redeems
-  // LoyaltyLion points for free shipping, the client wants that treated as
-  // customer-paid and still deducted, even though the net Shopify charge is $0
-  // — the points ARE the payment. shipping_loyalty_covered (migration 038)
-  // captures this distinctly from ordinary free shipping; see its use below.
+  // LoyaltyLion points for free shipping, that counts as customer-paid even
+  // though the net Shopify charge is $0 — the points ARE the payment.
+  // shipping_loyalty_covered (migration 038) captures this distinctly from
+  // ordinary free shipping; see its use below.
 
   // ── Fetch allowed discount code rules ───────────────────────────────────────
   const { data: rulesData, error: rulesError } = await service
@@ -211,10 +218,10 @@ export async function GET(req: NextRequest) {
   for (const order of inScopeOrders) {
     const orderCodes = (order.discount_codes ?? []).map((c) => c.code.trim().toUpperCase())
     // What the customer actually paid for shipping (>= 0), split evenly across
-    // the order's line items exactly as the carrier-cost basis was before.
-    // Loyalty-points-covered shipping is the one exception: the discount
-    // zeroes the Shopify charge, but the points are the customer's payment,
-    // so the full pre-discount shipping_charged is still deducted.
+    // the order's line items. Reported per line item but NOT deducted from the
+    // royalty base — see the file header. Loyalty-points-covered shipping is the
+    // one exception to the "what they paid" rule: the discount zeroes the Shopify
+    // charge, but the points are the customer's payment.
     const customerPaidShipping = order.shipping_loyalty_covered
       ? order.shipping_charged ?? 0
       : Math.max(0, (order.shipping_charged ?? 0) - (order.shipping_discounted ?? 0))
@@ -245,7 +252,11 @@ export async function GET(req: NextRequest) {
       const gwp = gwpCost(sku, li.title, li.variant_title)
 
       const netSales = grossSales - discountAmount - gwp
-      const finalNet = Math.max(0, netSales - itemShippingCost)
+      // Royalty base. Shipping is NOT subtracted (July 2026 client policy) — to
+      // reinstate the deduction, change this back to `netSales - itemShippingCost`.
+      // The max(0, ...) floor guards the one way netSales can still go negative:
+      // a kit whose approved discount exceeds its gross, leaving only GWP cost.
+      const finalNet = Math.max(0, netSales)
       const royalty = ROYALTY_RATE * finalNet
 
       detailRows.push({
@@ -267,11 +278,11 @@ export async function GET(req: NextRequest) {
   }
 
   // Stage totals for the monthly summary breakdown — pure column sums of the
-  // detail rows shown in the table (no new calculation). gross - discounts -
-  // gwp_cost === net_sales by construction (see per-row net_sales above);
-  // shipping is deducted after net_sales to form final_net, which drives
-  // royalty. net_sales and royalty are the same figures the summary cards and
-  // table footer already display.
+  // detail rows (no new calculation). gross - discounts - gwp_cost === net_sales
+  // by construction (see per-row net_sales above), and royalty is 10% of that.
+  // net_sales and royalty are the same figures the summary cards and table
+  // footer display. `shipping` is retained for a future reinstatement of the
+  // deduction (see file header) but is not rendered anywhere.
   const summary = {
     gross_sales: detailRows.reduce((sum, r) => sum + r.gross_sales, 0),
     discounts: detailRows.reduce((sum, r) => sum + r.discount_amount, 0),
