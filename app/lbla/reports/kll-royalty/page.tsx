@@ -5,6 +5,13 @@ import Link from 'next/link'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+// The API also returns per-row `item_shipping_cost` / `final_net` and a
+// `summary.shipping` total. Shipping is no longer part of the royalty
+// calculation (July 2026 client policy) and is deliberately not surfaced
+// anywhere in this report, so those fields are left off these types.
+// `final_net` now equals `net_sales` for every row, which is why the table
+// shows Net Sales alone rather than both.
+
 interface DetailRow {
   order_number: string
   sku: string
@@ -16,8 +23,6 @@ interface DetailRow {
   discount_amount: number
   gwp_cost: number
   net_sales: number
-  item_shipping_cost: number
-  final_net: number
   royalty: number
 }
 
@@ -27,7 +32,6 @@ interface ReportResponse {
     gross_sales: number
     discounts: number
     gwp_cost: number
-    shipping: number
     net_sales: number
     royalty: number
   }
@@ -55,8 +59,7 @@ function fmtCurrency(n: number): string {
 function downloadCsv(rows: DetailRow[], month: string) {
   const headers = [
     'Order Number', 'SKU', 'Product Title', 'Qty', 'Unit Price', 'Gross Sales',
-    'Discount Code', 'Discount Amount', 'GWP Cost', 'Net Sales',
-    'Item Shipping Cost', 'Final Net', 'Royalty',
+    'Discount Code', 'Discount Amount', 'GWP Cost', 'Net Sales', 'Royalty',
   ]
   const csvRows = [
     headers,
@@ -64,8 +67,7 @@ function downloadCsv(rows: DetailRow[], month: string) {
       r.order_number, r.sku, r.product_title, String(r.qty),
       r.unit_price.toFixed(2), r.gross_sales.toFixed(2),
       r.discount_code, r.discount_amount.toFixed(2), r.gwp_cost.toFixed(2),
-      r.net_sales.toFixed(2), r.item_shipping_cost.toFixed(2),
-      r.final_net.toFixed(2), r.royalty.toFixed(2),
+      r.net_sales.toFixed(2), r.royalty.toFixed(2),
     ]),
   ]
   const csv = csvRows.map((row) => row.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n')
@@ -84,7 +86,6 @@ const CALCULATION_STEPS = [
   'We start with the full sale price of each Korean Lash Lift product sold',
   'We subtract any discount, but only for specific approved discount codes (partner codes, welcome offers, affiliate codes, and approved promos). Regular full-price sales and unapproved discounts are not touched',
   'We subtract the cost of any free gift that came with a kit purchase',
-  'We subtract the actual cost of shipping that order, split fairly across everything in the package',
   'Whatever\'s left is the "Net Sales" for that product',
   'The royalty is 10% of that Net Sales number',
 ]
@@ -241,8 +242,8 @@ export default function KllRoyaltyReportPage() {
 
       {/* Monthly totals breakdown — sums of the columns in the detail table below.
           Order mirrors the detail table: Gross → Discounts → GWP → Net Sales
-          (subtotal) → Shipping → Royalty. Net Sales and Royalty are the same
-          totals shown in the cards above and the table footer. */}
+          (subtotal) → Royalty. Net Sales and Royalty are the same totals shown in
+          the cards above and the table footer. */}
       {report && !error && report.rows.length > 0 && (
         <div className="mb-6 overflow-hidden rounded-2xl border border-cream-3 bg-white shadow-sm">
           <div className="border-b border-cream-2 bg-cream px-5 py-3">
@@ -253,13 +254,18 @@ export default function KllRoyaltyReportPage() {
             <SummaryLine label="Discounts" value={-report.summary.discounts} />
             <SummaryLine label="Gift-With-Purchase Cost" value={-report.summary.gwp_cost} />
             <SummaryLine label="Net Sales" value={report.summary.net_sales} subtotal />
-            <SummaryLine label="Shipping" value={-report.summary.shipping} />
             <SummaryLine label="Royalty (10%)" value={report.summary.royalty} total />
           </dl>
+          {/* The per-item $0 floor still applies without shipping in the math: a kit
+              whose approved discount exceeds its gross leaves only the GWP cost, so its
+              net sales go negative. June 2026 has one such item (order 876485), which
+              puts the royalty total $0.13 above a flat 10% of Net Sales — small, but a
+              client checking the arithmetic will land on it. */}
           <p className="border-t border-cream-2 px-5 py-3 text-xs text-ink-3 leading-relaxed">
-            Net Sales is gross sales less approved discounts and gift-with-purchase cost. Royalty is 10% of each
-            item&apos;s net sales after its share of shipping (never below zero per item), so it can differ slightly
-            from 10% of Net Sales minus total shipping.
+            Net Sales is gross sales less approved discounts and gift-with-purchase cost. Royalty is 10% of Net Sales,
+            worked out one item at a time and never allowed to fall below zero — so a heavily discounted item earns no
+            royalty rather than a negative one. That can leave the royalty total a few cents above 10% of the Net Sales
+            shown here.
           </p>
         </div>
       )}
@@ -299,16 +305,14 @@ export default function KllRoyaltyReportPage() {
               <table className="w-full table-fixed text-sm">
                 <colgroup>
                   <col className="w-[90px]" />
-                  <col className="w-[220px]" />
+                  <col className="w-[260px]" />
                   <col className="w-[50px]" />
                   <col className="w-[95px]" />
                   <col className="w-[95px]" />
-                  <col className="w-[140px]" />
+                  <col className="w-[150px]" />
                   <col className="w-[85px]" />
-                  <col className="w-[95px]" />
-                  <col className="w-[90px]" />
-                  <col className="w-[95px]" />
-                  <col className="w-[90px]" />
+                  <col className="w-[110px]" />
+                  <col className="w-[100px]" />
                 </colgroup>
                 <thead>
                   <tr className="border-b border-cream-2 bg-cream">
@@ -320,8 +324,6 @@ export default function KllRoyaltyReportPage() {
                     <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-ink-3 whitespace-nowrap">Discount</th>
                     <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-ink-3 whitespace-nowrap">GWP</th>
                     <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-ink-3 whitespace-nowrap">Net Sales</th>
-                    <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-ink-3 whitespace-nowrap">Shipping</th>
-                    <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-ink-3 whitespace-nowrap">Final Net</th>
                     <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-ink-3 whitespace-nowrap">Royalty</th>
                   </tr>
                 </thead>
@@ -344,8 +346,6 @@ export default function KllRoyaltyReportPage() {
                       </td>
                       <td className="px-3 py-3 text-right font-data text-xs text-ink">{fmtCurrency(r.gwp_cost)}</td>
                       <td className="px-3 py-3 text-right font-data text-xs text-ink">{fmtCurrency(r.net_sales)}</td>
-                      <td className="px-3 py-3 text-right font-data text-xs text-ink">{fmtCurrency(r.item_shipping_cost)}</td>
-                      <td className="px-3 py-3 text-right font-data text-xs text-ink">{fmtCurrency(r.final_net)}</td>
                       <td className="px-3 py-3 text-right font-data text-xs font-semibold text-teal-deep">{fmtCurrency(r.royalty)}</td>
                     </tr>
                   ))}
@@ -354,8 +354,6 @@ export default function KllRoyaltyReportPage() {
                   <tr className="border-t-2 border-cream-3 bg-cream">
                     <td colSpan={7} className="px-3 py-3 text-xs font-semibold text-ink">Total</td>
                     <td className="px-3 py-3 text-right font-data text-xs font-semibold text-ink">{fmtCurrency(report.summary.net_sales)}</td>
-                    <td />
-                    <td />
                     <td className="px-3 py-3 text-right font-data text-xs font-semibold text-teal-deep">{fmtCurrency(report.summary.royalty)}</td>
                   </tr>
                 </tfoot>
