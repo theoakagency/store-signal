@@ -12,16 +12,12 @@ import Link from 'next/link'
 // `final_net` now equals `net_sales` for every row, which is why the table
 // shows Net Sales alone rather than both.
 //
-// Per-row `royalty` is likewise returned but not surfaced: royalty is reported
-// as a monthly total only. It stays derivable from the CSV, which carries the
-// royalty-basis Net Sales column (royalty is exactly 10% x max(0, net_sales)).
-//
-// TWO DISCOUNT BASES. The API returns both and they intentionally differ:
-//   discount_amount / net_sales                — royalty basis, allowlisted codes only
-//   actual_discount_amount / actual_net_sales  — what the customer actually paid
-// The detail table and the CSV's "(actual)" columns show the ACTUAL figures. The
-// royalty basis is no longer displayed anywhere on this page — it survives only in
-// the CSV's "(royalty basis)" columns.
+// The API also returns the ROYALTY-BASIS figures per row — `discount_amount` and
+// `net_sales` (allowlisted codes only), `gwp_cost`, and `royalty` itself. None of
+// them appear on this page or in its CSV any more: this is a plain sales record,
+// and it reports only what the customer actually paid. They are left off this type
+// so nothing can read them by accident. The calculation still lives in the API if
+// it is ever needed again.
 
 interface DetailRow {
   order_number: string
@@ -31,9 +27,6 @@ interface DetailRow {
   unit_price: number
   gross_sales: number
   discount_code: string
-  discount_amount: number
-  gwp_cost: number
-  net_sales: number
   actual_discount_amount: number
   actual_net_sales: number
 }
@@ -44,12 +37,8 @@ interface SkuTotal {
   units_sold: number
 }
 
-// The API still computes and returns the royalty-basis figures (discounts,
-// gwp_cost, net_sales, royalty). This page no longer reports royalty at all — it
-// is a plain sales record now — so those fields are deliberately left off this
-// type and nothing here reads them. They remain in the API so the royalty
-// calculation is not lost, and the CSV export still carries the royalty-basis
-// columns for reconciliation elsewhere.
+// Same reasoning as DetailRow above: the summary's royalty-basis totals are
+// returned by the API but deliberately absent from this type.
 interface ReportResponse {
   month: string
   summary: {
@@ -81,20 +70,18 @@ function fmtCurrency(n: number): string {
 }
 
 function downloadCsv(rows: DetailRow[], month: string) {
-  // The export carries BOTH discount bases, explicitly labelled, because they
-  // answer different questions and neither can be derived from the other:
-  // the actual columns are what the customer paid, the royalty-basis columns are
-  // what the 10% is charged on. Exporting only the actual figures would make the
-  // royalty impossible to reconcile from the file; exporting only the royalty
-  // basis would hide the real money taken off DT-coded orders.
+  // One column per column on screen, in the same order and carrying the same
+  // values — Discount Amount and Net Sales are the ACTUAL figures, what the
+  // customer really paid.
   //
-  // Royalty itself stays out per the earlier decision — it remains recoverable as
-  // 10% x max(0, Net Sales (royalty basis)). GWP Cost stays because it is a
-  // per-row input to that royalty-basis figure.
+  // The royalty-basis discount / net sales and GWP Cost columns used to ride
+  // along so the Royalty figure could be reconstructed from the file. Royalty is
+  // no longer reported anywhere on this page, so they had no on-screen
+  // counterpart left to reconcile against and have been dropped. The API still
+  // returns all three if that ever needs reversing.
   const headers = [
-    'Order Number', 'SKU', 'Product Title', 'Qty', 'Unit Price', 'Gross Sales',
-    'Discount Code', 'Discount Amount (actual)', 'Net Sales (actual)',
-    'Discount Amount (royalty basis)', 'GWP Cost', 'Net Sales (royalty basis)',
+    'Order', 'SKU', 'Product Title', 'Qty', 'Unit Price', 'Gross',
+    'Discount Code', 'Discount Amount', 'Net Sales',
   ]
   const csvRows = [
     headers,
@@ -102,8 +89,6 @@ function downloadCsv(rows: DetailRow[], month: string) {
       r.order_number, r.sku, r.product_title, String(r.qty),
       r.unit_price.toFixed(2), r.gross_sales.toFixed(2),
       r.discount_code, r.actual_discount_amount.toFixed(2), r.actual_net_sales.toFixed(2),
-      r.discount_amount.toFixed(2), r.gwp_cost.toFixed(2),
-      r.net_sales.toFixed(2),
     ]),
   ]
   const csv = csvRows.map((row) => row.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n')
