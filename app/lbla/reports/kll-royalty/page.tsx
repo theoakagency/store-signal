@@ -11,6 +11,11 @@ import Link from 'next/link'
 // anywhere in this report, so those fields are left off these types.
 // `final_net` now equals `net_sales` for every row, which is why the table
 // shows Net Sales alone rather than both.
+//
+// Per-row `royalty` is likewise returned but not surfaced: royalty is reported
+// as a monthly total only. Nothing is lost by dropping it, because the API's
+// per-row royalty is exactly 10% x max(0, net_sales) — derivable from the
+// Net Sales column that both the table and the CSV still carry.
 
 interface DetailRow {
   order_number: string
@@ -23,7 +28,6 @@ interface DetailRow {
   discount_amount: number
   gwp_cost: number
   net_sales: number
-  royalty: number
 }
 
 interface ReportResponse {
@@ -57,9 +61,14 @@ function fmtCurrency(n: number): string {
 }
 
 function downloadCsv(rows: DetailRow[], month: string) {
+  // Mirrors the report's own definition: royalty is a monthly figure, not a
+  // per-line one, so it is not exported per row. This is not the same as letting
+  // the column toggles reshape the file — those are transient view state and the
+  // export deliberately ignores them. GWP Cost stays for exactly that reason: it
+  // is still part of the per-row calculation, just not shown on screen.
   const headers = [
     'Order Number', 'SKU', 'Product Title', 'Qty', 'Unit Price', 'Gross Sales',
-    'Discount Code', 'Discount Amount', 'GWP Cost', 'Net Sales', 'Royalty',
+    'Discount Code', 'Discount Amount', 'GWP Cost', 'Net Sales',
   ]
   const csvRows = [
     headers,
@@ -67,7 +76,7 @@ function downloadCsv(rows: DetailRow[], month: string) {
       r.order_number, r.sku, r.product_title, String(r.qty),
       r.unit_price.toFixed(2), r.gross_sales.toFixed(2),
       r.discount_code, r.discount_amount.toFixed(2), r.gwp_cost.toFixed(2),
-      r.net_sales.toFixed(2), r.royalty.toFixed(2),
+      r.net_sales.toFixed(2),
     ]),
   ]
   const csv = csvRows.map((row) => row.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n')
@@ -83,19 +92,19 @@ function downloadCsv(rows: DetailRow[], month: string) {
 // ── Detail table columns ───────────────────────────────────────────────────────
 
 // Order / SKU-Product / Qty / Unit Price / Gross are always shown — they answer
-// "what sold". The three money columns downstream of gross can be hidden so the
-// table reads as a plain sales list when nobody is reconciling the royalty.
+// "what sold". The two money columns downstream of gross can be hidden so the
+// table reads as a plain sales list.
 //
-// GWP is deliberately absent: it is a per-item input to Net Sales, not something
-// a reader needs row by row, and it only appears as the Gift-With-Purchase Cost
-// line in the Totals block above the table.
+// GWP and Royalty are deliberately absent as columns. GWP is a per-item input to
+// Net Sales rather than something a reader checks row by row, and royalty is
+// reported for the month as a whole — both appear only in the Totals block above
+// the table.
 
-type ToggleableColumn = 'discount' | 'net_sales' | 'royalty'
+type ToggleableColumn = 'discount' | 'net_sales'
 
 const TOGGLEABLE_COLUMNS: { key: ToggleableColumn; label: string }[] = [
   { key: 'discount', label: 'Discount' },
   { key: 'net_sales', label: 'Net Sales' },
-  { key: 'royalty', label: 'Royalty' },
 ]
 
 const ALWAYS_VISIBLE_COLUMN_COUNT = 5
@@ -218,7 +227,7 @@ export default function KllRoyaltyReportPage() {
   const [error, setError] = useState<string | null>(null)
   const [report, setReport] = useState<ReportResponse | null>(null)
   const [shown, setShown] = useState<Record<ToggleableColumn, boolean>>({
-    discount: true, net_sales: true, royalty: true,
+    discount: true, net_sales: true,
   })
 
   const toggleColumn = useCallback((key: ToggleableColumn) => {
@@ -302,9 +311,10 @@ export default function KllRoyaltyReportPage() {
       )}
 
       {/* Monthly totals breakdown, in calculation order: Gross → Discounts → GWP →
-          Net Sales (subtotal) → Royalty. Gift-With-Purchase Cost is the only place
-          GWP is reported — it is not a column in the detail table. Net Sales and
-          Royalty are the same totals shown in the cards above and the table footer. */}
+          Net Sales (subtotal) → Royalty. This block and the cards above it are the
+          only place GWP and Royalty are reported — neither is a column in the detail
+          table. Net Sales is the one figure carried in both, and the table footer
+          repeats that total. */}
       {report && !error && report.rows.length > 0 && (
         <div className="mb-6 overflow-hidden rounded-2xl border border-cream-3 bg-white shadow-sm">
           <div className="border-b border-cream-2 bg-cream px-5 py-3">
@@ -377,8 +387,7 @@ export default function KllRoyaltyReportPage() {
                   <col className="w-[95px]" />
                   <col className="w-[95px]" />
                   {shown.discount && <col className="w-[160px]" />}
-                  {shown.net_sales && <col className="w-[110px]" />}
-                  {shown.royalty && <col className="w-[100px]" />}
+                  {shown.net_sales && <col className="w-[120px]" />}
                 </colgroup>
                 <thead>
                   <tr className="border-b border-cream-2 bg-cream">
@@ -392,9 +401,6 @@ export default function KllRoyaltyReportPage() {
                     )}
                     {shown.net_sales && (
                       <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-ink-3 whitespace-nowrap">Net Sales</th>
-                    )}
-                    {shown.royalty && (
-                      <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-ink-3 whitespace-nowrap">Royalty</th>
                     )}
                   </tr>
                 </thead>
@@ -420,9 +426,6 @@ export default function KllRoyaltyReportPage() {
                       {shown.net_sales && (
                         <td className="px-3 py-3 text-right font-data text-xs text-ink">{fmtCurrency(r.net_sales)}</td>
                       )}
-                      {shown.royalty && (
-                        <td className="px-3 py-3 text-right font-data text-xs font-semibold text-teal-deep">{fmtCurrency(r.royalty)}</td>
-                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -431,9 +434,6 @@ export default function KllRoyaltyReportPage() {
                     <td colSpan={totalLabelSpan} className="px-3 py-3 text-xs font-semibold text-ink">Total</td>
                     {shown.net_sales && (
                       <td className="px-3 py-3 text-right font-data text-xs font-semibold text-ink">{fmtCurrency(report.summary.net_sales)}</td>
-                    )}
-                    {shown.royalty && (
-                      <td className="px-3 py-3 text-right font-data text-xs font-semibold text-teal-deep">{fmtCurrency(report.summary.royalty)}</td>
                     )}
                   </tr>
                 </tfoot>
