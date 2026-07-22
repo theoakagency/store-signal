@@ -54,6 +54,20 @@ const TOOLS = [
     description: 'Shipping collected vs. carrier cost by tier and order value, from ShipStation.',
     cta: 'Open',
   },
+  {
+    href: '/lbla/reports/kll-discount-summary',
+    icon: (
+      <svg className="h-8 w-8 text-teal" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+        <path d="M9 15l6-6" strokeLinecap="round" />
+        <circle cx="9.5" cy="9.5" r="1.5" />
+        <circle cx="14.5" cy="14.5" r="1.5" />
+        <rect x="3" y="3" width="18" height="18" rx="3" />
+      </svg>
+    ),
+    title: 'KLL Discount Summary',
+    description: 'Discounts, free shipping and gift cost on Korean Lash Lift orders, by month.',
+    cta: 'Open',
+  },
 ]
 
 export default function LblaHome() {
