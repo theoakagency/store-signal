@@ -128,10 +128,21 @@ const ALWAYS_VISIBLE_COLUMN_COUNT = 5
 // Padding is asymmetric to close the gap between the two columns only: each keeps
 // normal px-3 breathing room on its outer edge (Gross before, table edge after)
 // and gives up padding on the edge facing its partner.
+//
+// Both columns are RIGHT-aligned. That is what actually makes them read as a pair:
+// left-aligning Discount parked its text against the left edge of the band while
+// Net Sales sat against the right edge, leaving a wide empty gap between the two
+// values no amount of padding could close. Right-aligning both puts the discount
+// block directly alongside the net sales figure.
 const PAIR_TINT_BODY = 'bg-teal/5'
 const PAIR_TINT_EDGE = 'bg-teal/10' // header + footer, slightly stronger to cap the band
-const PAIR_PAD_LEFT = 'pl-3 pr-1'   // Discount — outer edge left
-const PAIR_PAD_RIGHT = 'pl-1 pr-3'  // Net Sales — outer edge right
+const PAIR_PAD_LEFT = 'pl-3 pr-0.5'   // Discount — outer edge left
+// Net Sales carries a hairline seam on its inner edge. Once the two columns were
+// tight enough to read as one unit, their right-aligned headers ran together into
+// "DISCOUNT NET SALES"; the seam separates the two labels without reopening the
+// gap. It is deliberately fainter than the table's own row rules so it reads as a
+// join inside the tinted band, not as a boundary between two unrelated columns.
+const PAIR_PAD_RIGHT = 'pl-1 pr-3 border-l border-teal/25' // Net Sales — outer edge right
 
 // ── Calculation explainer ──────────────────────────────────────────────────────
 
@@ -402,17 +413,25 @@ export default function KllRoyaltyReportPage() {
           <div className="overflow-hidden rounded-2xl border border-cream-3 bg-white shadow-sm">
             <div className="overflow-x-auto">
               <table className="w-full table-fixed text-sm">
-                {/* table-fixed distributes leftover width proportionally, so the
-                    always-visible columns are given the slack — otherwise the pair
-                    inflates and the gap this change is meant to close reopens. */}
+                {/* SKU / Product is deliberately the ONLY column without a width.
+                    Under table-fixed, columns with no specified width absorb all the
+                    leftover space, so every other column holds exactly the width set
+                    here. Giving the pair a fixed width was not enough on its own —
+                    when every column is sized, the browser distributes slack across
+                    all of them proportionally, which re-inflated Discount and Net
+                    Sales into a wide band and pushed their contents apart. */}
                 <colgroup>
                   <col className="w-[90px]" />
-                  <col className="w-[380px]" />
+                  <col />
                   <col className="w-[55px]" />
                   <col className="w-[105px]" />
                   <col className="w-[105px]" />
-                  {showPair && <col className="w-[125px]" />}
-                  {showPair && <col className="w-[105px]" />}
+                  {showPair && <col className="w-[130px]" />}
+                  {/* Sized to the widest value it must hold ($199.00) plus its outer
+                      padding and the "NET SALES" header, and no wider. Every extra
+                      pixel here lands as blank space to the LEFT of a right-aligned
+                      figure — i.e. directly in the gap between the two columns. */}
+                  {showPair && <col className="w-[82px]" />}
                 </colgroup>
                 <thead>
                   <tr className="border-b border-cream-2 bg-cream">
@@ -422,7 +441,7 @@ export default function KllRoyaltyReportPage() {
                     <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-ink-3 whitespace-nowrap">Unit Price</th>
                     <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-ink-3 whitespace-nowrap">Gross</th>
                     {showPair && (
-                      <th className={`${PAIR_TINT_EDGE} ${PAIR_PAD_LEFT} py-3 text-left text-xs font-semibold uppercase tracking-wide text-teal-deep whitespace-nowrap`}>Discount</th>
+                      <th className={`${PAIR_TINT_EDGE} ${PAIR_PAD_LEFT} py-3 text-right text-xs font-semibold uppercase tracking-wide text-teal-deep whitespace-nowrap`}>Discount</th>
                     )}
                     {showPair && (
                       <th className={`${PAIR_TINT_EDGE} ${PAIR_PAD_RIGHT} py-3 text-right text-xs font-semibold uppercase tracking-wide text-teal-deep whitespace-nowrap`}>Net Sales</th>
@@ -441,7 +460,7 @@ export default function KllRoyaltyReportPage() {
                       <td className="px-3 py-3 text-right font-data text-xs text-ink">{fmtCurrency(r.unit_price)}</td>
                       <td className="px-3 py-3 text-right font-data text-xs text-ink">{fmtCurrency(r.gross_sales)}</td>
                       {showPair && (
-                        <td className={`${PAIR_TINT_BODY} ${PAIR_PAD_LEFT} py-3 text-xs text-ink-2 truncate`}>
+                        <td className={`${PAIR_TINT_BODY} ${PAIR_PAD_LEFT} py-3 text-right text-xs text-ink-2 truncate`}>
                           {r.discount_code || '—'}
                           {r.actual_discount_amount > 0 && (
                             <span className="block font-data text-ink-3">-{fmtCurrency(r.actual_discount_amount)}</span>
