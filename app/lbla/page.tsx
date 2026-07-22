@@ -80,6 +80,18 @@ const TOOLS = [
     description: 'Discounts, free shipping and gift cost on Korean Lash Lift orders, by month.',
     cta: 'Open',
   },
+  {
+    href: '/lbla/reports/kll-wholesale',
+    icon: (
+      <svg className="h-8 w-8 text-teal" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+        <path d="M12 3v10M8.5 9.5L12 13l3.5-3.5" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    ),
+    title: 'KLL Wholesale Report',
+    description: 'Upload the wholesale Shopify export to see Korean Lash Lift sales by month.',
+    cta: 'Open',
+  },
 ]
 
 export default function LblaHome() {
