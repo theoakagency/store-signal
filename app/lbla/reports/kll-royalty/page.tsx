@@ -109,22 +109,29 @@ function downloadCsv(rows: DetailRow[], month: string) {
 // ── Detail table columns ───────────────────────────────────────────────────────
 
 // Order / SKU-Product / Qty / Unit Price / Gross are always shown — they answer
-// "what sold". The two money columns downstream of gross can be hidden so the
-// table reads as a plain sales list.
+// "what sold". Discount and Net Sales are a single hideable unit: they are the
+// two customer-paid figures and only make sense read together, so there is one
+// toggle for the pair rather than one each.
 //
 // GWP and Royalty are deliberately absent as columns. GWP is a per-item input to
 // Net Sales rather than something a reader checks row by row, and royalty is
 // reported for the month as a whole — both appear only in the Totals block above
 // the table.
 
-type ToggleableColumn = 'discount' | 'net_sales'
-
-const TOGGLEABLE_COLUMNS: { key: ToggleableColumn; label: string }[] = [
-  { key: 'discount', label: 'Discount' },
-  { key: 'net_sales', label: 'Net Sales' },
-]
-
 const ALWAYS_VISIBLE_COLUMN_COUNT = 5
+
+// The pair is tinted and pulled together so it reads as one block distinct from
+// the always-visible columns. The tint sits on the cells themselves, so it wins
+// over the tbody zebra striping — intentional: the band should be continuous
+// down the column rather than alternating with the rows.
+//
+// Padding is asymmetric to close the gap between the two columns only: each keeps
+// normal px-3 breathing room on its outer edge (Gross before, table edge after)
+// and gives up padding on the edge facing its partner.
+const PAIR_TINT_BODY = 'bg-teal/5'
+const PAIR_TINT_EDGE = 'bg-teal/10' // header + footer, slightly stronger to cap the band
+const PAIR_PAD_LEFT = 'pl-3 pr-1'   // Discount — outer edge left
+const PAIR_PAD_RIGHT = 'pl-1 pr-3'  // Net Sales — outer edge right
 
 // ── Calculation explainer ──────────────────────────────────────────────────────
 
@@ -208,31 +215,20 @@ function SummaryLine({
 
 // ── Column show/hide control ───────────────────────────────────────────────────
 
-function ColumnToggles({
-  shown, onToggle,
-}: { shown: Record<ToggleableColumn, boolean>; onToggle: (key: ToggleableColumn) => void }) {
+function ColumnToggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
   return (
-    <div className="flex flex-wrap items-center gap-1.5">
-      <span className="text-xs text-ink-3">Columns</span>
-      {TOGGLEABLE_COLUMNS.map(({ key, label }) => {
-        const on = shown[key]
-        return (
-          <button
-            key={key}
-            type="button"
-            onClick={() => onToggle(key)}
-            aria-pressed={on}
-            className={`rounded-lg border px-2.5 py-1 text-xs font-medium transition ${
-              on
-                ? 'border-teal/40 bg-teal/10 text-teal-deep'
-                : 'border-cream-3 bg-white text-ink-3 hover:border-cream-3 hover:text-ink-2'
-            }`}
-          >
-            {label}
-          </button>
-        )
-      })}
-    </div>
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-pressed={on}
+      className={`rounded-lg border px-2.5 py-1 text-xs font-medium transition ${
+        on
+          ? 'border-teal/40 bg-teal/10 text-teal-deep'
+          : 'border-cream-3 bg-white text-ink-3 hover:border-cream-3 hover:text-ink-2'
+      }`}
+    >
+      Show Discounts and Net Sales
+    </button>
   )
 }
 
@@ -243,17 +239,15 @@ export default function KllRoyaltyReportPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [report, setReport] = useState<ReportResponse | null>(null)
-  const [shown, setShown] = useState<Record<ToggleableColumn, boolean>>({
-    discount: true, net_sales: true,
-  })
+  // Discount + Net Sales show and hide together as one unit.
+  const [showPair, setShowPair] = useState(true)
+  const togglePair = useCallback(() => setShowPair((v) => !v), [])
 
-  const toggleColumn = useCallback((key: ToggleableColumn) => {
-    setShown((prev) => ({ ...prev, [key]: !prev[key] }))
-  }, [])
-
-  // The "Total" label cell spans every column to the left of the first visible
-  // total, so it has to follow the toggles rather than sit at a fixed width.
-  const totalLabelSpan = ALWAYS_VISIBLE_COLUMN_COUNT + (shown.discount ? 1 : 0)
+  // The "Total" label cell covers exactly the always-visible columns. When the
+  // pair is shown it is followed by two tinted cells (an empty one under Discount,
+  // then the Net Sales total) so the tinted band runs unbroken to the bottom of
+  // the table; when hidden, the label alone spans the whole row.
+  const totalLabelSpan = ALWAYS_VISIBLE_COLUMN_COUNT
 
   const fetchReport = useCallback(async (selectedMonth: string) => {
     setIsLoading(true)
@@ -380,7 +374,7 @@ export default function KllRoyaltyReportPage() {
               {report.rows.length.toLocaleString()} line item{report.rows.length !== 1 ? 's' : ''}
             </p>
             <div className="flex flex-wrap items-center gap-3">
-            <ColumnToggles shown={shown} onToggle={toggleColumn} />
+            <ColumnToggle on={showPair} onToggle={togglePair} />
             {/* The export is the client-facing deliverable, so it always carries the
                 full data set — hiding a column on screen must not silently drop it
                 from the CSV someone reconciles against. */}
@@ -408,14 +402,17 @@ export default function KllRoyaltyReportPage() {
           <div className="overflow-hidden rounded-2xl border border-cream-3 bg-white shadow-sm">
             <div className="overflow-x-auto">
               <table className="w-full table-fixed text-sm">
+                {/* table-fixed distributes leftover width proportionally, so the
+                    always-visible columns are given the slack — otherwise the pair
+                    inflates and the gap this change is meant to close reopens. */}
                 <colgroup>
                   <col className="w-[90px]" />
-                  <col className="w-[300px]" />
-                  <col className="w-[50px]" />
-                  <col className="w-[95px]" />
-                  <col className="w-[95px]" />
-                  {shown.discount && <col className="w-[160px]" />}
-                  {shown.net_sales && <col className="w-[120px]" />}
+                  <col className="w-[380px]" />
+                  <col className="w-[55px]" />
+                  <col className="w-[105px]" />
+                  <col className="w-[105px]" />
+                  {showPair && <col className="w-[125px]" />}
+                  {showPair && <col className="w-[105px]" />}
                 </colgroup>
                 <thead>
                   <tr className="border-b border-cream-2 bg-cream">
@@ -424,11 +421,11 @@ export default function KllRoyaltyReportPage() {
                     <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-ink-3 whitespace-nowrap">Qty</th>
                     <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-ink-3 whitespace-nowrap">Unit Price</th>
                     <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-ink-3 whitespace-nowrap">Gross</th>
-                    {shown.discount && (
-                      <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-ink-3 whitespace-nowrap">Discount</th>
+                    {showPair && (
+                      <th className={`${PAIR_TINT_EDGE} ${PAIR_PAD_LEFT} py-3 text-left text-xs font-semibold uppercase tracking-wide text-teal-deep whitespace-nowrap`}>Discount</th>
                     )}
-                    {shown.net_sales && (
-                      <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-ink-3 whitespace-nowrap">Net Sales</th>
+                    {showPair && (
+                      <th className={`${PAIR_TINT_EDGE} ${PAIR_PAD_RIGHT} py-3 text-right text-xs font-semibold uppercase tracking-wide text-teal-deep whitespace-nowrap`}>Net Sales</th>
                     )}
                   </tr>
                 </thead>
@@ -443,16 +440,16 @@ export default function KllRoyaltyReportPage() {
                       <td className="px-3 py-3 text-right font-data text-xs text-ink">{r.qty}</td>
                       <td className="px-3 py-3 text-right font-data text-xs text-ink">{fmtCurrency(r.unit_price)}</td>
                       <td className="px-3 py-3 text-right font-data text-xs text-ink">{fmtCurrency(r.gross_sales)}</td>
-                      {shown.discount && (
-                        <td className="px-3 py-3 text-xs text-ink-2 truncate">
+                      {showPair && (
+                        <td className={`${PAIR_TINT_BODY} ${PAIR_PAD_LEFT} py-3 text-xs text-ink-2 truncate`}>
                           {r.discount_code || '—'}
                           {r.actual_discount_amount > 0 && (
                             <span className="block font-data text-ink-3">-{fmtCurrency(r.actual_discount_amount)}</span>
                           )}
                         </td>
                       )}
-                      {shown.net_sales && (
-                        <td className="px-3 py-3 text-right font-data text-xs text-ink">{fmtCurrency(r.actual_net_sales)}</td>
+                      {showPair && (
+                        <td className={`${PAIR_TINT_BODY} ${PAIR_PAD_RIGHT} py-3 text-right font-data text-xs text-ink`}>{fmtCurrency(r.actual_net_sales)}</td>
                       )}
                     </tr>
                   ))}
@@ -460,12 +457,15 @@ export default function KllRoyaltyReportPage() {
                 <tfoot>
                   <tr className="border-t-2 border-cream-3 bg-cream">
                     <td colSpan={totalLabelSpan} className="px-3 py-3 text-xs font-semibold text-ink">Total</td>
+                    {showPair && (
+                      <td className={`${PAIR_TINT_EDGE} ${PAIR_PAD_LEFT} py-3`} />
+                    )}
                     {/* Sums the column above it, so this is the ACTUAL net sales
                         total — deliberately not the royalty-basis Net Sales in the
                         Totals block. A footer that didn't add up to its own column
                         would read as an arithmetic error. */}
-                    {shown.net_sales && (
-                      <td className="px-3 py-3 text-right font-data text-xs font-semibold text-ink">{fmtCurrency(report.summary.actual_net_sales)}</td>
+                    {showPair && (
+                      <td className={`${PAIR_TINT_EDGE} ${PAIR_PAD_RIGHT} py-3 text-right font-data text-xs font-semibold text-ink`}>{fmtCurrency(report.summary.actual_net_sales)}</td>
                     )}
                   </tr>
                 </tfoot>
