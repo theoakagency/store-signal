@@ -19,9 +19,9 @@ import Link from 'next/link'
 // TWO DISCOUNT BASES. The API returns both and they intentionally differ:
 //   discount_amount / net_sales                — royalty basis, allowlisted codes only
 //   actual_discount_amount / actual_net_sales  — what the customer actually paid
-// The detail table shows the ACTUAL figures (Kate's reference view); the summary
-// cards and Totals block show the ROYALTY BASIS. On rows discounted by a code
-// that isn't on the allowlist the two disagree by design.
+// The detail table and the CSV's "(actual)" columns show the ACTUAL figures. The
+// royalty basis is no longer displayed anywhere on this page — it survives only in
+// the CSV's "(royalty basis)" columns.
 
 interface DetailRow {
   order_number: string
@@ -38,17 +38,27 @@ interface DetailRow {
   actual_net_sales: number
 }
 
+interface SkuTotal {
+  sku: string
+  product_title: string
+  units_sold: number
+}
+
+// The API still computes and returns the royalty-basis figures (discounts,
+// gwp_cost, net_sales, royalty). This page no longer reports royalty at all — it
+// is a plain sales record now — so those fields are deliberately left off this
+// type and nothing here reads them. They remain in the API so the royalty
+// calculation is not lost, and the CSV export still carries the royalty-basis
+// columns for reconciliation elsewhere.
 interface ReportResponse {
   month: string
   summary: {
     gross_sales: number
-    discounts: number
-    gwp_cost: number
-    net_sales: number
-    royalty: number
+    total_orders: number
     actual_discounts: number
     actual_net_sales: number
   }
+  skus: SkuTotal[]
   rows: DetailRow[]
 }
 
@@ -147,11 +157,11 @@ const PAIR_PAD_RIGHT = 'pl-1 pr-3 border-l border-teal/25' // Net Sales — oute
 // ── Calculation explainer ──────────────────────────────────────────────────────
 
 const CALCULATION_STEPS = [
-  'We start with the full sale price of each Korean Lash Lift product sold',
-  'We subtract any discount, but only for specific approved discount codes (partner codes, welcome offers, affiliate codes, and approved promos). Regular full-price sales and unapproved discounts are not touched',
-  'We subtract the cost of any free gift that came with a kit purchase',
-  'Whatever\'s left is the "Net Sales" for that product',
-  'The royalty is 10% of that Net Sales number',
+  'This shows every Korean Lash Lift item sold in the selected month, with the gross sale price for each line',
+  'Gross Sales is the full sale price of those items added up, before any discount',
+  'Total Orders counts each order once, however many Korean Lash Lift items it contained',
+  'KLL Event giveaway orders are left out entirely — those are comped stock, not sales',
+  'The Discount and Net Sales columns in the table show what the customer actually paid on each line',
 ]
 
 function CalculationExplainer() {
@@ -200,26 +210,6 @@ function TableSkeleton() {
           </div>
         ))}
       </div>
-    </div>
-  )
-}
-
-// ── Summary breakdown line ──────────────────────────────────────────────────────
-
-function SummaryLine({
-  label, value, subtotal, total,
-}: { label: string; value: number; subtotal?: boolean; total?: boolean }) {
-  const rowCls = total ? 'bg-cream/60' : subtotal ? 'bg-cream/30' : 'bg-white'
-  const labelCls = total || subtotal ? 'text-sm font-semibold text-ink' : 'text-sm text-ink-2'
-  const valueCls = total
-    ? 'font-data text-base font-semibold text-teal-deep'
-    : subtotal
-      ? 'font-data text-sm font-semibold text-ink'
-      : `font-data text-sm ${value < 0 ? 'text-ink-3' : 'text-ink'}`
-  return (
-    <div className={`flex items-center justify-between px-5 py-3 ${rowCls}`}>
-      <dt className={labelCls}>{label}</dt>
-      <dd className={valueCls}>{fmtCurrency(value)}</dd>
     </div>
   )
 }
@@ -293,7 +283,7 @@ export default function KllRoyaltyReportPage() {
           <div>
             <h1 className="font-display text-2xl font-semibold text-ink">KLL Royalty Report</h1>
             <p className="mt-1 text-sm text-ink-3">
-              Net sales and 10% royalty on target KLL SKUs, lashboxla.com retail only.{' '}
+              Korean Lash Lift items sold, lashboxla.com retail only.{' '}
               <Link href="/lbla/settings/discount-codes" className="text-teal-deep hover:text-teal transition">Manage allowed discount codes →</Link>
             </p>
           </div>
@@ -322,48 +312,48 @@ export default function KllRoyaltyReportPage() {
       {report && !error && (
         <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="rounded-2xl border border-cream-3 bg-white p-6 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-wide text-ink-3">Net Sales — {displayMonth(report.month)}</p>
-            <p className="mt-2 font-display text-3xl font-semibold text-ink">{fmtCurrency(report.summary.net_sales)}</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-ink-3">Gross Sales — {displayMonth(report.month)}</p>
+            <p className="mt-2 font-display text-3xl font-semibold text-ink">{fmtCurrency(report.summary.gross_sales)}</p>
           </div>
           <div className="rounded-2xl border border-cream-3 bg-white p-6 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-wide text-ink-3">Royalty (10%) — {displayMonth(report.month)}</p>
-            <p className="mt-2 font-display text-3xl font-semibold text-teal-deep">{fmtCurrency(report.summary.royalty)}</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-ink-3">Total Orders — {displayMonth(report.month)}</p>
+            <p className="mt-2 font-display text-3xl font-semibold text-ink">{report.summary.total_orders.toLocaleString()}</p>
           </div>
         </div>
       )}
 
-      {/* Monthly totals breakdown, in calculation order: Gross → Discounts → GWP →
-          Net Sales (subtotal) → Royalty. This block and the cards above it are the
-          only place GWP and Royalty are reported — neither is a column in the detail
-          table.
-
-          These are the ROYALTY-BASIS figures: Discounts counts allowlisted codes
-          only. The detail table below shows what the customer actually paid, so its
-          Discount and Net Sales columns will not tie back to this block in any month
-          containing non-allowlisted codes. That divergence is intended. */}
-      {report && !error && report.rows.length > 0 && (
+      {/* SKUs sold this month, highest units first. Ordering is done server-side so
+          the list cannot drift from the totals it is derived from. */}
+      {report && !error && report.skus.length > 0 && (
         <div className="mb-6 overflow-hidden rounded-2xl border border-cream-3 bg-white shadow-sm">
           <div className="border-b border-cream-2 bg-cream px-5 py-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-ink-2">Totals — {displayMonth(report.month)}</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-ink-2">SKUs Sold — {displayMonth(report.month)}</p>
           </div>
-          <dl className="divide-y divide-cream-2">
-            <SummaryLine label="Gross Sales" value={report.summary.gross_sales} />
-            <SummaryLine label="Discounts" value={-report.summary.discounts} />
-            <SummaryLine label="Gift-With-Purchase Cost" value={-report.summary.gwp_cost} />
-            <SummaryLine label="Net Sales" value={report.summary.net_sales} subtotal />
-            <SummaryLine label="Royalty (10%)" value={report.summary.royalty} total />
-          </dl>
-          {/* The per-item $0 floor applies when a kit's approved discount exceeds its
-              gross, leaving only the GWP cost to push net sales negative. Whether any
-              item hits it varies by month and by what's on the discount allowlist — in
-              months where one does, the royalty total lands a few cents above a flat
-              10% of Net Sales, which is what the caption below prepares the reader for. */}
-          <p className="border-t border-cream-2 px-5 py-3 text-xs text-ink-3 leading-relaxed">
-            Net Sales is gross sales less approved discounts and gift-with-purchase cost. Royalty is 10% of Net Sales,
-            worked out one item at a time and never allowed to fall below zero — so a heavily discounted item earns no
-            royalty rather than a negative one. That can leave the royalty total a few cents above 10% of the Net Sales
-            shown here.
-          </p>
+          <div className="overflow-x-auto">
+            <table className="w-full table-fixed text-sm">
+              <colgroup>
+                <col className="w-[150px]" />
+                <col />
+                <col className="w-[110px]" />
+              </colgroup>
+              <thead>
+                <tr className="border-b border-cream-2">
+                  <th className="px-5 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-ink-3">SKU</th>
+                  <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-ink-3">Product Title</th>
+                  <th className="px-5 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-ink-3 whitespace-nowrap">Units Sold</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-cream-2">
+                {report.skus.map((s, i) => (
+                  <tr key={s.sku} className={i % 2 === 0 ? 'bg-white' : 'bg-cream/40'}>
+                    <td className="px-5 py-2.5 font-data text-xs text-ink">{s.sku}</td>
+                    <td className="px-3 py-2.5 text-xs text-ink-2 truncate" title={s.product_title}>{s.product_title}</td>
+                    <td className="px-5 py-2.5 text-right font-data text-xs font-semibold text-ink">{s.units_sold.toLocaleString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -403,11 +393,13 @@ export default function KllRoyaltyReportPage() {
             </div>
           </div>
 
-          {/* Without this, the table looks like it contradicts the Totals block. */}
+          {/* The previous wording explained why these columns didn't tie back to the
+              Totals block's royalty figures. Both are gone, so there is nothing left
+              to reconcile against — all that still needs saying is what the columns
+              mean. */}
           <p className="rounded-xl border border-cream-3 bg-cream/50 px-4 py-2.5 text-xs text-ink-3 leading-relaxed">
-            Discount and Net Sales below show what the customer <em>actually</em>{' '}paid — every discount code counts,
-            including codes that don&apos;t reduce the royalty. The royalty in the Totals block above is worked out
-            separately, from approved codes only, so these figures are not meant to add up to it.
+            Gross is the full sale price before any discount. Discount and Net Sales show what the customer{' '}
+            <em>actually</em>{' '}paid on that line, with every discount code counted.
           </p>
 
           <div className="overflow-hidden rounded-2xl border border-cream-3 bg-white shadow-sm">
