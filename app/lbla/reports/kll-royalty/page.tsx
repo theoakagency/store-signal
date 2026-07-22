@@ -80,6 +80,26 @@ function downloadCsv(rows: DetailRow[], month: string) {
   URL.revokeObjectURL(url)
 }
 
+// ── Detail table columns ───────────────────────────────────────────────────────
+
+// Order / SKU-Product / Qty / Unit Price / Gross are always shown — they answer
+// "what sold". The three money columns downstream of gross can be hidden so the
+// table reads as a plain sales list when nobody is reconciling the royalty.
+//
+// GWP is deliberately absent: it is a per-item input to Net Sales, not something
+// a reader needs row by row, and it only appears as the Gift-With-Purchase Cost
+// line in the Totals block above the table.
+
+type ToggleableColumn = 'discount' | 'net_sales' | 'royalty'
+
+const TOGGLEABLE_COLUMNS: { key: ToggleableColumn; label: string }[] = [
+  { key: 'discount', label: 'Discount' },
+  { key: 'net_sales', label: 'Net Sales' },
+  { key: 'royalty', label: 'Royalty' },
+]
+
+const ALWAYS_VISIBLE_COLUMN_COUNT = 5
+
 // ── Calculation explainer ──────────────────────────────────────────────────────
 
 const CALCULATION_STEPS = [
@@ -160,6 +180,36 @@ function SummaryLine({
   )
 }
 
+// ── Column show/hide control ───────────────────────────────────────────────────
+
+function ColumnToggles({
+  shown, onToggle,
+}: { shown: Record<ToggleableColumn, boolean>; onToggle: (key: ToggleableColumn) => void }) {
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <span className="text-xs text-ink-3">Columns</span>
+      {TOGGLEABLE_COLUMNS.map(({ key, label }) => {
+        const on = shown[key]
+        return (
+          <button
+            key={key}
+            type="button"
+            onClick={() => onToggle(key)}
+            aria-pressed={on}
+            className={`rounded-lg border px-2.5 py-1 text-xs font-medium transition ${
+              on
+                ? 'border-teal/40 bg-teal/10 text-teal-deep'
+                : 'border-cream-3 bg-white text-ink-3 hover:border-cream-3 hover:text-ink-2'
+            }`}
+          >
+            {label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 // ── Main page ──────────────────────────────────────────────────────────────────
 
 export default function KllRoyaltyReportPage() {
@@ -167,6 +217,17 @@ export default function KllRoyaltyReportPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [report, setReport] = useState<ReportResponse | null>(null)
+  const [shown, setShown] = useState<Record<ToggleableColumn, boolean>>({
+    discount: true, net_sales: true, royalty: true,
+  })
+
+  const toggleColumn = useCallback((key: ToggleableColumn) => {
+    setShown((prev) => ({ ...prev, [key]: !prev[key] }))
+  }, [])
+
+  // The "Total" label cell spans every column to the left of the first visible
+  // total, so it has to follow the toggles rather than sit at a fixed width.
+  const totalLabelSpan = ALWAYS_VISIBLE_COLUMN_COUNT + (shown.discount ? 1 : 0)
 
   const fetchReport = useCallback(async (selectedMonth: string) => {
     setIsLoading(true)
@@ -240,10 +301,10 @@ export default function KllRoyaltyReportPage() {
         </div>
       )}
 
-      {/* Monthly totals breakdown — sums of the columns in the detail table below.
-          Order mirrors the detail table: Gross → Discounts → GWP → Net Sales
-          (subtotal) → Royalty. Net Sales and Royalty are the same totals shown in
-          the cards above and the table footer. */}
+      {/* Monthly totals breakdown, in calculation order: Gross → Discounts → GWP →
+          Net Sales (subtotal) → Royalty. Gift-With-Purchase Cost is the only place
+          GWP is reported — it is not a column in the detail table. Net Sales and
+          Royalty are the same totals shown in the cards above and the table footer. */}
       {report && !error && report.rows.length > 0 && (
         <div className="mb-6 overflow-hidden rounded-2xl border border-cream-3 bg-white shadow-sm">
           <div className="border-b border-cream-2 bg-cream px-5 py-3">
@@ -256,11 +317,11 @@ export default function KllRoyaltyReportPage() {
             <SummaryLine label="Net Sales" value={report.summary.net_sales} subtotal />
             <SummaryLine label="Royalty (10%)" value={report.summary.royalty} total />
           </dl>
-          {/* The per-item $0 floor still applies without shipping in the math: a kit
-              whose approved discount exceeds its gross leaves only the GWP cost, so its
-              net sales go negative. June 2026 has one such item (order 876485), which
-              puts the royalty total $0.13 above a flat 10% of Net Sales — small, but a
-              client checking the arithmetic will land on it. */}
+          {/* The per-item $0 floor applies when a kit's approved discount exceeds its
+              gross, leaving only the GWP cost to push net sales negative. Whether any
+              item hits it varies by month and by what's on the discount allowlist — in
+              months where one does, the royalty total lands a few cents above a flat
+              10% of Net Sales, which is what the caption below prepares the reader for. */}
           <p className="border-t border-cream-2 px-5 py-3 text-xs text-ink-3 leading-relaxed">
             Net Sales is gross sales less approved discounts and gift-with-purchase cost. Royalty is 10% of Net Sales,
             worked out one item at a time and never allowed to fall below zero — so a heavily discounted item earns no
@@ -287,6 +348,11 @@ export default function KllRoyaltyReportPage() {
             <p className="text-sm font-medium text-ink">
               {report.rows.length.toLocaleString()} line item{report.rows.length !== 1 ? 's' : ''}
             </p>
+            <div className="flex flex-wrap items-center gap-3">
+            <ColumnToggles shown={shown} onToggle={toggleColumn} />
+            {/* The export is the client-facing deliverable, so it always carries the
+                full data set — hiding a column on screen must not silently drop it
+                from the CSV someone reconciles against. */}
             <button
               type="button"
               onClick={() => downloadCsv(report.rows, report.month)}
@@ -298,6 +364,7 @@ export default function KllRoyaltyReportPage() {
               </svg>
               Export CSV
             </button>
+            </div>
           </div>
 
           <div className="overflow-hidden rounded-2xl border border-cream-3 bg-white shadow-sm">
@@ -305,14 +372,13 @@ export default function KllRoyaltyReportPage() {
               <table className="w-full table-fixed text-sm">
                 <colgroup>
                   <col className="w-[90px]" />
-                  <col className="w-[260px]" />
+                  <col className="w-[300px]" />
                   <col className="w-[50px]" />
                   <col className="w-[95px]" />
                   <col className="w-[95px]" />
-                  <col className="w-[150px]" />
-                  <col className="w-[85px]" />
-                  <col className="w-[110px]" />
-                  <col className="w-[100px]" />
+                  {shown.discount && <col className="w-[160px]" />}
+                  {shown.net_sales && <col className="w-[110px]" />}
+                  {shown.royalty && <col className="w-[100px]" />}
                 </colgroup>
                 <thead>
                   <tr className="border-b border-cream-2 bg-cream">
@@ -321,10 +387,15 @@ export default function KllRoyaltyReportPage() {
                     <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-ink-3 whitespace-nowrap">Qty</th>
                     <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-ink-3 whitespace-nowrap">Unit Price</th>
                     <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-ink-3 whitespace-nowrap">Gross</th>
-                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-ink-3 whitespace-nowrap">Discount</th>
-                    <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-ink-3 whitespace-nowrap">GWP</th>
-                    <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-ink-3 whitespace-nowrap">Net Sales</th>
-                    <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-ink-3 whitespace-nowrap">Royalty</th>
+                    {shown.discount && (
+                      <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-ink-3 whitespace-nowrap">Discount</th>
+                    )}
+                    {shown.net_sales && (
+                      <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-ink-3 whitespace-nowrap">Net Sales</th>
+                    )}
+                    {shown.royalty && (
+                      <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-ink-3 whitespace-nowrap">Royalty</th>
+                    )}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-cream-2">
@@ -338,23 +409,32 @@ export default function KllRoyaltyReportPage() {
                       <td className="px-3 py-3 text-right font-data text-xs text-ink">{r.qty}</td>
                       <td className="px-3 py-3 text-right font-data text-xs text-ink">{fmtCurrency(r.unit_price)}</td>
                       <td className="px-3 py-3 text-right font-data text-xs text-ink">{fmtCurrency(r.gross_sales)}</td>
-                      <td className="px-3 py-3 text-xs text-ink-2 truncate">
-                        {r.discount_code || '—'}
-                        {r.discount_amount > 0 && (
-                          <span className="block font-data text-ink-3">-{fmtCurrency(r.discount_amount)}</span>
-                        )}
-                      </td>
-                      <td className="px-3 py-3 text-right font-data text-xs text-ink">{fmtCurrency(r.gwp_cost)}</td>
-                      <td className="px-3 py-3 text-right font-data text-xs text-ink">{fmtCurrency(r.net_sales)}</td>
-                      <td className="px-3 py-3 text-right font-data text-xs font-semibold text-teal-deep">{fmtCurrency(r.royalty)}</td>
+                      {shown.discount && (
+                        <td className="px-3 py-3 text-xs text-ink-2 truncate">
+                          {r.discount_code || '—'}
+                          {r.discount_amount > 0 && (
+                            <span className="block font-data text-ink-3">-{fmtCurrency(r.discount_amount)}</span>
+                          )}
+                        </td>
+                      )}
+                      {shown.net_sales && (
+                        <td className="px-3 py-3 text-right font-data text-xs text-ink">{fmtCurrency(r.net_sales)}</td>
+                      )}
+                      {shown.royalty && (
+                        <td className="px-3 py-3 text-right font-data text-xs font-semibold text-teal-deep">{fmtCurrency(r.royalty)}</td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
                 <tfoot>
                   <tr className="border-t-2 border-cream-3 bg-cream">
-                    <td colSpan={7} className="px-3 py-3 text-xs font-semibold text-ink">Total</td>
-                    <td className="px-3 py-3 text-right font-data text-xs font-semibold text-ink">{fmtCurrency(report.summary.net_sales)}</td>
-                    <td className="px-3 py-3 text-right font-data text-xs font-semibold text-teal-deep">{fmtCurrency(report.summary.royalty)}</td>
+                    <td colSpan={totalLabelSpan} className="px-3 py-3 text-xs font-semibold text-ink">Total</td>
+                    {shown.net_sales && (
+                      <td className="px-3 py-3 text-right font-data text-xs font-semibold text-ink">{fmtCurrency(report.summary.net_sales)}</td>
+                    )}
+                    {shown.royalty && (
+                      <td className="px-3 py-3 text-right font-data text-xs font-semibold text-teal-deep">{fmtCurrency(report.summary.royalty)}</td>
+                    )}
                   </tr>
                 </tfoot>
               </table>
