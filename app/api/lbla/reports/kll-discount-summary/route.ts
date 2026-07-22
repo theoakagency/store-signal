@@ -140,29 +140,34 @@ export async function GET(req: NextRequest) {
     }))
     .sort((a, b) => b.total_discounted - a.total_discounted || a.label.localeCompare(b.label))
 
-  // ── Shipping given away ────────────────────────────────────────────────────
-  // The measurable giveaway is an order that WAS quoted a shipping price and then
-  // had it discounted to nothing: the pre-discount price is what was forgone.
+  // ── Free shipping ──────────────────────────────────────────────────────────
+  // Reported as an ORDER COUNT, not a dollar figure. A dollar figure could only
+  // ever describe the orders that were quoted a shipping price and then had it
+  // discounted away — a small minority — because an order that shipped with no
+  // shipping line at all has no pre-discount price for Shopify to record, and so
+  // no amount to sum. Counting orders captures every one of them.
   //
-  // Orders with shipping_charged = 0 shipped without any shipping line at all, so
-  // Shopify records no pre-discount price and there is no figure to count. They
-  // are counted separately (orders_no_shipping_line) rather than silently ignored,
-  // because they are the majority and would otherwise make this total look like
-  // the whole free-shipping story when it is not.
-  let freeShippingGiven = 0
-  let freeShippingOrders = 0
-  let loyaltyCoveredShipping = 0
+  // Three ways an order ends up charged nothing, all counted, and each also
+  // reported on its own so the total can be broken down:
+  //   - no shipping line at all (never quoted a charge)
+  //   - quoted, then discounted to zero
+  //   - zeroed by a LoyaltyLion points redemption
+  let freeShippingOrderCount = 0
   let ordersNoShippingLine = 0
+  let ordersQuotedThenFree = 0
+  let ordersLoyaltyCoveredShipping = 0
+  let loyaltyCoveredShipping = 0
   let customerPaidShipping = 0
 
   for (const o of kllOrders) {
     const charged = o.shipping_charged ?? 0
     const discounted = o.shipping_discounted ?? 0
-    if (charged === 0) { ordersNoShippingLine++; continue }
+    if (charged === 0) { ordersNoShippingLine++; freeShippingOrderCount++; continue }
     const net = Math.max(0, charged - discounted)
     if (net > 0) { customerPaidShipping += net; continue }
-    if (o.shipping_loyalty_covered) loyaltyCoveredShipping += charged
-    else { freeShippingGiven += charged; freeShippingOrders++ }
+    freeShippingOrderCount++
+    if (o.shipping_loyalty_covered) { ordersLoyaltyCoveredShipping++; loyaltyCoveredShipping += charged }
+    else ordersQuotedThenFree++
   }
 
   // ── Actual carrier cost from ShipStation ───────────────────────────────────
@@ -212,9 +217,10 @@ export async function GET(req: NextRequest) {
     },
     summary: {
       kll_orders: kllOrders.length,
-      free_shipping_given: freeShippingGiven,
-      free_shipping_orders: freeShippingOrders,
+      free_shipping_order_count: freeShippingOrderCount,
       orders_no_shipping_line: ordersNoShippingLine,
+      orders_quoted_then_free: ordersQuotedThenFree,
+      orders_loyalty_covered_shipping: ordersLoyaltyCoveredShipping,
       loyalty_covered_shipping: loyaltyCoveredShipping,
       customer_paid_shipping: customerPaidShipping,
       actual_shipping_cost: actualShippingCost,
