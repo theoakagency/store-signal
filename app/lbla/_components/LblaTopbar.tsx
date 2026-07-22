@@ -9,6 +9,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/lbla/content':                      'Content Generator',
   '/lbla/sku-report':                   'SKU Sales Report',
   '/lbla/reports/kll-royalty':          'KLL Royalty Report',
+  '/lbla/reports/kll-discount-summary': 'KLL Discount Summary',
   '/lbla/settings/discount-codes':      'Discount Codes',
 }
 

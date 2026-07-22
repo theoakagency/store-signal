@@ -11,16 +11,13 @@
  * TWO DISCOUNT BASES, DELIBERATELY DIFFERENT. Each row carries both:
  *
  *   discount_amount / net_sales        — ROYALTY BASIS. Only allowlisted codes
- *                                        reduce it. This is what royalty is 10%
- *                                        of, and what the summary block reports.
+ *                                        reduce it. This is what royalty is 10% of.
  *   actual_discount_amount /           — WHAT THE CUSTOMER ACTUALLY PAID. Every
  *   actual_net_sales                     discount counts, allowlisted or not.
- *                                        Reference only; never feeds royalty.
  *
- * The detail table shows the actual figures; the summary block shows the royalty
- * basis. On a row discounted by a non-allowlisted code (e.g. a DT- code) the two
- * disagree — the table shows real money off, the royalty ignores it. That is the
- * intended behaviour, not a reconciliation bug.
+ * The page renders only the actual figures — it is a plain sales record now and
+ * reports no royalty at all. The royalty basis survives here and in the CSV's
+ * "(royalty basis)" columns so the calculation is not lost.
  *
  * SHIPPING IS NOT DEDUCTED. Per a July 2026 client policy change, shipping
  * no longer reduces the royalty base and is not shown anywhere in the report
@@ -31,6 +28,12 @@
  */
 import { NextRequest } from 'next/server'
 import { createSupabaseServiceClient } from '@/lib/supabase'
+// Shared KLL domain rules — see lib/kll.ts. Kept in one place so this report and
+// the KLL discount summary cannot disagree about what counts as a KLL sale, what
+// a giveaway order is, or what a gift-with-purchase costs.
+import {
+  TARGET_SKUS, KIT_SKUS, isEventOrder, gwpCost, getDefaultMonth, monthRange,
+} from '@/lib/kll'
 
 export const maxDuration = 60
 
@@ -38,31 +41,6 @@ const TENANT_ID = '00000000-0000-0000-0000-000000000001'
 const STORE_ID = '00000000-0000-0000-0000-000000000002'
 
 const ROYALTY_RATE = 0.10
-
-// Only these 16 SKUs count toward the KLL royalty
-const TARGET_SKUS = new Set([
-  'MKLBKLLKTGWP', 'KLLMXGPLT', 'KLLFLTSHD', 'KLLRUSBEYEPD3',
-  'KLLBRSH3', 'KLLBRSH2', 'KLLBRSH1', 'KLLEYEPRCWP',
-  'KLLESN6', 'KLLLBA', 'KLLVCG', 'KLLST2NL',
-  'KLLST1LSL', 'KLLPTPRM', 'KLLST3TM', 'MKLBKLLKT',
-])
-
-// Kit SKUs get GWP cost deductions and are ineligible for most discount codes
-const KIT_SKUS = new Set(['MKLBKLLKT', 'MKLBKLLKTGWP'])
-
-// Event/giveaway code. Orders carrying it are comped stock, not sales, so they are
-// excluded from this report entirely — every figure on the page and in the export.
-//
-// This exclusion did NOT exist before (July 2026); the report counted giveaway kits
-// at full gross. Migration 037 recorded that as a known gap and it went unfixed
-// because KLLEVENT is applied as a Shopify *manual* discount, which carries its
-// identifier in discount_applications.title rather than .code. lib/syncShopify.ts
-// now falls back to the title for manual applications, so the code does reach
-// discount_allocations and can finally be matched here.
-//
-// Matched in two places because the same code can surface either way: on the order
-// as a discount_codes entry, or per line as an allocation.
-const EVENT_CODE = 'KLLEVENT'
 
 interface LineItem {
   id: number
@@ -128,21 +106,6 @@ interface DetailRow {
   royalty: number
 }
 
-// ── Date helpers ──────────────────────────────────────────────────────────────
-
-function getDefaultMonth(): string {
-  const now = new Date()
-  const prev = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1))
-  return `${prev.getUTCFullYear()}-${String(prev.getUTCMonth() + 1).padStart(2, '0')}`
-}
-
-function monthRange(month: string): { start: string; end: string } {
-  const [y, m] = month.split('-').map(Number)
-  const start = new Date(Date.UTC(y, m - 1, 1))
-  const end = new Date(Date.UTC(y, m, 1))
-  return { start: start.toISOString(), end: end.toISOString() }
-}
-
 // ── Discount matching ─────────────────────────────────────────────────────────
 
 function codeMatchesRule(code: string, rule: AllowedCodeRule): boolean {
@@ -157,16 +120,6 @@ function codeMatchesRule(code: string, rule: AllowedCodeRule): boolean {
 function codeAllowedForSku(code: string, sku: string, rules: AllowedCodeRule[]): boolean {
   const isKit = KIT_SKUS.has(sku)
   return rules.some((rule) => codeMatchesRule(code, rule) && (!isKit || rule.kit_eligible))
-}
-
-// ── GWP cost ──────────────────────────────────────────────────────────────────
-
-function gwpCost(sku: string, title: string, variantTitle: string | null): number {
-  if (!KIT_SKUS.has(sku)) return 0
-  const combined = `${title} ${variantTitle ?? ''}`.toLowerCase()
-  if (combined.includes('precision lash applicator')) return 6.90
-  if (combined.includes('mixing palette')) return 3.00
-  return 0
 }
 
 // ── Route handler ─────────────────────────────────────────────────────────────
@@ -214,13 +167,7 @@ export async function GET(req: NextRequest) {
     from += PAGE
   }
 
-  // Event/giveaway orders are comped stock, not sales — see EVENT_CODE.
-  const isEventOrder = (o: OrderRow): boolean => {
-    if ((o.discount_codes ?? []).some((c) => c.code?.trim().toUpperCase() === EVENT_CODE)) return true
-    return (o.line_items ?? []).some((li) =>
-      (li.discount_allocations ?? []).some((a) => a.code?.trim().toUpperCase() === EVENT_CODE)
-    )
-  }
+  // Event/giveaway orders are comped stock, not sales — see lib/kll.ts.
 
   // Only orders containing at least one target SKU matter for this report
   const inScopeOrders = orders.filter(
