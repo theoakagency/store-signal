@@ -55,6 +55,18 @@ const TOOLS = [
     cta: 'Open',
   },
   {
+    href: '/lbla/reports/kll-royalty',
+    icon: (
+      <svg className="h-8 w-8 text-teal" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+        <path d="M6 3h9l3 3v15H6z" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M9 12h6M9 16h6M9 8h3" strokeLinecap="round" />
+      </svg>
+    ),
+    title: 'KLL Royalty Report',
+    description: 'Korean Lash Lift items sold by month — gross sales, order count and SKU breakdown.',
+    cta: 'Open',
+  },
+  {
     href: '/lbla/reports/kll-discount-summary',
     icon: (
       <svg className="h-8 w-8 text-teal" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
