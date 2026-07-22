@@ -13,9 +13,15 @@ import Link from 'next/link'
 // shows Net Sales alone rather than both.
 //
 // Per-row `royalty` is likewise returned but not surfaced: royalty is reported
-// as a monthly total only. Nothing is lost by dropping it, because the API's
-// per-row royalty is exactly 10% x max(0, net_sales) — derivable from the
-// Net Sales column that both the table and the CSV still carry.
+// as a monthly total only. It stays derivable from the CSV, which carries the
+// royalty-basis Net Sales column (royalty is exactly 10% x max(0, net_sales)).
+//
+// TWO DISCOUNT BASES. The API returns both and they intentionally differ:
+//   discount_amount / net_sales                — royalty basis, allowlisted codes only
+//   actual_discount_amount / actual_net_sales  — what the customer actually paid
+// The detail table shows the ACTUAL figures (Kate's reference view); the summary
+// cards and Totals block show the ROYALTY BASIS. On rows discounted by a code
+// that isn't on the allowlist the two disagree by design.
 
 interface DetailRow {
   order_number: string
@@ -28,6 +34,8 @@ interface DetailRow {
   discount_amount: number
   gwp_cost: number
   net_sales: number
+  actual_discount_amount: number
+  actual_net_sales: number
 }
 
 interface ReportResponse {
@@ -38,6 +46,8 @@ interface ReportResponse {
     gwp_cost: number
     net_sales: number
     royalty: number
+    actual_discounts: number
+    actual_net_sales: number
   }
   rows: DetailRow[]
 }
@@ -61,21 +71,28 @@ function fmtCurrency(n: number): string {
 }
 
 function downloadCsv(rows: DetailRow[], month: string) {
-  // Mirrors the report's own definition: royalty is a monthly figure, not a
-  // per-line one, so it is not exported per row. This is not the same as letting
-  // the column toggles reshape the file — those are transient view state and the
-  // export deliberately ignores them. GWP Cost stays for exactly that reason: it
-  // is still part of the per-row calculation, just not shown on screen.
+  // The export carries BOTH discount bases, explicitly labelled, because they
+  // answer different questions and neither can be derived from the other:
+  // the actual columns are what the customer paid, the royalty-basis columns are
+  // what the 10% is charged on. Exporting only the actual figures would make the
+  // royalty impossible to reconcile from the file; exporting only the royalty
+  // basis would hide the real money taken off DT-coded orders.
+  //
+  // Royalty itself stays out per the earlier decision — it remains recoverable as
+  // 10% x max(0, Net Sales (royalty basis)). GWP Cost stays because it is a
+  // per-row input to that royalty-basis figure.
   const headers = [
     'Order Number', 'SKU', 'Product Title', 'Qty', 'Unit Price', 'Gross Sales',
-    'Discount Code', 'Discount Amount', 'GWP Cost', 'Net Sales',
+    'Discount Code', 'Discount Amount (actual)', 'Net Sales (actual)',
+    'Discount Amount (royalty basis)', 'GWP Cost', 'Net Sales (royalty basis)',
   ]
   const csvRows = [
     headers,
     ...rows.map((r) => [
       r.order_number, r.sku, r.product_title, String(r.qty),
       r.unit_price.toFixed(2), r.gross_sales.toFixed(2),
-      r.discount_code, r.discount_amount.toFixed(2), r.gwp_cost.toFixed(2),
+      r.discount_code, r.actual_discount_amount.toFixed(2), r.actual_net_sales.toFixed(2),
+      r.discount_amount.toFixed(2), r.gwp_cost.toFixed(2),
       r.net_sales.toFixed(2),
     ]),
   ]
@@ -313,8 +330,12 @@ export default function KllRoyaltyReportPage() {
       {/* Monthly totals breakdown, in calculation order: Gross → Discounts → GWP →
           Net Sales (subtotal) → Royalty. This block and the cards above it are the
           only place GWP and Royalty are reported — neither is a column in the detail
-          table. Net Sales is the one figure carried in both, and the table footer
-          repeats that total. */}
+          table.
+
+          These are the ROYALTY-BASIS figures: Discounts counts allowlisted codes
+          only. The detail table below shows what the customer actually paid, so its
+          Discount and Net Sales columns will not tie back to this block in any month
+          containing non-allowlisted codes. That divergence is intended. */}
       {report && !error && report.rows.length > 0 && (
         <div className="mb-6 overflow-hidden rounded-2xl border border-cream-3 bg-white shadow-sm">
           <div className="border-b border-cream-2 bg-cream px-5 py-3">
@@ -377,6 +398,13 @@ export default function KllRoyaltyReportPage() {
             </div>
           </div>
 
+          {/* Without this, the table looks like it contradicts the Totals block. */}
+          <p className="rounded-xl border border-cream-3 bg-cream/50 px-4 py-2.5 text-xs text-ink-3 leading-relaxed">
+            Discount and Net Sales below show what the customer <em>actually</em>{' '}paid — every discount code counts,
+            including codes that don&apos;t reduce the royalty. The royalty in the Totals block above is worked out
+            separately, from approved codes only, so these figures are not meant to add up to it.
+          </p>
+
           <div className="overflow-hidden rounded-2xl border border-cream-3 bg-white shadow-sm">
             <div className="overflow-x-auto">
               <table className="w-full table-fixed text-sm">
@@ -418,13 +446,13 @@ export default function KllRoyaltyReportPage() {
                       {shown.discount && (
                         <td className="px-3 py-3 text-xs text-ink-2 truncate">
                           {r.discount_code || '—'}
-                          {r.discount_amount > 0 && (
-                            <span className="block font-data text-ink-3">-{fmtCurrency(r.discount_amount)}</span>
+                          {r.actual_discount_amount > 0 && (
+                            <span className="block font-data text-ink-3">-{fmtCurrency(r.actual_discount_amount)}</span>
                           )}
                         </td>
                       )}
                       {shown.net_sales && (
-                        <td className="px-3 py-3 text-right font-data text-xs text-ink">{fmtCurrency(r.net_sales)}</td>
+                        <td className="px-3 py-3 text-right font-data text-xs text-ink">{fmtCurrency(r.actual_net_sales)}</td>
                       )}
                     </tr>
                   ))}
@@ -432,8 +460,12 @@ export default function KllRoyaltyReportPage() {
                 <tfoot>
                   <tr className="border-t-2 border-cream-3 bg-cream">
                     <td colSpan={totalLabelSpan} className="px-3 py-3 text-xs font-semibold text-ink">Total</td>
+                    {/* Sums the column above it, so this is the ACTUAL net sales
+                        total — deliberately not the royalty-basis Net Sales in the
+                        Totals block. A footer that didn't add up to its own column
+                        would read as an arithmetic error. */}
                     {shown.net_sales && (
-                      <td className="px-3 py-3 text-right font-data text-xs font-semibold text-ink">{fmtCurrency(report.summary.net_sales)}</td>
+                      <td className="px-3 py-3 text-right font-data text-xs font-semibold text-ink">{fmtCurrency(report.summary.actual_net_sales)}</td>
                     )}
                   </tr>
                 </tfoot>

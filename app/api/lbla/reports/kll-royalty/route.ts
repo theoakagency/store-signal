@@ -8,6 +8,20 @@
  * code is on the allowed_discount_codes list and GWP cost deducted for
  * kit SKUs based on title/variant text.
  *
+ * TWO DISCOUNT BASES, DELIBERATELY DIFFERENT. Each row carries both:
+ *
+ *   discount_amount / net_sales        — ROYALTY BASIS. Only allowlisted codes
+ *                                        reduce it. This is what royalty is 10%
+ *                                        of, and what the summary block reports.
+ *   actual_discount_amount /           — WHAT THE CUSTOMER ACTUALLY PAID. Every
+ *   actual_net_sales                     discount counts, allowlisted or not.
+ *                                        Reference only; never feeds royalty.
+ *
+ * The detail table shows the actual figures; the summary block shows the royalty
+ * basis. On a row discounted by a non-allowlisted code (e.g. a DT- code) the two
+ * disagree — the table shows real money off, the royalty ignores it. That is the
+ * intended behaviour, not a reconciliation bug.
+ *
  * SHIPPING IS NOT DEDUCTED. Per a July 2026 client policy change, shipping
  * no longer reduces the royalty base and is not shown anywhere in the report
  * UI. The customer-paid shipping figures are still computed and returned
@@ -88,9 +102,13 @@ interface DetailRow {
   unit_price: number
   gross_sales: number
   discount_code: string
+  // Royalty basis — allowlisted codes only.
   discount_amount: number
   gwp_cost: number
   net_sales: number
+  // What the customer actually paid — every discount, reference only.
+  actual_discount_amount: number
+  actual_net_sales: number
   item_shipping_cost: number
   final_net: number
   royalty: number
@@ -249,6 +267,23 @@ export async function GET(req: NextRequest) {
         }
       }
 
+      // The real money taken off this line, whatever the code was — allowlisted,
+      // DT-, LoyaltyLion, or an automatic discount with no code at all. Reference
+      // figure for the detail table; it never touches the royalty base below.
+      //
+      // Note this canNOT be read from li.total_discount, despite the name: Shopify
+      // reports "0.00" there for order-level code discounts, which is how nearly
+      // every discount on this store is applied (verified across June 2026 — all
+      // 337 discounted target-SKU lines had total_discount = "0.00" and carried
+      // the real amount in discount_allocations). The two fields are disjoint in
+      // Shopify's model — total_discount is a line-level markdown, allocations are
+      // an order-level application's share — so they are summed, not chosen between.
+      let actualDiscountAmount = parseFloat(li.total_discount) || 0
+      for (const alloc of li.discount_allocations ?? []) {
+        actualDiscountAmount += parseFloat(alloc.amount) || 0
+      }
+      const actualNetSales = grossSales - actualDiscountAmount
+
       const gwp = gwpCost(sku, li.title, li.variant_title)
 
       const netSales = grossSales - discountAmount - gwp
@@ -270,6 +305,8 @@ export async function GET(req: NextRequest) {
         discount_amount: discountAmount,
         gwp_cost: gwp,
         net_sales: netSales,
+        actual_discount_amount: actualDiscountAmount,
+        actual_net_sales: actualNetSales,
         item_shipping_cost: itemShippingCost,
         final_net: finalNet,
         royalty,
@@ -280,9 +317,15 @@ export async function GET(req: NextRequest) {
   // Stage totals for the monthly summary breakdown — pure column sums of the
   // detail rows (no new calculation). gross - discounts - gwp_cost === net_sales
   // by construction (see per-row net_sales above), and royalty is 10% of that.
-  // net_sales and royalty are the same figures the summary cards and table
-  // footer display. `shipping` is retained for a future reinstatement of the
-  // deduction (see file header) but is not rendered anywhere.
+  // These are the ROYALTY-BASIS figures the summary cards and Totals block show.
+  //
+  // actual_discounts / actual_net_sales are the customer-paid sums, provided so
+  // the detail table's footer can total its own columns. They are intentionally
+  // NOT part of the royalty chain and will be larger than the royalty-basis
+  // discounts in any month with non-allowlisted codes.
+  //
+  // `shipping` is retained for a future reinstatement of the deduction (see file
+  // header) but is not rendered anywhere.
   const summary = {
     gross_sales: detailRows.reduce((sum, r) => sum + r.gross_sales, 0),
     discounts: detailRows.reduce((sum, r) => sum + r.discount_amount, 0),
@@ -290,6 +333,8 @@ export async function GET(req: NextRequest) {
     shipping: detailRows.reduce((sum, r) => sum + r.item_shipping_cost, 0),
     net_sales: detailRows.reduce((sum, r) => sum + r.net_sales, 0),
     royalty: detailRows.reduce((sum, r) => sum + r.royalty, 0),
+    actual_discounts: detailRows.reduce((sum, r) => sum + r.actual_discount_amount, 0),
+    actual_net_sales: detailRows.reduce((sum, r) => sum + r.actual_net_sales, 0),
   }
 
   return Response.json({ month, summary, rows: detailRows })
