@@ -10,6 +10,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/lbla/sku-report':                   'SKU Sales Report',
   '/lbla/reports/kll-royalty':          'KLL Royalty Report',
   '/lbla/reports/kll-discount-summary': 'KLL Discount Summary',
+  '/lbla/reports/kll-wholesale':        'KLL Wholesale Report',
   '/lbla/settings/discount-codes':      'Discount Codes',
 }
 
