@@ -22,10 +22,9 @@ interface ReportResponse {
   }
   summary: {
     kll_orders: number
-    free_shipping_order_count: number
+    free_shipping_given: number
+    free_shipping_orders: number
     orders_no_shipping_line: number
-    orders_quoted_then_free: number
-    orders_loyalty_covered_shipping: number
     loyalty_covered_shipping: number
     customer_paid_shipping: number
     actual_shipping_cost: number
@@ -265,13 +264,10 @@ export default function KllDiscountSummaryPage() {
               </p>
             </div>
             <dl className="divide-y divide-cream-2">
-              {/* A count rather than a dollar amount: an order that shipped with no
-                  shipping line has no pre-discount price recorded, so it can be
-                  counted but never summed. */}
               <SummaryFigure
-                label="Orders with Free Shipping"
-                value={`${report.summary.free_shipping_order_count.toLocaleString()} of ${report.summary.kll_orders.toLocaleString()}`}
-                note={`KLL orders charged nothing for shipping — ${report.summary.orders_no_shipping_line.toLocaleString()} never quoted a shipping charge, ${report.summary.orders_quoted_then_free.toLocaleString()} were quoted one and had it discounted away${report.summary.orders_loyalty_covered_shipping > 0 ? `, and ${report.summary.orders_loyalty_covered_shipping.toLocaleString()} were covered by Loyalty Lion points` : ''}.`}
+                label="Free Shipping Given Away"
+                value={fmtCurrency(report.summary.free_shipping_given)}
+                note={`Shipping that was quoted and then discounted to nothing, across ${report.summary.free_shipping_orders.toLocaleString()} orders. A further ${report.summary.orders_no_shipping_line.toLocaleString()} KLL orders shipped with no shipping charge recorded at all, so they carry no dollar figure to count.`}
               />
               <SummaryFigure
                 label="Actual Shipping Cost Paid"
@@ -284,12 +280,15 @@ export default function KllDiscountSummaryPage() {
                 note="Cost of the free gifts bundled with Korean Lash Lift kits sold this month."
               />
             </dl>
-            {/* The old caption here said points-covered shipping was excluded from
-                the figure above. That was true of the dollar giveaway total, but the
-                row is now a count of orders charged nothing — and a points-covered
-                order was charged nothing — so those orders are counted, and the row's
-                own note breaks them out. Keeping the caption would have contradicted
-                the number directly above it. */}
+            {report.summary.loyalty_covered_shipping > 0 && (
+              /* Points are the customer's own currency, so this is not a giveaway —
+                 the royalty report treats it as customer-paid too. Surfaced so the
+                 free-shipping figure above cannot be read as the whole picture. */
+              <p className="border-t border-cream-2 px-5 py-3 text-xs text-ink-3 leading-relaxed">
+                A further {fmtCurrency(report.summary.loyalty_covered_shipping)} of shipping was redeemed with Loyalty Lion
+                points. That counts as paid by the customer rather than given away, so it is not in the figure above.
+              </p>
+            )}
           </div>
         </>
       )}
