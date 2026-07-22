@@ -50,6 +50,20 @@ const TARGET_SKUS = new Set([
 // Kit SKUs get GWP cost deductions and are ineligible for most discount codes
 const KIT_SKUS = new Set(['MKLBKLLKT', 'MKLBKLLKTGWP'])
 
+// Event/giveaway code. Orders carrying it are comped stock, not sales, so they are
+// excluded from this report entirely — every figure on the page and in the export.
+//
+// This exclusion did NOT exist before (July 2026); the report counted giveaway kits
+// at full gross. Migration 037 recorded that as a known gap and it went unfixed
+// because KLLEVENT is applied as a Shopify *manual* discount, which carries its
+// identifier in discount_applications.title rather than .code. lib/syncShopify.ts
+// now falls back to the title for manual applications, so the code does reach
+// discount_allocations and can finally be matched here.
+//
+// Matched in two places because the same code can surface either way: on the order
+// as a discount_codes entry, or per line as an allocation.
+const EVENT_CODE = 'KLLEVENT'
+
 interface LineItem {
   id: number
   title: string
@@ -200,9 +214,19 @@ export async function GET(req: NextRequest) {
     from += PAGE
   }
 
+  // Event/giveaway orders are comped stock, not sales — see EVENT_CODE.
+  const isEventOrder = (o: OrderRow): boolean => {
+    if ((o.discount_codes ?? []).some((c) => c.code?.trim().toUpperCase() === EVENT_CODE)) return true
+    return (o.line_items ?? []).some((li) =>
+      (li.discount_allocations ?? []).some((a) => a.code?.trim().toUpperCase() === EVENT_CODE)
+    )
+  }
+
   // Only orders containing at least one target SKU matter for this report
-  const inScopeOrders = orders.filter((o) =>
-    (o.line_items ?? []).some((li) => li.sku && TARGET_SKUS.has(li.sku.trim().toUpperCase()))
+  const inScopeOrders = orders.filter(
+    (o) =>
+      (o.line_items ?? []).some((li) => li.sku && TARGET_SKUS.has(li.sku.trim().toUpperCase())) &&
+      !isEventOrder(o)
   )
 
   // Shipping basis (RETAINED BUT UNUSED — see the file header). Shipping is no
@@ -335,7 +359,25 @@ export async function GET(req: NextRequest) {
     royalty: detailRows.reduce((sum, r) => sum + r.royalty, 0),
     actual_discounts: detailRows.reduce((sum, r) => sum + r.actual_discount_amount, 0),
     actual_net_sales: detailRows.reduce((sum, r) => sum + r.actual_net_sales, 0),
+    // Distinct orders containing at least one target SKU. inScopeOrders is already
+    // exactly that set (and already excludes event orders), so its length is the
+    // count — no second pass and no risk of it drifting from the rows below.
+    total_orders: inScopeOrders.length,
   }
 
-  return Response.json({ month, summary, rows: detailRows })
+  // Units sold per target SKU this month, highest first. Titles vary slightly
+  // between line items for the same SKU (stray double spaces, renames), so the
+  // first one seen wins rather than the last — keeps the label stable run to run
+  // given the query's deterministic ordering.
+  const skuTotals = new Map<string, { sku: string; product_title: string; units_sold: number }>()
+  for (const r of detailRows) {
+    const entry = skuTotals.get(r.sku)
+    if (entry) entry.units_sold += r.qty
+    else skuTotals.set(r.sku, { sku: r.sku, product_title: r.product_title, units_sold: r.qty })
+  }
+  const skus = [...skuTotals.values()].sort(
+    (a, b) => b.units_sold - a.units_sold || a.sku.localeCompare(b.sku)
+  )
+
+  return Response.json({ month, summary, skus, rows: detailRows })
 }
