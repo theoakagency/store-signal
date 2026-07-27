@@ -169,11 +169,19 @@ export async function GET(req: NextRequest) {
   let loyaltyCoveredShipping = 0
   let ordersNoShippingLine = 0
   let customerPaidShipping = 0
+  // shopify_order_ids of the no-charge orders (threshold free shipping). The
+  // customer paid nothing and Shopify recorded no charge, so their real cost only
+  // exists on the ShipStation side — summed for exactly this set below.
+  const noChargeOrderIds = new Set<number>()
 
   for (const o of kllOrders) {
     const charged = o.shipping_charged ?? 0
     const discounted = o.shipping_discounted ?? 0
-    if (charged === 0) { ordersNoShippingLine++; continue }
+    if (charged === 0) {
+      ordersNoShippingLine++
+      if (o.shopify_order_id) noChargeOrderIds.add(o.shopify_order_id)
+      continue
+    }
     const net = Math.max(0, charged - discounted)
     if (net > 0) { customerPaidShipping += net; continue }
     if (o.shipping_loyalty_covered) loyaltyCoveredShipping += charged
@@ -189,6 +197,10 @@ export async function GET(req: NextRequest) {
   let labelsCounted = 0
   let voidedLabelsExcluded = 0
   const ordersWithLabel = new Set<number>()
+  // Same join, restricted to the no-charge subset: what LashBox actually paid the
+  // carrier to ship the orders it charged the customer nothing for.
+  let noChargeShippingCost = 0
+  const noChargeOrdersWithLabel = new Set<number>()
 
   const CHUNK = 300 // keep the .in() list well inside PostgREST's URL length limit
   for (let i = 0; i < orderIds.length; i += CHUNK) {
@@ -201,9 +213,16 @@ export async function GET(req: NextRequest) {
     if (error) return Response.json({ error: `ShipStation query failed: ${error.message}` }, { status: 500 })
     for (const s of data ?? []) {
       if (String(s.status ?? '').toLowerCase() === 'voided') { voidedLabelsExcluded++; continue }
-      actualShippingCost += parseFloat(s.shipment_cost) || 0
+      const cost = parseFloat(s.shipment_cost) || 0
+      actualShippingCost += cost
       labelsCounted++
-      if (s.shopify_order_id) ordersWithLabel.add(s.shopify_order_id)
+      if (s.shopify_order_id) {
+        ordersWithLabel.add(s.shopify_order_id)
+        if (noChargeOrderIds.has(s.shopify_order_id)) {
+          noChargeShippingCost += cost
+          noChargeOrdersWithLabel.add(s.shopify_order_id)
+        }
+      }
     }
   }
 
@@ -232,6 +251,10 @@ export async function GET(req: NextRequest) {
       free_shipping_given: freeShippingGiven,
       free_shipping_orders: freeShippingOrders,
       orders_no_shipping_line: ordersNoShippingLine,
+      // Real carrier cost (ShipStation) for the no-charge orders specifically —
+      // what LashBox paid to ship them despite charging the customer nothing.
+      no_charge_shipping_cost: noChargeShippingCost,
+      no_charge_orders_with_label: noChargeOrdersWithLabel.size,
       loyalty_covered_shipping: loyaltyCoveredShipping,
       customer_paid_shipping: customerPaidShipping,
       actual_shipping_cost: actualShippingCost,
