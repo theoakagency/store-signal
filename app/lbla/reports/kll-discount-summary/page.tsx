@@ -25,6 +25,8 @@ interface ReportResponse {
     free_shipping_given: number
     free_shipping_orders: number
     orders_no_shipping_line: number
+    no_charge_shipping_cost: number
+    no_charge_orders_with_label: number
     loyalty_covered_shipping: number
     customer_paid_shipping: number
     actual_shipping_cost: number
@@ -96,15 +98,23 @@ function TableSkeleton() {
 // ── Summary figure ────────────────────────────────────────────────────────────
 
 function SummaryFigure({
-  label, value, note,
-}: { label: string; value: string; note?: string }) {
+  label, value, note, subValue, subLabel,
+}: { label: string; value: string; note?: string; subValue?: string; subLabel?: string }) {
   return (
     <div className="flex items-start justify-between gap-4 px-5 py-4">
       <div className="min-w-0">
         <p className="text-sm font-medium text-ink">{label}</p>
         {note && <p className="mt-0.5 text-xs text-ink-3 leading-relaxed">{note}</p>}
       </div>
-      <p className="font-data text-base font-semibold text-ink whitespace-nowrap">{value}</p>
+      <div className="shrink-0 text-right">
+        <p className="font-data text-base font-semibold text-ink whitespace-nowrap">{value}</p>
+        {subValue && (
+          <>
+            <p className="mt-1 font-data text-sm font-semibold text-teal-deep whitespace-nowrap">{subValue}</p>
+            {subLabel && <p className="text-[11px] leading-tight text-ink-3">{subLabel}</p>}
+          </>
+        )}
+      </div>
     </div>
   )
 }
@@ -264,12 +274,14 @@ export default function KllDiscountSummaryPage() {
               </p>
             </div>
             <dl className="divide-y divide-cream-2">
-              {/* A count, not a dollar figure: these orders were never quoted a
-                  shipping charge, so there is no amount to total. */}
+              {/* Count is the headline; the dollar figure is the carrier cost we
+                  paid to ship these, since the customer was charged nothing. */}
               <SummaryFigure
                 label="Orders with No Shipping Charge Recorded"
                 value={report.summary.orders_no_shipping_line.toLocaleString()}
-                note={`KLL orders that were never charged for shipping — most likely qualified automatically for the $150+ free-shipping threshold at checkout. No shipping was quoted, so there is no dollar amount to count.`}
+                subValue={fmtCurrency(report.summary.no_charge_shipping_cost)}
+                subLabel="Actual Shipping Cost for These Orders"
+                note={`KLL orders that were never charged for shipping — most likely qualified automatically for the $150+ free-shipping threshold at checkout. The customer paid nothing, so the dollar figure is the real carrier cost from ShipStation to ship them (${report.summary.no_charge_orders_with_label.toLocaleString()} of ${report.summary.orders_no_shipping_line.toLocaleString()} had a matched label), not a customer-charged amount.`}
               />
               <SummaryFigure
                 label="Free Shipping Given Away (Discount Code)"
