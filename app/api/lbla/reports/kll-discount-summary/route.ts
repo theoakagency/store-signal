@@ -26,6 +26,10 @@ interface LineItem {
   title: string
   variant_title: string | null
   quantity: number
+  // Units refunded (Shopify refund_line_items, via lib/syncShopify.ts). A discount
+  // is only "given away" on the units actually kept, so allocations are scaled by
+  // the kept fraction below. Null/absent on pre-field orders → treated as 0.
+  refunded_quantity: number | null
   price: string
   // The real per-line discount lives here, resolved to its originating code by
   // lib/syncShopify.ts. line_items[].total_discount is "0.00" for every
@@ -76,7 +80,10 @@ export async function GET(req: NextRequest) {
         'shopify_order_id, order_number, line_items, discount_codes, shipping_charged, shipping_discounted, shipping_loyalty_covered'
       )
       .eq('store_id', STORE_ID)
-      .eq('financial_status', 'paid')
+      // Include partially-refunded orders (kept units are still real sales, netted
+      // per line below); exclude fully 'refunded' orders. Matches the royalty
+      // report and Shopify's "Sales by product".
+      .in('financial_status', ['paid', 'partially_refunded'])
       .neq('test', true)
       .is('cancelled_at', null)
       .gte('processed_at', start)
@@ -112,8 +119,16 @@ export async function GET(req: NextRequest) {
       const sku = li.sku?.trim().toUpperCase()
       if (!sku || !TARGET_SKUS.has(sku)) continue
 
+      // Only the discount on kept units counts as given away. keptFraction is 1
+      // for every unrefunded line; a fully refunded line (fraction 0) contributes
+      // nothing.
+      const originalQty = li.quantity
+      const keptQty = originalQty - (li.refunded_quantity ?? 0)
+      if (keptQty <= 0) continue
+      const keptFraction = originalQty > 0 ? keptQty / originalQty : 0
+
       for (const alloc of li.discount_allocations ?? []) {
-        const amount = parseFloat(alloc.amount) || 0
+        const amount = (parseFloat(alloc.amount) || 0) * keptFraction
         if (amount === 0) continue
         const raw = alloc.code?.trim()
         // Automatic/script discounts carry no code at all. They are money off with
@@ -199,6 +214,8 @@ export async function GET(req: NextRequest) {
     for (const li of o.line_items ?? []) {
       const sku = li.sku?.trim().toUpperCase()
       if (!sku || !TARGET_SKUS.has(sku)) continue
+      // No gift cost for a fully-refunded kit line.
+      if (li.quantity - (li.refunded_quantity ?? 0) <= 0) continue
       totalGwpCost += gwpCost(sku, li.title, li.variant_title)
     }
   }
