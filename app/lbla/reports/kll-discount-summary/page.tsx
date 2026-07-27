@@ -264,10 +264,17 @@ export default function KllDiscountSummaryPage() {
               </p>
             </div>
             <dl className="divide-y divide-cream-2">
+              {/* A count, not a dollar figure: these orders were never quoted a
+                  shipping charge, so there is no amount to total. */}
               <SummaryFigure
-                label="Free Shipping Given Away"
+                label="Orders with No Shipping Charge Recorded"
+                value={report.summary.orders_no_shipping_line.toLocaleString()}
+                note={`KLL orders that were never charged for shipping — most likely qualified automatically for the $150+ free-shipping threshold at checkout. No shipping was quoted, so there is no dollar amount to count.`}
+              />
+              <SummaryFigure
+                label="Free Shipping Given Away (Discount Code)"
                 value={fmtCurrency(report.summary.free_shipping_given)}
-                note={`Shipping that was quoted and then discounted to nothing, across ${report.summary.free_shipping_orders.toLocaleString()} orders. A further ${report.summary.orders_no_shipping_line.toLocaleString()} KLL orders shipped with no shipping charge recorded at all, so they carry no dollar figure to count.`}
+                note={`Shipping that was quoted a real cost and then reduced to $0 by a discount code (e.g. Loyalty Lion top-tier free shipping), across ${report.summary.free_shipping_orders.toLocaleString()} orders.`}
               />
               <SummaryFigure
                 label="Actual Shipping Cost Paid"
