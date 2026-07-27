@@ -47,6 +47,11 @@ interface LineItem {
   title: string
   variant_title: string | null
   quantity: number
+  // Units of this line refunded, from Shopify's refund_line_items (lib/syncShopify.ts).
+  // Net units sold = quantity − refunded_quantity. Absent/null on orders synced
+  // before the field existed, treated as 0 — correct for those, since only an
+  // actually-refunded line would be non-zero. See the partial-refund handling below.
+  refunded_quantity: number | null
   price: string
   total_discount: string
   // Per-line discount amounts resolved to their originating code by the Shopify
@@ -144,7 +149,12 @@ export async function GET(req: NextRequest) {
         'id, shopify_order_id, order_number, line_items, line_items_count, discount_codes, shipping_charged, shipping_discounted, shipping_loyalty_covered'
       )
       .eq('store_id', STORE_ID)
-      .eq('financial_status', 'paid')
+      // 'paid' plus 'partially_refunded': the latter is a real sale where SOME
+      // units came back. Shopify's "Sales by product" counts the kept units of
+      // such orders, so we must too (netted per line below) rather than dropping
+      // the whole order. Fully 'refunded' orders are still excluded — they net to
+      // zero and Shopify shows nothing for them either.
+      .in('financial_status', ['paid', 'partially_refunded'])
       .neq('test', true)
       .is('cancelled_at', null)
       .gte('processed_at', start)
@@ -221,8 +231,20 @@ export async function GET(req: NextRequest) {
       const sku = li.sku?.trim().toUpperCase()
       if (!sku || !TARGET_SKUS.has(sku)) continue
 
+      // Net units after refunds. A line refunded in full drops out entirely
+      // (Shopify shows nothing for it); a line partially refunded keeps the
+      // remainder. For an unrefunded line (the overwhelming majority) this is
+      // just li.quantity. June 2026's one partially-refunded KLL order refunded a
+      // NON-KLL line, so both its KLL lines keep full quantity here.
+      const originalQty = li.quantity
+      const qty = originalQty - (li.refunded_quantity ?? 0)
+      if (qty <= 0) continue
+      // Discounts are recorded against the whole original line, so a partially
+      // refunded line keeps only its proportional share. keptFraction is 1 for
+      // every unrefunded line, so this changes nothing in the common case.
+      const keptFraction = originalQty > 0 ? qty / originalQty : 0
+
       const unitPrice = parseFloat(li.price) || 0
-      const qty = li.quantity
       const grossSales = unitPrice * qty
 
       // Sum only the per-line discount attributable to allowlisted codes. Each
@@ -234,7 +256,7 @@ export async function GET(req: NextRequest) {
         const code = alloc.code?.trim().toUpperCase()
         if (!code) continue
         if (codeAllowedForSku(code, sku, rules)) {
-          discountAmount += parseFloat(alloc.amount) || 0
+          discountAmount += (parseFloat(alloc.amount) || 0) * keptFraction
         }
       }
 
@@ -253,6 +275,7 @@ export async function GET(req: NextRequest) {
       for (const alloc of li.discount_allocations ?? []) {
         actualDiscountAmount += parseFloat(alloc.amount) || 0
       }
+      actualDiscountAmount *= keptFraction
       const actualNetSales = grossSales - actualDiscountAmount
 
       const gwp = gwpCost(sku, li.title, li.variant_title)

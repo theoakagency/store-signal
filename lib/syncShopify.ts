@@ -56,6 +56,14 @@ export interface ShopifyOrder {
   referring_site: string | null
   landing_site: string | null
   note_attributes: Array<{ name: string; value: string }> | null
+  // Refund history. Each refund lists the specific line items and quantities sent
+  // back — the ONLY accurate source for which units of a partially-refunded order
+  // were kept vs returned. `total_refunded` above is a dollar delta that also
+  // absorbs order edits, so it cannot tell you WHICH line was refunded; these can.
+  // Present on every order payload (empty array when nothing was refunded).
+  refunds: Array<{
+    refund_line_items: Array<{ line_item_id: number; quantity: number }> | null
+  }> | null
 }
 
 export interface ShopifyLineItem {
@@ -242,6 +250,15 @@ export function mapOrder(order: ShopifyOrder) {
     order.current_total_price != null ? parseFloat(order.current_total_price) : totalPrice
   const totalRefunded = Math.max(0, totalPrice - currentTotal)
 
+  // Refunded units per line item id, summed across every refund on the order (a
+  // line can be refunded across more than one refund event).
+  const refundedByLineItem = new Map<number, number>()
+  for (const refund of order.refunds ?? []) {
+    for (const rli of refund.refund_line_items ?? []) {
+      refundedByLineItem.set(rli.line_item_id, (refundedByLineItem.get(rli.line_item_id) ?? 0) + rli.quantity)
+    }
+  }
+
   return {
     tenant_id: TENANT_ID,
     store_id: STORE_ID,
@@ -288,6 +305,11 @@ export function mapOrder(order: ShopifyOrder) {
       title: li.title,
       variant_title: li.variant_title ?? null,
       quantity: li.quantity,
+      // Units of this line sent back across all refunds. Kept quantity =
+      // quantity − refunded_quantity. Reports that count net units (e.g. the KLL
+      // reports matching Shopify's "Sales by product") subtract this; 0 when the
+      // line was never refunded.
+      refunded_quantity: refundedByLineItem.get(li.id) ?? 0,
       price: li.price,
       total_discount: li.total_discount,
       // Resolve each per-line discount allocation to the code that produced it.
