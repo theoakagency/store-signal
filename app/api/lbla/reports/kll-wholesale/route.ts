@@ -37,6 +37,9 @@ interface StoredRow {
   // — which is why June/July must be re-uploaded for the split to take effect.
   discount_code: string | null
   discount_amount: number | null
+  // Full order line value + line count (migration 042); NULL until re-uploaded.
+  order_line_total: number | null
+  order_line_count: number | null
   source_filename: string | null
   uploaded_at: string
 }
@@ -82,7 +85,7 @@ export async function GET(req: NextRequest) {
   while (true) {
     const { data, error } = await service
       .from('wholesale_kll_orders')
-      .select('month, order_number, sku, product_title, quantity, unit_price, gross, discount_code, discount_amount, source_filename, uploaded_at')
+      .select('month, order_number, sku, product_title, quantity, unit_price, gross, discount_code, discount_amount, order_line_total, order_line_count, source_filename, uploaded_at')
       .eq('tenant_id', TENANT_ID)
       .eq('month', month)
       .order('order_number', { ascending: true })
@@ -158,13 +161,23 @@ export async function GET(req: NextRequest) {
     order_number: string
     discount_code: string | null
     discount_amount: number | null
+    order_line_total: number | null
+    order_line_count: number | null
     gross: number
     lines: ReturnType<typeof toDetail>[]
   }>()
   for (const r of flaggedStored) {
     let g = flaggedMap.get(r.order_number)
     if (!g) {
-      g = { order_number: r.order_number, discount_code: r.discount_code, discount_amount: r.discount_amount != null ? Number(r.discount_amount) : null, gross: 0, lines: [] }
+      g = {
+        order_number: r.order_number,
+        discount_code: r.discount_code,
+        discount_amount: r.discount_amount != null ? Number(r.discount_amount) : null,
+        order_line_total: r.order_line_total != null ? Number(r.order_line_total) : null,
+        order_line_count: r.order_line_count != null ? Number(r.order_line_count) : null,
+        gross: 0,
+        lines: [],
+      }
       flaggedMap.set(r.order_number, g)
     }
     const line = toDetail(r)
@@ -174,7 +187,7 @@ export async function GET(req: NextRequest) {
 
   const flaggedGroups = [...flaggedMap.values()].map((g) => {
     const d = decisions.get(g.order_number) ?? null
-    const { contribution, resolved, counts_as_order } = orderContribution(g.gross, g.discount_amount, d)
+    const { contribution, resolved, counts_as_order } = orderContribution(g.gross, g.order_line_total, g.discount_amount, d)
     return {
       ...g,
       decision: d, // null when pending
