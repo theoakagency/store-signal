@@ -21,10 +21,20 @@ interface SkuTotal {
   units_sold: number
 }
 
+interface FlaggedGroup {
+  order_number: string
+  discount_code: string | null
+  discount_amount: number | null
+  gross: number
+  lines: DetailRow[]
+}
+
 interface ReportResponse {
   month: string
   months: string[]
+  // Clean-only headline numbers.
   summary: { gross_sales: number; total_orders: number; line_items: number }
+  flagged: { orders: FlaggedGroup[]; order_count: number; subtotal_gross: number; line_items: number }
   upload: { uploaded_at: string | null; source_filename: string | null }
   skus: SkuTotal[]
   rows: DetailRow[]
@@ -35,6 +45,10 @@ interface UploadResult {
   line_items: number
   orders: number
   gross: number
+  clean_orders: number
+  flagged_orders: number
+  clean_gross: number
+  flagged_gross: number
   rows_in_file: number
   skipped_no_date: number
 }
@@ -139,7 +153,9 @@ export default function KllWholesalePage() {
     }
   }
 
-  const hasData = report && report.rows.length > 0
+  const hasClean = !!report && report.rows.length > 0
+  const hasFlagged = !!report && !!report.flagged && report.flagged.order_count > 0
+  const hasAnything = hasClean || hasFlagged
 
   return (
     <div className="mx-auto max-w-[1280px] px-4 py-8 sm:px-6 lg:px-8">
@@ -225,7 +241,11 @@ export default function KllWholesalePage() {
             item{uploadResult.line_items !== 1 ? 's' : ''} across{' '}
             <strong className="font-semibold text-ink">{uploadResult.orders.toLocaleString()}</strong> paid
             order{uploadResult.orders !== 1 ? 's' : ''} —{' '}
-            {uploadResult.months.map(displayMonth).join(', ')} ({fmtCurrency(uploadResult.gross)} gross).
+            {uploadResult.months.map(displayMonth).join(', ')}.{' '}
+            <strong className="font-semibold text-ink">{uploadResult.clean_orders.toLocaleString()}</strong> clean
+            ({fmtCurrency(uploadResult.clean_gross)}),{' '}
+            <strong className="font-semibold text-ink">{uploadResult.flagged_orders.toLocaleString()}</strong> flagged for review
+            ({fmtCurrency(uploadResult.flagged_gross)}).
             {' '}Read {uploadResult.rows_in_file.toLocaleString()} rows from the file.
             {uploadResult.skipped_no_date > 0 && ` ${uploadResult.skipped_no_date} row(s) had no usable date and were skipped.`}
           </p>
@@ -257,22 +277,29 @@ export default function KllWholesalePage() {
         <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
       )}
 
-      {/* Summary cards */}
-      {hasData && (
+      {/* Summary cards — CLEAN orders only. Flagged orders are excluded (see the
+          Pending Review section); their line prices aren't trustworthy yet. */}
+      {hasAnything && report && (
         <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="rounded-2xl border border-cream-3 bg-white p-6 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-wide text-ink-3">Gross Sales — {displayMonth(report.month)}</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-ink-3">Gross Sales (Clean) — {displayMonth(report.month)}</p>
             <p className="mt-2 font-display text-3xl font-semibold text-ink">{fmtCurrency(report.summary.gross_sales)}</p>
+            {hasFlagged && (
+              <p className="mt-1 text-xs text-ink-3">excludes {fmtCurrency(report.flagged.subtotal_gross)} from {report.flagged.order_count} flagged order{report.flagged.order_count !== 1 ? 's' : ''}</p>
+            )}
           </div>
           <div className="rounded-2xl border border-cream-3 bg-white p-6 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-wide text-ink-3">Total Orders — {displayMonth(report.month)}</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-ink-3">Total Orders (Clean) — {displayMonth(report.month)}</p>
             <p className="mt-2 font-display text-3xl font-semibold text-ink">{report.summary.total_orders.toLocaleString()}</p>
+            {hasFlagged && (
+              <p className="mt-1 text-xs text-ink-3">+ {report.flagged.order_count} flagged, pending review</p>
+            )}
           </div>
         </div>
       )}
 
-      {/* SKUs sold — collapsed by default, same as the retail report */}
-      {hasData && report.skus.length > 0 && (
+      {/* SKUs sold — CLEAN orders only, collapsed by default, same as the retail report */}
+      {hasClean && report.skus.length > 0 && (
         <CollapsibleCard
           title={`SKUs Sold — ${displayMonth(report.month)}`}
           titleClassName="text-xs font-semibold uppercase tracking-wide text-ink-2"
@@ -306,8 +333,8 @@ export default function KllWholesalePage() {
         </CollapsibleCard>
       )}
 
-      {/* Empty state */}
-      {!isLoading && report && report.rows.length === 0 && !error && (
+      {/* Empty state — nothing clean AND nothing flagged for this month */}
+      {!isLoading && report && !hasAnything && !error && (
         <div className="rounded-2xl border border-cream-3 bg-white p-10 text-center shadow-sm">
           <p className="text-sm text-ink-3">
             Nothing uploaded for {displayMonth(report.month)} yet.
@@ -318,12 +345,12 @@ export default function KllWholesalePage() {
         </div>
       )}
 
-      {/* Detail table */}
-      {hasData && (
+      {/* Detail table — CLEAN orders only */}
+      {hasClean && (
         <div className="space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-sm font-medium text-ink">
-              {report.rows.length.toLocaleString()} line item{report.rows.length !== 1 ? 's' : ''}
+              {report.rows.length.toLocaleString()} clean line item{report.rows.length !== 1 ? 's' : ''}
               {report.upload.source_filename && (
                 <span className="ml-2 font-normal text-ink-3">from {report.upload.source_filename}</span>
               )}
@@ -376,8 +403,83 @@ export default function KllWholesalePage() {
                 </tbody>
                 <tfoot>
                   <tr className="border-t-2 border-cream-3 bg-cream">
-                    <td colSpan={5} className="px-3 py-3 text-xs font-semibold text-ink">Total</td>
+                    <td colSpan={5} className="px-3 py-3 text-xs font-semibold text-ink">Total (Clean)</td>
                     <td className="px-3 py-3 text-right font-data text-xs font-semibold text-ink">{fmtCurrency(report.summary.gross_sales)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Flagged orders — grouped, excluded from the clean numbers above */}
+      {hasFlagged && (
+        <div className="mt-8 space-y-3">
+          <div>
+            <h2 className="font-display text-lg font-semibold text-ink">
+              Orders with Order-Level Discounts — Pending Review
+            </h2>
+            <p className="mt-1 text-sm text-ink-3">
+              These {report.flagged.order_count} order{report.flagged.order_count !== 1 ? 's' : ''}{' '}carried a Shopify discount code and/or
+              discount amount, so their line prices aren&apos;t reliable wholesale figures. They are{' '}
+              <strong className="font-semibold text-ink">not included</strong> in the Gross Sales / Total Orders above — shown here for review.
+            </p>
+          </div>
+
+          <div className="overflow-hidden rounded-2xl border border-amber-200 bg-white shadow-sm">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-cream-2 bg-amber-50">
+                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-ink-3 whitespace-nowrap">Order</th>
+                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-ink-3">SKU / Product</th>
+                    <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-ink-3 whitespace-nowrap">Qty</th>
+                    <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-ink-3 whitespace-nowrap">Unit Price</th>
+                    <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-ink-3 whitespace-nowrap">Line Gross</th>
+                  </tr>
+                </thead>
+                {report.flagged.orders.map((g) => (
+                  <tbody key={g.order_number} className="border-b border-cream-2">
+                    {/* Order header row: order number + discount description + amount */}
+                    <tr className="bg-amber-50/50">
+                      <td className="px-3 py-2.5 align-top font-data text-xs font-semibold text-ink whitespace-nowrap">{g.order_number}</td>
+                      <td className="px-3 py-2.5 text-xs text-ink-2" colSpan={2}>
+                        <span className="font-medium text-ink">Discount:</span>{' '}
+                        {g.discount_code && g.discount_code.trim() !== '' ? g.discount_code : <span className="text-ink-3">(no code — amount only)</span>}
+                      </td>
+                      <td className="px-3 py-2.5 text-right text-xs text-ink-3 whitespace-nowrap">Discount Amt</td>
+                      <td className="px-3 py-2.5 text-right font-data text-xs font-semibold text-ink whitespace-nowrap">
+                        {g.discount_amount != null ? fmtCurrency(g.discount_amount) : '—'}
+                      </td>
+                    </tr>
+                    {/* The order's KLL lines */}
+                    {g.lines.map((r, i) => (
+                      <tr key={`${g.order_number}-${r.sku}-${i}`} className="bg-white">
+                        <td className="px-3 py-2 text-xs text-ink-3"></td>
+                        <td className="px-3 py-2 text-xs text-ink">
+                          <span className="font-data">{r.sku}</span>
+                          <span className="block text-ink-3 truncate" title={r.product_title}>{r.product_title}</span>
+                        </td>
+                        <td className="px-3 py-2 text-right font-data text-xs text-ink">{r.qty}</td>
+                        <td className="px-3 py-2 text-right font-data text-xs text-ink">{fmtCurrency(r.unit_price)}</td>
+                        <td className="px-3 py-2 text-right font-data text-xs text-ink">{fmtCurrency(r.gross)}</td>
+                      </tr>
+                    ))}
+                    {/* Per-order subtotal */}
+                    <tr className="bg-cream/40">
+                      <td className="px-3 py-2 text-xs text-ink-3"></td>
+                      <td className="px-3 py-2 text-xs font-medium text-ink-2" colSpan={3}>Order gross</td>
+                      <td className="px-3 py-2 text-right font-data text-xs font-semibold text-ink">{fmtCurrency(g.gross)}</td>
+                    </tr>
+                  </tbody>
+                ))}
+                <tfoot>
+                  <tr className="border-t-2 border-amber-200 bg-amber-50">
+                    <td colSpan={4} className="px-3 py-3 text-xs font-semibold text-ink">
+                      Flagged subtotal — {report.flagged.order_count} order{report.flagged.order_count !== 1 ? 's' : ''} (for reference; NOT in the clean total above)
+                    </td>
+                    <td className="px-3 py-3 text-right font-data text-sm font-semibold text-ink">{fmtCurrency(report.flagged.subtotal_gross)}</td>
                   </tr>
                 </tfoot>
               </table>
