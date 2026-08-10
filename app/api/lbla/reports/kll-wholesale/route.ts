@@ -18,6 +18,7 @@
 import { NextRequest } from 'next/server'
 import { createSupabaseServiceClient } from '@/lib/supabase'
 import { getDefaultMonth } from '@/lib/kll'
+import { orderContribution, type DiscountAction } from '@/lib/wholesaleDiscount'
 
 export const maxDuration = 60
 
@@ -101,6 +102,32 @@ export async function GET(req: NextRequest) {
     if (orderIsFlagged(r.discount_code, r.discount_amount)) flaggedOrders.add(r.order_number)
   }
 
+  // Saved per-order decisions (migration 041) — keyed by order number, so they
+  // survive re-uploads. Only the flagged orders in this month matter.
+  const decisions = new Map<string, { action: DiscountAction; custom_amount: number | null; decided_by: string | null; decided_at: string }>()
+  if (flaggedOrders.size > 0) {
+    const ids = [...flaggedOrders]
+    const CH = 300
+    for (let i = 0; i < ids.length; i += CH) {
+      const { data, error } = await service
+        .from('wholesale_order_discount_decisions')
+        .select('order_number, action, custom_amount, decided_by, decided_at')
+        .eq('tenant_id', TENANT_ID)
+        .in('order_number', ids.slice(i, i + CH))
+      // A missing table (migration 041 not applied yet) must not break the report;
+      // treat as "no decisions" so every flagged order simply stays pending.
+      if (error) break
+      for (const d of data ?? []) {
+        decisions.set(d.order_number, {
+          action: d.action as DiscountAction,
+          custom_amount: d.custom_amount != null ? Number(d.custom_amount) : null,
+          decided_by: d.decided_by ?? null,
+          decided_at: d.decided_at,
+        })
+      }
+    }
+  }
+
   const toDetail = (r: StoredRow) => ({
     order_number: r.order_number,
     sku: r.sku,
@@ -125,7 +152,8 @@ export async function GET(req: NextRequest) {
     (a, b) => b.units_sold - a.units_sold || a.sku.localeCompare(b.sku)
   )
 
-  // FLAGGED orders, grouped: one entry per order with its discount and KLL lines.
+  // FLAGGED orders, grouped: one entry per order with its discount, KLL lines, and
+  // its decision (if any) applied.
   const flaggedMap = new Map<string, {
     order_number: string
     discount_code: string | null
@@ -143,7 +171,31 @@ export async function GET(req: NextRequest) {
     g.lines.push(line)
     g.gross += line.gross
   }
-  const flaggedGroups = [...flaggedMap.values()].sort((a, b) => b.gross - a.gross || a.order_number.localeCompare(b.order_number))
+
+  const flaggedGroups = [...flaggedMap.values()].map((g) => {
+    const d = decisions.get(g.order_number) ?? null
+    const { contribution, resolved, counts_as_order } = orderContribution(g.gross, g.discount_amount, d)
+    return {
+      ...g,
+      decision: d, // null when pending
+      contribution,       // what this order adds to Gross Sales once resolved (0 while pending)
+      resolved,           // has a saved decision
+      counts_as_order,    // false for ignore
+    }
+  }).sort((a, b) => {
+    // Pending first, then resolved; each group by gross desc.
+    if (a.resolved !== b.resolved) return a.resolved ? 1 : -1
+    return b.gross - a.gross || a.order_number.localeCompare(b.order_number)
+  })
+
+  const pending = flaggedGroups.filter((g) => !g.resolved)
+  const resolved = flaggedGroups.filter((g) => g.resolved)
+
+  // Clean orders + resolved orders' chosen contributions make the headline total.
+  const cleanGross = cleanRows.reduce((s, r) => s + r.gross, 0)
+  const cleanOrders = new Set(cleanRows.map((r) => r.order_number)).size
+  const resolvedContribution = resolved.reduce((s, g) => s + g.contribution, 0)
+  const resolvedCounts = resolved.filter((g) => g.counts_as_order).length
 
   const uploadedAt = rows.reduce<string | null>(
     (latest, r) => (!latest || r.uploaded_at > latest ? r.uploaded_at : latest), null
@@ -152,18 +204,25 @@ export async function GET(req: NextRequest) {
   return Response.json({
     month,
     months,
-    // Headline numbers are CLEAN-ONLY on purpose — flagged orders' true value is
-    // pending a decision and must not inflate the reliable total.
+    // Headline = clean orders + resolved flagged orders (by their chosen method).
+    // Pending flagged orders are still excluded until a decision is saved.
     summary: {
-      gross_sales: cleanRows.reduce((s, r) => s + r.gross, 0),
-      total_orders: new Set(cleanRows.map((r) => r.order_number)).size,
+      gross_sales: cleanGross + resolvedContribution,
+      total_orders: cleanOrders + resolvedCounts,
       line_items: cleanRows.length,
+      clean_gross: cleanGross,
+      clean_orders: cleanOrders,
+      resolved_contribution: resolvedContribution,
+      resolved_orders: resolvedCounts,
     },
     flagged: {
       orders: flaggedGroups,
       order_count: flaggedGroups.length,
-      // Reference only — deliberately NOT part of summary.gross_sales above.
-      subtotal_gross: flaggedGroups.reduce((s, g) => s + g.gross, 0),
+      pending_count: pending.length,
+      // Pending original KLL gross — reference only, NOT in summary.gross_sales.
+      pending_subtotal_gross: pending.reduce((s, g) => s + g.gross, 0),
+      resolved_count: resolved.length,
+      resolved_contribution: resolvedContribution,
       line_items: flaggedStored.length,
     },
     upload: {
