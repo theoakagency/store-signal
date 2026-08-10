@@ -8,11 +8,15 @@
  * every month the file covers.
  *
  * Prices here are Sparklayer B2B tier prices: `Lineitem price` is ALREADY the net
- * wholesale price after the customer's tier discount. Nothing is subtracted —
- * gross = quantity x price is the final figure. Shopify's own Discount Code /
- * Discount Amount columns are always blank on these orders and are not read; the
- * real discount detail lives in a JSON blob in Note Attributes, which this report
- * deliberately ignores.
+ * wholesale price after the customer's tier discount, so for a clean order
+ * gross = quantity x price is the final figure with nothing to subtract.
+ *
+ * BUT some orders also carry an ORDER-LEVEL Shopify discount (Discount Code /
+ * Discount Amount) — sample give-aways, show discounts, credits, extra % off —
+ * that makes their line prices unreliable. Those columns are captured here
+ * (forward-filled per order, same as Financial Status / Created at, since Shopify
+ * only populates them on an order's first line) so the report can hold those
+ * orders back as "flagged / pending review" instead of trusting their gross.
  */
 import { NextRequest } from 'next/server'
 import { createSupabaseServerClient, createSupabaseServiceClient } from '@/lib/supabase'
@@ -32,6 +36,8 @@ const COL = {
   qty: 'Lineitem quantity',
   price: 'Lineitem price',
   financialStatus: 'Financial Status',
+  discountCode: 'Discount Code',
+  discountAmount: 'Discount Amount',
 } as const
 
 interface ParsedRow {
@@ -44,6 +50,10 @@ interface ParsedRow {
   quantity: number
   unit_price: number
   gross: number
+  // Order-level Shopify discount, repeated on every line of the order. NULL for a
+  // clean order. The report flags any order with a code or a positive amount.
+  discount_code: string | null
+  discount_amount: number | null
   source_filename: string
 }
 
@@ -96,11 +106,14 @@ export async function POST(req: NextRequest) {
   }
 
   // Shopify writes order-level fields only on an order's FIRST line; continuation
-  // lines repeat `Name` and leave Financial Status and Created at blank. Resolve
-  // both per order across the whole file before filtering, so a paid order's
-  // second and later line items are not silently discarded.
+  // lines repeat `Name` and leave Financial Status, Created at, and the discount
+  // columns blank. Resolve them per order across the whole file before filtering,
+  // so a paid order's second and later line items are not silently discarded and
+  // so every line inherits the order's discount.
   const orderStatus = new Map<string, string>()
   const orderCreatedAt = new Map<string, string>()
+  const orderDiscountCode = new Map<string, string>()
+  const orderDiscountAmount = new Map<string, string>()
   for (const r of rows) {
     const name = r[COL.name]
     if (!name) continue
@@ -108,6 +121,11 @@ export async function POST(req: NextRequest) {
     if (status && !orderStatus.has(name)) orderStatus.set(name, status)
     const created = r[COL.createdAt]
     if (created && !orderCreatedAt.has(name)) orderCreatedAt.set(name, created)
+    // First non-blank wins (the order's first line). A clean order never sets these.
+    const code = r[COL.discountCode]
+    if (code && code.trim() && !orderDiscountCode.has(name)) orderDiscountCode.set(name, code.trim())
+    const amount = r[COL.discountAmount]
+    if (amount && amount.trim() && !orderDiscountAmount.has(name)) orderDiscountAmount.set(name, amount.trim())
   }
 
   const parsed: ParsedRow[] = []
@@ -132,6 +150,13 @@ export async function POST(req: NextRequest) {
     const unitPrice = parseFloat(r[COL.price])
     if (!Number.isFinite(quantity) || !Number.isFinite(unitPrice)) continue
 
+    // Order-level discount, forward-filled. Amount strips a leading currency
+    // symbol/commas just in case; null when the order carried no discount.
+    const discountCode = orderDiscountCode.get(orderNumber) ?? null
+    const rawAmount = orderDiscountAmount.get(orderNumber)
+    const parsedAmount = rawAmount != null ? parseFloat(rawAmount.replace(/[$,]/g, '')) : NaN
+    const discountAmount = Number.isFinite(parsedAmount) ? parsedAmount : null
+
     monthsSeen.add(month)
     ordersSeen.add(orderNumber)
     parsed.push({
@@ -145,6 +170,8 @@ export async function POST(req: NextRequest) {
       // Sparklayer tier price — already net, nothing subtracted.
       unit_price: unitPrice,
       gross: quantity * unitPrice,
+      discount_code: discountCode,
+      discount_amount: discountAmount,
       source_filename: file.name,
     })
   }
@@ -176,11 +203,20 @@ export async function POST(req: NextRequest) {
     if (error) return Response.json({ error: `Insert failed: ${error.message}` }, { status: 500 })
   }
 
+  // Clean vs flagged breakdown of what was just stored, for the upload receipt.
+  const isFlagged = (r: ParsedRow) =>
+    (r.discount_code != null && r.discount_code.trim() !== '') || (r.discount_amount != null && r.discount_amount > 0)
+  const flaggedOrderSet = new Set(parsed.filter(isFlagged).map((r) => r.order_number))
+
   return Response.json({
     months,
     line_items: parsed.length,
     orders: ordersSeen.size,
     gross: parsed.reduce((s, r) => s + r.gross, 0),
+    clean_orders: ordersSeen.size - flaggedOrderSet.size,
+    flagged_orders: flaggedOrderSet.size,
+    clean_gross: parsed.filter((r) => !flaggedOrderSet.has(r.order_number)).reduce((s, r) => s + r.gross, 0),
+    flagged_gross: parsed.filter((r) => flaggedOrderSet.has(r.order_number)).reduce((s, r) => s + r.gross, 0),
     rows_in_file: rows.length,
     skipped_no_date: skippedNoMonth.length,
   })
