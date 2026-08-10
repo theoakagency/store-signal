@@ -34,6 +34,8 @@ interface FlaggedGroup {
   order_number: string
   discount_code: string | null
   discount_amount: number | null
+  order_line_total: number | null
+  order_line_count: number | null
   gross: number
   lines: DetailRow[]
   decision: OrderDecision | null
@@ -109,15 +111,30 @@ function fmtWhen(iso: string): string {
   return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-// Mirror of lib/wholesaleDiscount orderContribution, for the live preview only.
-function previewContribution(gross: number, discountAmount: number | null, action: DiscountAction | '', custom: number | null): number | null {
+// Distribution denominator = full order line value (all SKUs), falling back to
+// the KLL gross for rows not yet re-uploaded with migration 042's column.
+function denom(gross: number, orderLineTotal: number | null): number {
+  return orderLineTotal != null && orderLineTotal > 0 ? orderLineTotal : gross
+}
+
+// Mirror of lib/wholesaleDiscount, for the live preview only. Distribute spreads
+// the amount across the FULL order and keeps the KLL share.
+function previewContribution(gross: number, orderLineTotal: number | null, discountAmount: number | null, action: DiscountAction | '', custom: number | null): number | null {
+  const d = denom(gross, orderLineTotal)
+  const distribute = (amt: number) => (d > 0 ? gross * Math.max(0, 1 - amt / d) : gross)
   switch (action) {
     case 'ignore': return 0
     case 'full_price': return gross
-    case 'distribute_full': return Math.max(0, gross - (discountAmount ?? 0))
-    case 'distribute_custom': return custom != null && custom > 0 ? Math.max(0, gross - custom) : null
+    case 'distribute_full': return distribute(discountAmount ?? 0)
+    case 'distribute_custom': return custom != null && custom > 0 ? distribute(custom) : null
     default: return null
   }
+}
+
+// Per-line kept gross after distributing `amount` across the full order value.
+function adjustedLineGross(lineGross: number, orderLineTotal: number | null, gross: number, amount: number): number {
+  const d = denom(gross, orderLineTotal)
+  return d > 0 ? lineGross * Math.max(0, 1 - amount / d) : lineGross
 }
 
 function downloadCsv(rows: DetailRow[], month: string) {
@@ -158,9 +175,15 @@ function FlaggedOrderCard({ g, onChanged }: { g: FlaggedGroup; onChanged: () => 
   const [err, setErr] = useState<string | null>(null)
 
   const customNum = custom.trim() !== '' ? parseFloat(custom) : null
-  const preview = previewContribution(g.gross, g.discount_amount, action, customNum)
+  const preview = previewContribution(g.gross, g.order_line_total, g.discount_amount, action, customNum)
   const dirty = action !== (g.decision?.action ?? '') ||
     (action === 'distribute_custom' && (customNum ?? null) !== (g.decision?.custom_amount ?? null))
+
+  // For the distribute breakdown: the amount being spread (full discount or the
+  // entered custom amount), and whether we can show a full breakdown.
+  const isDistribute = action === 'distribute_full' || action === 'distribute_custom'
+  const distributeAmount = action === 'distribute_full' ? (g.discount_amount ?? 0) : (customNum ?? 0)
+  const showBreakdown = isDistribute && distributeAmount > 0 && preview != null
 
   async function save() {
     if (action === '') return
@@ -253,7 +276,8 @@ function FlaggedOrderCard({ g, onChanged }: { g: FlaggedGroup; onChanged: () => 
         </select>
         {action === 'distribute_custom' && (
           <div className="flex items-center gap-1">
-            <span className="text-xs text-ink-3">$</span>
+            <label className="text-xs text-ink-3">Actual discount amount (excluding any credit / other reason bundled into the total)</label>
+            <span className="ml-1 text-xs text-ink-3">$</span>
             <input
               type="number" min="0" step="0.01" value={custom} disabled={saving}
               onChange={(e) => setCustom(e.target.value)} placeholder="amount"
@@ -280,6 +304,64 @@ function FlaggedOrderCard({ g, onChanged }: { g: FlaggedGroup; onChanged: () => 
         </div>
         {err && <p className="w-full text-xs text-red-600">{err}</p>}
       </div>
+
+      {/* Distribution breakdown — shown for a distribute action with an amount */}
+      {showBreakdown && (
+        <div className="border-t border-cream-2 bg-cream/30 px-5 py-3 text-xs leading-relaxed text-ink-2">
+          <dl className="space-y-0.5">
+            <div className="flex justify-between gap-4"><dt>Order&apos;s total recorded discount</dt><dd className="font-data text-ink">{g.discount_amount != null ? fmtCurrency(g.discount_amount) : '—'}</dd></div>
+            <div className="flex justify-between gap-4">
+              <dt>{action === 'distribute_full' ? 'Discount distributed (full)' : 'Actual discount portion (entered)'}</dt>
+              <dd className="font-data text-ink">{fmtCurrency(distributeAmount)}</dd>
+            </div>
+          </dl>
+          <p className="mt-1.5 text-ink-3">
+            Distributed proportionally across all{' '}
+            {g.order_line_count != null
+              ? <><span className="font-semibold text-ink-2">{g.order_line_count.toLocaleString()}</span> line items</>
+              : 'line items'}{' '}
+            in the order (KLL and non-KLL)
+            {g.order_line_total != null
+              ? <> — order line value <span className="font-data">{fmtCurrency(g.order_line_total)}</span>.</>
+              : <> — <span className="text-amber-700">full order value not captured yet; re-upload this month to apply it (using KLL total meanwhile).</span></>}
+          </p>
+          <dl className="mt-1.5 space-y-0.5">
+            <div className="flex justify-between gap-4"><dt>KLL Gross before adjustment</dt><dd className="font-data text-ink">{fmtCurrency(g.gross)}</dd></div>
+            <div className="flex justify-between gap-4"><dt className="font-medium text-ink">KLL Gross after adjustment</dt><dd className="font-data font-semibold text-ink">{fmtCurrency(preview!)}</dd></div>
+          </dl>
+
+          {/* Per-line adjusted unit price */}
+          <div className="mt-2 overflow-x-auto rounded-lg border border-cream-2 bg-white">
+            <table className="w-full table-fixed text-xs">
+              <colgroup><col className="w-[150px]" /><col className="w-[45px]" /><col /><col /><col /></colgroup>
+              <thead>
+                <tr className="border-b border-cream-2 text-ink-3">
+                  <th className="px-2.5 py-1.5 text-left font-semibold uppercase tracking-wide">SKU</th>
+                  <th className="px-2 py-1.5 text-right font-semibold uppercase tracking-wide">Qty</th>
+                  <th className="px-2 py-1.5 text-right font-semibold uppercase tracking-wide whitespace-nowrap">Unit Price</th>
+                  <th className="px-2 py-1.5 text-right font-semibold uppercase tracking-wide whitespace-nowrap">Adj. Unit</th>
+                  <th className="px-2.5 py-1.5 text-right font-semibold uppercase tracking-wide whitespace-nowrap">Adj. Gross</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-cream-2">
+                {g.lines.map((r, i) => {
+                  const adjGross = adjustedLineGross(r.gross, g.order_line_total, g.gross, distributeAmount)
+                  const adjUnit = r.qty > 0 ? adjGross / r.qty : 0
+                  return (
+                    <tr key={`adj-${g.order_number}-${r.sku}-${i}`}>
+                      <td className="px-2.5 py-1 font-data text-ink truncate">{r.sku}</td>
+                      <td className="px-2 py-1 text-right font-data text-ink">{r.qty}</td>
+                      <td className="px-2 py-1 text-right font-data text-ink-3">{fmtCurrency(r.unit_price)}</td>
+                      <td className="px-2 py-1 text-right font-data text-ink">{fmtCurrency(adjUnit)}</td>
+                      <td className="px-2.5 py-1 text-right font-data text-ink">{fmtCurrency(adjGross)}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

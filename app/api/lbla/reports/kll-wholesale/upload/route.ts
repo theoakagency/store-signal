@@ -54,6 +54,10 @@ interface ParsedRow {
   // clean order. The report flags any order with a code or a positive amount.
   discount_code: string | null
   discount_amount: number | null
+  // Full order line value (all SKUs, pre-discount) and line count, repeated on
+  // every KLL row. The distribution denominator for the discount-decision tool.
+  order_line_total: number | null
+  order_line_count: number | null
   source_filename: string
 }
 
@@ -114,6 +118,11 @@ export async function POST(req: NextRequest) {
   const orderCreatedAt = new Map<string, string>()
   const orderDiscountCode = new Map<string, string>()
   const orderDiscountAmount = new Map<string, string>()
+  // Full order line value (sum of qty x price over EVERY line, all SKUs) and line
+  // count — the distribution denominator. Accumulated across all lines, so this
+  // pass must run over the whole file before the KLL filter.
+  const orderLineTotal = new Map<string, number>()
+  const orderLineCount = new Map<string, number>()
   for (const r of rows) {
     const name = r[COL.name]
     if (!name) continue
@@ -126,6 +135,12 @@ export async function POST(req: NextRequest) {
     if (code && code.trim() && !orderDiscountCode.has(name)) orderDiscountCode.set(name, code.trim())
     const amount = r[COL.discountAmount]
     if (amount && amount.trim() && !orderDiscountAmount.has(name)) orderDiscountAmount.set(name, amount.trim())
+    // Every row is one line item; sum its gross into the order total, all SKUs.
+    const q = parseInt(r[COL.qty], 10)
+    const p = parseFloat(r[COL.price])
+    const lineGross = Number.isFinite(q) && Number.isFinite(p) ? q * p : 0
+    orderLineTotal.set(name, (orderLineTotal.get(name) ?? 0) + lineGross)
+    orderLineCount.set(name, (orderLineCount.get(name) ?? 0) + 1)
   }
 
   const parsed: ParsedRow[] = []
@@ -172,6 +187,8 @@ export async function POST(req: NextRequest) {
       gross: quantity * unitPrice,
       discount_code: discountCode,
       discount_amount: discountAmount,
+      order_line_total: Math.round((orderLineTotal.get(orderNumber) ?? 0) * 100) / 100,
+      order_line_count: orderLineCount.get(orderNumber) ?? null,
       source_filename: file.name,
     })
   }
