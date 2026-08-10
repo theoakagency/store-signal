@@ -441,16 +441,18 @@ export default function KllWholesalePage() {
                 </thead>
                 {report.flagged.orders.map((g) => (
                   <tbody key={g.order_number} className="border-b border-cream-2">
-                    {/* Order header row: order number + discount description + amount */}
+                    {/* Order header row: order number, then the order-level discount
+                        description and amount together as one inline line — deliberately
+                        NOT aligned to the Qty / Unit Price / Line Gross columns, which
+                        only apply to the line items below. */}
                     <tr className="bg-amber-50/50">
                       <td className="px-3 py-2.5 align-top font-data text-xs font-semibold text-ink whitespace-nowrap">{g.order_number}</td>
-                      <td className="px-3 py-2.5 text-xs text-ink-2" colSpan={2}>
+                      <td className="px-3 py-2.5 text-xs text-ink-2 leading-relaxed" colSpan={4}>
                         <span className="font-medium text-ink">Discount:</span>{' '}
-                        {g.discount_code && g.discount_code.trim() !== '' ? g.discount_code : <span className="text-ink-3">(no code — amount only)</span>}
-                      </td>
-                      <td className="px-3 py-2.5 text-right text-xs text-ink-3 whitespace-nowrap">Discount Amt</td>
-                      <td className="px-3 py-2.5 text-right font-data text-xs font-semibold text-ink whitespace-nowrap">
-                        {g.discount_amount != null ? fmtCurrency(g.discount_amount) : '—'}
+                        {g.discount_code && g.discount_code.trim() !== '' ? g.discount_code : <span className="text-ink-3">(no code)</span>}
+                        {g.discount_amount != null && (
+                          <> — <span className="font-data font-semibold text-ink">{fmtCurrency(g.discount_amount)}</span></>
+                        )}
                       </td>
                     </tr>
                     {/* The order's KLL lines */}
