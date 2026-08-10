@@ -21,23 +21,56 @@ interface SkuTotal {
   units_sold: number
 }
 
+type DiscountAction = 'ignore' | 'distribute_full' | 'distribute_custom' | 'full_price'
+
+interface OrderDecision {
+  action: DiscountAction
+  custom_amount: number | null
+  decided_by: string | null
+  decided_at: string
+}
+
 interface FlaggedGroup {
   order_number: string
   discount_code: string | null
   discount_amount: number | null
   gross: number
   lines: DetailRow[]
+  decision: OrderDecision | null
+  contribution: number
+  resolved: boolean
+  counts_as_order: boolean
 }
 
 interface ReportResponse {
   month: string
   months: string[]
-  // Clean-only headline numbers.
-  summary: { gross_sales: number; total_orders: number; line_items: number }
-  flagged: { orders: FlaggedGroup[]; order_count: number; subtotal_gross: number; line_items: number }
+  // Headline = clean orders + resolved flagged orders (by their chosen method).
+  summary: {
+    gross_sales: number; total_orders: number; line_items: number
+    clean_gross: number; clean_orders: number
+    resolved_contribution: number; resolved_orders: number
+  }
+  flagged: {
+    orders: FlaggedGroup[]; order_count: number
+    pending_count: number; pending_subtotal_gross: number
+    resolved_count: number; resolved_contribution: number
+    line_items: number
+  }
   upload: { uploaded_at: string | null; source_filename: string | null }
   skus: SkuTotal[]
   rows: DetailRow[]
+}
+
+const ACTION_OPTIONS: { value: DiscountAction; label: string }[] = [
+  { value: 'ignore', label: 'Ignore — exclude from totals' },
+  { value: 'distribute_full', label: 'Distribute full discount' },
+  { value: 'distribute_custom', label: 'Distribute custom amount' },
+  { value: 'full_price', label: 'Full price — keep as sale' },
+]
+const ACTION_LABEL: Record<DiscountAction, string> = {
+  ignore: 'Ignored', distribute_full: 'Full discount distributed',
+  distribute_custom: 'Custom amount distributed', full_price: 'Full price',
 }
 
 interface UploadResult {
@@ -71,6 +104,22 @@ function fmtCurrency(n: number): string {
   return n.toLocaleString('en-US', { style: 'currency', currency: 'USD' })
 }
 
+function fmtWhen(iso: string): string {
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+// Mirror of lib/wholesaleDiscount orderContribution, for the live preview only.
+function previewContribution(gross: number, discountAmount: number | null, action: DiscountAction | '', custom: number | null): number | null {
+  switch (action) {
+    case 'ignore': return 0
+    case 'full_price': return gross
+    case 'distribute_full': return Math.max(0, gross - (discountAmount ?? 0))
+    case 'distribute_custom': return custom != null && custom > 0 ? Math.max(0, gross - custom) : null
+    default: return null
+  }
+}
+
 function downloadCsv(rows: DetailRow[], month: string) {
   // One column per column on screen, same order, same values.
   const headers = ['Order Number', 'SKU', 'Product Title', 'Qty', 'Unit Price', 'Gross']
@@ -99,6 +148,141 @@ const CALCULATION_STEPS = [
   'Gross is quantity × the price on the line. Wholesale prices already have the customer\'s tier discount applied, so nothing is subtracted',
   'Re-uploading a corrected file for a month replaces that month — it does not add to it',
 ]
+
+// ── Flagged order card, with its per-order decision control ────────────────────
+
+function FlaggedOrderCard({ g, onChanged }: { g: FlaggedGroup; onChanged: () => void }) {
+  const [action, setAction] = useState<DiscountAction | ''>(g.decision?.action ?? '')
+  const [custom, setCustom] = useState<string>(g.decision?.custom_amount != null ? String(g.decision.custom_amount) : '')
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  const customNum = custom.trim() !== '' ? parseFloat(custom) : null
+  const preview = previewContribution(g.gross, g.discount_amount, action, customNum)
+  const dirty = action !== (g.decision?.action ?? '') ||
+    (action === 'distribute_custom' && (customNum ?? null) !== (g.decision?.custom_amount ?? null))
+
+  async function save() {
+    if (action === '') return
+    if (action === 'distribute_custom' && !(customNum != null && customNum > 0)) {
+      setErr('Enter a positive dollar amount to distribute.')
+      return
+    }
+    setSaving(true); setErr(null)
+    try {
+      const res = await fetch('/api/lbla/reports/kll-wholesale/decision', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order_number: g.order_number, action, custom_amount: action === 'distribute_custom' ? customNum : null }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setErr(data.error ?? 'Save failed'); return }
+      onChanged()
+    } catch { setErr('Network error') } finally { setSaving(false) }
+  }
+
+  async function clearDecision() {
+    setSaving(true); setErr(null)
+    try {
+      const res = await fetch(`/api/lbla/reports/kll-wholesale/decision?order_number=${encodeURIComponent(g.order_number)}`, { method: 'DELETE' })
+      const data = await res.json()
+      if (!res.ok) { setErr(data.error ?? 'Clear failed'); return }
+      setAction(''); setCustom(''); onChanged()
+    } catch { setErr('Network error') } finally { setSaving(false) }
+  }
+
+  return (
+    <div className={`overflow-hidden rounded-2xl border shadow-sm ${g.resolved ? 'border-teal/30 bg-white' : 'border-amber-200 bg-white'}`}>
+      {/* Header: order number + discount, and a resolved tag */}
+      <div className={`flex flex-wrap items-start justify-between gap-2 px-5 py-3 ${g.resolved ? 'bg-teal/5' : 'bg-amber-50'}`}>
+        <div className="min-w-0">
+          <p className="font-data text-sm font-semibold text-ink">{g.order_number}</p>
+          <p className="mt-0.5 text-xs text-ink-2">
+            <span className="font-medium text-ink">Discount:</span>{' '}
+            {g.discount_code && g.discount_code.trim() !== '' ? g.discount_code : <span className="text-ink-3">(no code)</span>}
+            {g.discount_amount != null && <> — <span className="font-data font-semibold text-ink">{fmtCurrency(g.discount_amount)}</span></>}
+          </p>
+        </div>
+        {g.resolved && g.decision && (
+          <div className="text-right">
+            <span className="inline-block rounded-full border border-teal/40 bg-teal/10 px-2.5 py-0.5 text-[11px] font-semibold text-teal-deep">
+              {ACTION_LABEL[g.decision.action]}
+              {g.decision.action === 'distribute_custom' && g.decision.custom_amount != null ? ` (${fmtCurrency(g.decision.custom_amount)})` : ''}
+            </span>
+            <p className="mt-1 text-[11px] text-ink-3">
+              {g.counts_as_order ? <>counts as <span className="font-data font-semibold text-ink">{fmtCurrency(g.contribution)}</span></> : 'excluded from totals'}
+              {g.decision.decided_by && <> · {g.decision.decided_by}</>}
+              {g.decision.decided_at && <> · {fmtWhen(g.decision.decided_at)}</>}
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* KLL lines */}
+      <div className="overflow-x-auto border-t border-cream-2">
+        <table className="w-full table-fixed text-sm">
+          <colgroup><col className="w-[160px]" /><col /><col className="w-[55px]" /><col className="w-[100px]" /><col className="w-[100px]" /></colgroup>
+          <tbody className="divide-y divide-cream-2">
+            {g.lines.map((r, i) => (
+              <tr key={`${g.order_number}-${r.sku}-${i}`} className="bg-white">
+                <td className="px-3 py-2 font-data text-xs text-ink truncate">{r.sku}</td>
+                <td className="px-3 py-2 text-xs text-ink-3 truncate" title={r.product_title}>{r.product_title}</td>
+                <td className="px-3 py-2 text-right font-data text-xs text-ink">{r.qty}</td>
+                <td className="px-3 py-2 text-right font-data text-xs text-ink">{fmtCurrency(r.unit_price)}</td>
+                <td className="px-3 py-2 text-right font-data text-xs text-ink">{fmtCurrency(r.gross)}</td>
+              </tr>
+            ))}
+            <tr className="bg-cream/40">
+              <td className="px-3 py-2 text-xs font-medium text-ink-2" colSpan={4}>Order gross (KLL lines)</td>
+              <td className="px-3 py-2 text-right font-data text-xs font-semibold text-ink">{fmtCurrency(g.gross)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      {/* Decision control */}
+      <div className="flex flex-wrap items-center gap-2 border-t border-cream-2 px-5 py-3">
+        <label className="text-xs font-medium text-ink-2">Decision</label>
+        <select
+          value={action}
+          onChange={(e) => setAction(e.target.value as DiscountAction | '')}
+          disabled={saving}
+          className="rounded-lg border border-cream-3 bg-white px-2.5 py-1.5 text-xs text-ink focus:border-teal focus:outline-none focus:ring-2 focus:ring-teal/20 transition disabled:opacity-50"
+        >
+          <option value="">— Choose an action —</option>
+          {ACTION_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+        {action === 'distribute_custom' && (
+          <div className="flex items-center gap-1">
+            <span className="text-xs text-ink-3">$</span>
+            <input
+              type="number" min="0" step="0.01" value={custom} disabled={saving}
+              onChange={(e) => setCustom(e.target.value)} placeholder="amount"
+              className="w-28 rounded-lg border border-cream-3 bg-white px-2.5 py-1.5 font-data text-xs text-ink focus:border-teal focus:outline-none focus:ring-2 focus:ring-teal/20 transition disabled:opacity-50"
+            />
+          </div>
+        )}
+        {preview != null && (
+          <span className="text-xs text-ink-3">
+            → counts as <span className="font-data font-semibold text-ink">{fmtCurrency(preview)}</span>
+          </span>
+        )}
+        <div className="ml-auto flex items-center gap-2">
+          {g.resolved && (
+            <button type="button" onClick={clearDecision} disabled={saving}
+              className="rounded-lg border border-cream-3 bg-white px-3 py-1.5 text-xs font-medium text-ink-3 transition hover:text-ink-2 disabled:opacity-50">
+              Clear
+            </button>
+          )}
+          <button type="button" onClick={save} disabled={saving || action === '' || !dirty}
+            className="rounded-lg border border-teal/40 bg-teal/10 px-3 py-1.5 text-xs font-semibold text-teal-deep transition hover:bg-teal/20 disabled:opacity-40">
+            {saving ? 'Saving…' : g.resolved ? 'Update' : 'Save'}
+          </button>
+        </div>
+        {err && <p className="w-full text-xs text-red-600">{err}</p>}
+      </div>
+    </div>
+  )
+}
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 
@@ -277,22 +461,24 @@ export default function KllWholesalePage() {
         <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
       )}
 
-      {/* Summary cards — CLEAN orders only. Flagged orders are excluded (see the
-          Pending Review section); their line prices aren't trustworthy yet. */}
+      {/* Summary cards — clean orders + resolved flagged orders (by their chosen
+          method). Pending flagged orders are still excluded until decided. */}
       {hasAnything && report && (
         <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="rounded-2xl border border-cream-3 bg-white p-6 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-wide text-ink-3">Gross Sales (Clean) — {displayMonth(report.month)}</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-ink-3">Gross Sales — {displayMonth(report.month)}</p>
             <p className="mt-2 font-display text-3xl font-semibold text-ink">{fmtCurrency(report.summary.gross_sales)}</p>
-            {hasFlagged && (
-              <p className="mt-1 text-xs text-ink-3">excludes {fmtCurrency(report.flagged.subtotal_gross)} from {report.flagged.order_count} flagged order{report.flagged.order_count !== 1 ? 's' : ''}</p>
-            )}
+            <p className="mt-1 text-xs text-ink-3">
+              {fmtCurrency(report.summary.clean_gross)} clean
+              {report.summary.resolved_orders > 0 && <> + {fmtCurrency(report.summary.resolved_contribution)} from {report.summary.resolved_orders} resolved</>}
+              {report.flagged.pending_count > 0 && <>; excludes {fmtCurrency(report.flagged.pending_subtotal_gross)} from {report.flagged.pending_count} pending</>}
+            </p>
           </div>
           <div className="rounded-2xl border border-cream-3 bg-white p-6 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-wide text-ink-3">Total Orders (Clean) — {displayMonth(report.month)}</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-ink-3">Total Orders — {displayMonth(report.month)}</p>
             <p className="mt-2 font-display text-3xl font-semibold text-ink">{report.summary.total_orders.toLocaleString()}</p>
-            {hasFlagged && (
-              <p className="mt-1 text-xs text-ink-3">+ {report.flagged.order_count} flagged, pending review</p>
+            {report.flagged.pending_count > 0 && (
+              <p className="mt-1 text-xs text-ink-3">+ {report.flagged.pending_count} flagged, pending review</p>
             )}
           </div>
         </div>
@@ -404,7 +590,7 @@ export default function KllWholesalePage() {
                 <tfoot>
                   <tr className="border-t-2 border-cream-3 bg-cream">
                     <td colSpan={5} className="px-3 py-3 text-xs font-semibold text-ink">Total (Clean)</td>
-                    <td className="px-3 py-3 text-right font-data text-xs font-semibold text-ink">{fmtCurrency(report.summary.gross_sales)}</td>
+                    <td className="px-3 py-3 text-right font-data text-xs font-semibold text-ink">{fmtCurrency(report.summary.clean_gross)}</td>
                   </tr>
                 </tfoot>
               </table>
@@ -413,80 +599,43 @@ export default function KllWholesalePage() {
         </div>
       )}
 
-      {/* Flagged orders — grouped, excluded from the clean numbers above */}
+      {/* Flagged orders — order-level discounted, each with a per-order decision */}
       {hasFlagged && (
-        <div className="mt-8 space-y-3">
+        <div className="mt-8 space-y-4">
           <div>
-            <h2 className="font-display text-lg font-semibold text-ink">
-              Orders with Order-Level Discounts — Pending Review
-            </h2>
+            <h2 className="font-display text-lg font-semibold text-ink">Orders with Order-Level Discounts</h2>
             <p className="mt-1 text-sm text-ink-3">
-              These {report.flagged.order_count} order{report.flagged.order_count !== 1 ? 's' : ''}{' '}carried a Shopify discount code and/or
-              discount amount, so their line prices aren&apos;t reliable wholesale figures. They are{' '}
-              <strong className="font-semibold text-ink">not included</strong> in the Gross Sales / Total Orders above — shown here for review.
+              These orders carried a Shopify discount code and/or amount, so their raw line prices aren&apos;t reliable
+              wholesale figures. Choose how each should count: ignore it, distribute the discount across its lines
+              (full or a custom amount), or keep it at full price. Pending orders stay <strong className="font-semibold text-ink">out</strong> of
+              the totals above until decided.
             </p>
           </div>
 
-          <div className="overflow-hidden rounded-2xl border border-amber-200 bg-white shadow-sm">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-cream-2 bg-amber-50">
-                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-ink-3 whitespace-nowrap">Order</th>
-                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-ink-3">SKU / Product</th>
-                    <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-ink-3 whitespace-nowrap">Qty</th>
-                    <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-ink-3 whitespace-nowrap">Unit Price</th>
-                    <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-ink-3 whitespace-nowrap">Line Gross</th>
-                  </tr>
-                </thead>
-                {report.flagged.orders.map((g) => (
-                  <tbody key={g.order_number} className="border-b border-cream-2">
-                    {/* Order header row: order number, then the order-level discount
-                        description and amount together as one inline line — deliberately
-                        NOT aligned to the Qty / Unit Price / Line Gross columns, which
-                        only apply to the line items below. */}
-                    <tr className="bg-amber-50/50">
-                      <td className="px-3 py-2.5 align-top font-data text-xs font-semibold text-ink whitespace-nowrap">{g.order_number}</td>
-                      <td className="px-3 py-2.5 text-xs text-ink-2 leading-relaxed" colSpan={4}>
-                        <span className="font-medium text-ink">Discount:</span>{' '}
-                        {g.discount_code && g.discount_code.trim() !== '' ? g.discount_code : <span className="text-ink-3">(no code)</span>}
-                        {g.discount_amount != null && (
-                          <> — <span className="font-data font-semibold text-ink">{fmtCurrency(g.discount_amount)}</span></>
-                        )}
-                      </td>
-                    </tr>
-                    {/* The order's KLL lines */}
-                    {g.lines.map((r, i) => (
-                      <tr key={`${g.order_number}-${r.sku}-${i}`} className="bg-white">
-                        <td className="px-3 py-2 text-xs text-ink-3"></td>
-                        <td className="px-3 py-2 text-xs text-ink">
-                          <span className="font-data">{r.sku}</span>
-                          <span className="block text-ink-3 truncate" title={r.product_title}>{r.product_title}</span>
-                        </td>
-                        <td className="px-3 py-2 text-right font-data text-xs text-ink">{r.qty}</td>
-                        <td className="px-3 py-2 text-right font-data text-xs text-ink">{fmtCurrency(r.unit_price)}</td>
-                        <td className="px-3 py-2 text-right font-data text-xs text-ink">{fmtCurrency(r.gross)}</td>
-                      </tr>
-                    ))}
-                    {/* Per-order subtotal */}
-                    <tr className="bg-cream/40">
-                      <td className="px-3 py-2 text-xs text-ink-3"></td>
-                      <td className="px-3 py-2 text-xs font-medium text-ink-2" colSpan={3}>Order gross</td>
-                      <td className="px-3 py-2 text-right font-data text-xs font-semibold text-ink">{fmtCurrency(g.gross)}</td>
-                    </tr>
-                  </tbody>
-                ))}
-                <tfoot>
-                  <tr className="border-t-2 border-amber-200 bg-amber-50">
-                    <td colSpan={4} className="px-3 py-3 text-xs font-semibold text-ink">
-                      Flagged subtotal — {report.flagged.order_count} order{report.flagged.order_count !== 1 ? 's' : ''} (for reference; NOT in the clean total above)
-                    </td>
-                    <td className="px-3 py-3 text-right font-data text-sm font-semibold text-ink">{fmtCurrency(report.flagged.subtotal_gross)}</td>
-                  </tr>
-                </tfoot>
-              </table>
+          {/* Pending */}
+          {report.flagged.pending_count > 0 && (
+            <div className="space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-ink-3">
+                Pending Review — {report.flagged.pending_count} order{report.flagged.pending_count !== 1 ? 's' : ''} ({fmtCurrency(report.flagged.pending_subtotal_gross)} excluded)
+              </p>
+              {report.flagged.orders.filter((g) => !g.resolved).map((g) => (
+                <FlaggedOrderCard key={g.order_number} g={g} onChanged={() => fetchReport(month)} />
+              ))}
             </div>
-          </div>
+          )}
+
+          {/* Resolved */}
+          {report.flagged.resolved_count > 0 && (
+            <div className="space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-ink-3">
+                Resolved — {report.flagged.resolved_count} order{report.flagged.resolved_count !== 1 ? 's' : ''}
+                {report.summary.resolved_orders > 0 && <> ({fmtCurrency(report.summary.resolved_contribution)} added to totals)</>}
+              </p>
+              {report.flagged.orders.filter((g) => g.resolved).map((g) => (
+                <FlaggedOrderCard key={g.order_number} g={g} onChanged={() => fetchReport(month)} />
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
