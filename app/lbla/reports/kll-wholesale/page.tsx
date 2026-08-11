@@ -44,9 +44,15 @@ interface FlaggedGroup {
   counts_as_order: boolean
 }
 
+interface ExcludedOrder { order_number: string; order_total: number | null; reason: string }
+interface CreditOrder { order_number: string; discount_code: string | null; discount_amount: number | null; gross: number; lines: DetailRow[] }
+
 interface ReportResponse {
   month: string
   months: string[]
+  // 'legacy' = the flag/decide/resolve workflow (June/July); 'simplified' = new
+  // months, where line price is the real price and credit needs no decision.
+  rule_set: 'legacy' | 'simplified'
   // Headline = clean orders + resolved flagged orders (by their chosen method).
   summary: {
     gross_sales: number; total_orders: number; line_items: number
@@ -59,6 +65,8 @@ interface ReportResponse {
     resolved_count: number; resolved_contribution: number
     line_items: number
   }
+  // Simplified months only: informational (no-action) lists.
+  informational: { excluded_orders: ExcludedOrder[]; credit_orders: CreditOrder[] } | null
   upload: { uploaded_at: string | null; source_filename: string | null }
   skus: SkuTotal[]
   rows: DetailRow[]
@@ -77,6 +85,7 @@ const ACTION_LABEL: Record<DiscountAction, string> = {
 
 interface UploadResult {
   months: string[]
+  rule_sets: string[]
   line_items: number
   orders: number
   gross: number
@@ -421,7 +430,9 @@ export default function KllWholesalePage() {
 
   const hasClean = !!report && report.rows.length > 0
   const hasFlagged = !!report && !!report.flagged && report.flagged.order_count > 0
-  const hasAnything = hasClean || hasFlagged
+  const info = report?.rule_set === 'simplified' ? report.informational : null
+  const hasInformational = !!info && (info.excluded_orders.length > 0 || info.credit_orders.length > 0)
+  const hasAnything = hasClean || hasFlagged || hasInformational
 
   return (
     <div className="mx-auto max-w-[1280px] px-4 py-8 sm:px-6 lg:px-8">
@@ -507,11 +518,19 @@ export default function KllWholesalePage() {
             item{uploadResult.line_items !== 1 ? 's' : ''} across{' '}
             <strong className="font-semibold text-ink">{uploadResult.orders.toLocaleString()}</strong> paid
             order{uploadResult.orders !== 1 ? 's' : ''} —{' '}
-            {uploadResult.months.map(displayMonth).join(', ')}.{' '}
-            <strong className="font-semibold text-ink">{uploadResult.clean_orders.toLocaleString()}</strong> clean
-            ({fmtCurrency(uploadResult.clean_gross)}),{' '}
-            <strong className="font-semibold text-ink">{uploadResult.flagged_orders.toLocaleString()}</strong> flagged for review
-            ({fmtCurrency(uploadResult.flagged_gross)}).
+            {uploadResult.months.map(displayMonth).join(', ')}.
+            {/* Legacy months still break out flagged orders; a purely-simplified
+                upload has no flag concept, so word it as all counted. */}
+            {uploadResult.rule_sets.includes('legacy') ? (
+              <>{' '}
+                <strong className="font-semibold text-ink">{uploadResult.clean_orders.toLocaleString()}</strong> clean
+                ({fmtCurrency(uploadResult.clean_gross)}),{' '}
+                <strong className="font-semibold text-ink">{uploadResult.flagged_orders.toLocaleString()}</strong> flagged for review
+                ({fmtCurrency(uploadResult.flagged_gross)}).
+              </>
+            ) : (
+              <> All counted at line price ({fmtCurrency(uploadResult.gross)}); credit/excluded orders are listed below for visibility only — no decisions needed.</>
+            )}
             {' '}Read {uploadResult.rows_in_file.toLocaleString()} rows from the file.
             {uploadResult.skipped_no_date > 0 && ` ${uploadResult.skipped_no_date} row(s) had no usable date and were skipped.`}
           </p>
@@ -718,6 +737,87 @@ export default function KllWholesalePage() {
               </p>
               {report.flagged.orders.filter((g) => g.resolved).map((g) => (
                 <FlaggedOrderCard key={g.order_number} g={g} onChanged={() => fetchReport(month)} />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Informational-only (simplified months) — nothing here needs a decision */}
+      {hasInformational && info && (
+        <div className="mt-8 space-y-4">
+          <div>
+            <h2 className="font-display text-lg font-semibold text-ink">Orders with Credit Applied or Excluded — No Action Needed</h2>
+            <p className="mt-1 text-sm text-ink-3">
+              Line prices are the real paid prices, so these orders are already handled automatically — shown here
+              purely for visibility. <strong className="font-semibold text-ink">Nothing here changes the totals</strong> and
+              nothing needs a decision.
+            </p>
+          </div>
+
+          {/* Group A — auto-excluded for $0 total */}
+          {info.excluded_orders.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-ink-3">
+                Auto-Excluded ($0 Order Total) — {info.excluded_orders.length} order{info.excluded_orders.length !== 1 ? 's' : ''}
+              </p>
+              <div className="overflow-hidden rounded-2xl border border-cream-3 bg-white shadow-sm">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-cream-2 bg-cream">
+                      <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-ink-3">Order Number</th>
+                      <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-ink-3 whitespace-nowrap">Total</th>
+                      <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-ink-3">Reason</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-cream-2">
+                    {info.excluded_orders.map((o, i) => (
+                      <tr key={o.order_number} className={i % 2 === 0 ? 'bg-white' : 'bg-cream/40'}>
+                        <td className="px-3 py-2 font-data text-xs text-ink">{o.order_number}</td>
+                        <td className="px-3 py-2 text-right font-data text-xs text-ink">{o.order_total != null ? fmtCurrency(o.order_total) : '—'}</td>
+                        <td className="px-3 py-2 text-xs text-ink-3">{o.reason}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Group B — credit orders counted at full price */}
+          {info.credit_orders.length > 0 && (
+            <div className="space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-ink-3">
+                Credit Applied, Counted at Full Price — {info.credit_orders.length} order{info.credit_orders.length !== 1 ? 's' : ''}
+              </p>
+              {info.credit_orders.map((o) => (
+                <div key={o.order_number} className="overflow-hidden rounded-2xl border border-cream-3 bg-white shadow-sm">
+                  <div className="border-b border-cream-2 bg-cream/50 px-5 py-3">
+                    <p className="font-data text-sm font-semibold text-ink">{o.order_number}</p>
+                    <p className="mt-0.5 text-xs text-ink-2">
+                      <span className="font-medium text-ink">Credit:</span>{' '}
+                      {o.discount_code && o.discount_code.trim() !== '' ? o.discount_code : <span className="text-ink-3">(no code)</span>}
+                      {o.discount_amount != null && <> — <span className="font-data font-semibold text-ink">{fmtCurrency(o.discount_amount)}</span></>}
+                      <span className="ml-2 text-ink-3">· counted at full price {fmtCurrency(o.gross)}</span>
+                    </p>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full table-fixed text-sm">
+                      <colgroup><col className="w-[160px]" /><col /><col className="w-[55px]" /><col className="w-[100px]" /><col className="w-[100px]" /></colgroup>
+                      <tbody className="divide-y divide-cream-2">
+                        {o.lines.map((r, i) => (
+                          <tr key={`${o.order_number}-${r.sku}-${i}`} className="bg-white">
+                            <td className="px-3 py-2 font-data text-xs text-ink truncate">{r.sku}</td>
+                            <td className="px-3 py-2 text-xs text-ink-3 truncate" title={r.product_title}>{r.product_title}</td>
+                            <td className="px-3 py-2 text-right font-data text-xs text-ink">{r.qty}</td>
+                            <td className="px-3 py-2 text-right font-data text-xs text-ink">{fmtCurrency(r.unit_price)}</td>
+                            <td className="px-3 py-2 text-right font-data text-xs text-ink">{fmtCurrency(r.gross)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               ))}
             </div>
           )}

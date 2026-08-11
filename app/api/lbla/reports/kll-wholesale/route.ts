@@ -40,6 +40,9 @@ interface StoredRow {
   // Full order line value + line count (migration 042); NULL until re-uploaded.
   order_line_total: number | null
   order_line_count: number | null
+  // Shopify "Total" + upload rule set (migration 043). rule_set NULL = legacy.
+  order_total: number | null
+  rule_set: string | null
   source_filename: string | null
   uploaded_at: string
 }
@@ -83,9 +86,11 @@ export async function GET(req: NextRequest) {
   const rows: StoredRow[] = []
   from = 0
   while (true) {
+    // select('*') so the report keeps working before migration 043 is applied:
+    // rows come back without order_total/rule_set, which fall back to null/legacy.
     const { data, error } = await service
       .from('wholesale_kll_orders')
-      .select('month, order_number, sku, product_title, quantity, unit_price, gross, discount_code, discount_amount, order_line_total, order_line_count, source_filename, uploaded_at')
+      .select('*')
       .eq('tenant_id', TENANT_ID)
       .eq('month', month)
       .order('order_number', { ascending: true })
@@ -98,6 +103,95 @@ export async function GET(req: NextRequest) {
     from += PAGE
   }
 
+  const toDetail = (r: StoredRow) => ({
+    order_number: r.order_number,
+    sku: r.sku,
+    product_title: r.product_title ?? '',
+    qty: r.quantity,
+    unit_price: Number(r.unit_price),
+    gross: Number(r.gross),
+  })
+
+  const uploadedAt = rows.reduce<string | null>(
+    (latest, r) => (!latest || r.uploaded_at > latest ? r.uploaded_at : latest), null
+  )
+  const sortSkus = (rs: { sku: string; product_title: string; units_sold: number }[]) =>
+    rs.sort((a, b) => b.units_sold - a.units_sold || a.sku.localeCompare(b.sku))
+  const buildSkus = (detail: ReturnType<typeof toDetail>[]) => {
+    const m = new Map<string, { sku: string; product_title: string; units_sold: number }>()
+    for (const r of detail) {
+      const e = m.get(r.sku)
+      if (e) e.units_sold += r.qty
+      else m.set(r.sku, { sku: r.sku, product_title: r.product_title, units_sold: r.qty })
+    }
+    return sortSkus([...m.values()])
+  }
+
+  // Which rule set this month was uploaded under. All rows of a month share it;
+  // NULL (pre-043 June/July) is legacy. An empty month defaults to simplified.
+  const ruleSet: 'legacy' | 'simplified' =
+    rows.length > 0 ? ((rows[0].rule_set ?? 'legacy') === 'simplified' ? 'simplified' : 'legacy') : 'simplified'
+
+  // ── SIMPLIFIED (August onward): no decisions ───────────────────────────────
+  // Line prices are the real paid prices, so every order counts at its line
+  // price. Rule 2: a $0/blank order Total drops the whole order. Rule 3: a $0 KLL
+  // line gross drops just that line. Order-level Discount Code/Amount is credit
+  // only — those orders still count, and are listed for visibility. No flagging.
+  if (ruleSet === 'simplified') {
+    const orderTotalOf = new Map<string, number | null>()
+    for (const r of rows) if (!orderTotalOf.has(r.order_number)) orderTotalOf.set(r.order_number, r.order_total != null ? Number(r.order_total) : null)
+
+    const isZeroTotal = (on: string) => { const t = orderTotalOf.get(on); return t == null || t <= 0 }
+
+    // Rule 2 — excluded orders (for the informational list).
+    const excludedOrders = [...orderTotalOf.entries()]
+      .filter(([on]) => isZeroTotal(on))
+      .map(([on]) => ({ order_number: on, order_total: orderTotalOf.get(on) ?? null, reason: 'Order Total is $0 or blank' }))
+      .sort((a, b) => a.order_number.localeCompare(b.order_number))
+
+    // Counted lines: from non-excluded orders, dropping $0-gross lines (rule 3).
+    const countedRows = rows
+      .filter((r) => !isZeroTotal(r.order_number) && Number(r.gross) > 0)
+      .map(toDetail)
+      .sort((a, b) => a.order_number.localeCompare(b.order_number) || a.sku.localeCompare(b.sku))
+
+    // Rule 1 — credit orders: still counted at full price, listed for visibility.
+    const creditOrderNumbers = new Set(
+      rows.filter((r) => !isZeroTotal(r.order_number) && orderIsFlagged(r.discount_code, r.discount_amount)).map((r) => r.order_number)
+    )
+    const creditMap = new Map<string, { order_number: string; discount_code: string | null; discount_amount: number | null; gross: number; lines: ReturnType<typeof toDetail>[] }>()
+    for (const r of countedRows) {
+      if (!creditOrderNumbers.has(r.order_number)) continue
+      const src = rows.find((x) => x.order_number === r.order_number)!
+      let g = creditMap.get(r.order_number)
+      if (!g) { g = { order_number: r.order_number, discount_code: src.discount_code, discount_amount: src.discount_amount != null ? Number(src.discount_amount) : null, gross: 0, lines: [] }; creditMap.set(r.order_number, g) }
+      g.lines.push(r); g.gross += r.gross
+    }
+    const creditOrders = [...creditMap.values()].sort((a, b) => b.gross - a.gross || a.order_number.localeCompare(b.order_number))
+
+    const grossSales = countedRows.reduce((s, r) => s + r.gross, 0)
+    return Response.json({
+      month, months, rule_set: ruleSet,
+      summary: {
+        gross_sales: grossSales,
+        total_orders: new Set(countedRows.map((r) => r.order_number)).size,
+        line_items: countedRows.length,
+        clean_gross: grossSales, clean_orders: new Set(countedRows.map((r) => r.order_number)).size,
+        resolved_contribution: 0, resolved_orders: 0,
+      },
+      // No flag/decide workflow under the simplified rules.
+      flagged: { orders: [], order_count: 0, pending_count: 0, pending_subtotal_gross: 0, resolved_count: 0, resolved_contribution: 0, line_items: 0 },
+      informational: {
+        excluded_orders: excludedOrders,
+        credit_orders: creditOrders,
+      },
+      upload: { uploaded_at: uploadedAt, source_filename: rows[0]?.source_filename ?? null },
+      skus: buildSkus(countedRows),
+      rows: countedRows,
+    })
+  }
+
+  // ── LEGACY (June/July): flag / decide / resolve — unchanged ────────────────
   // Flag decision is per ORDER. Every row of an order carries the same discount
   // values, so read them off the order's rows.
   const flaggedOrders = new Set<string>()
@@ -130,15 +224,6 @@ export async function GET(req: NextRequest) {
       }
     }
   }
-
-  const toDetail = (r: StoredRow) => ({
-    order_number: r.order_number,
-    sku: r.sku,
-    product_title: r.product_title ?? '',
-    qty: r.quantity,
-    unit_price: Number(r.unit_price),
-    gross: Number(r.gross),
-  })
 
   const cleanRows = rows.filter((r) => !flaggedOrders.has(r.order_number)).map(toDetail)
   const flaggedStored = rows.filter((r) => flaggedOrders.has(r.order_number))
@@ -225,15 +310,7 @@ export async function GET(req: NextRequest) {
 
   // SKU totals over the merged rows (clean + resolved); qty is unchanged by a
   // discount, so resolved orders add their full units (ignore excluded above).
-  const skuTotals = new Map<string, { sku: string; product_title: string; units_sold: number }>()
-  for (const r of detailRows) {
-    const entry = skuTotals.get(r.sku)
-    if (entry) entry.units_sold += r.qty
-    else skuTotals.set(r.sku, { sku: r.sku, product_title: r.product_title, units_sold: r.qty })
-  }
-  const skus = [...skuTotals.values()].sort(
-    (a, b) => b.units_sold - a.units_sold || a.sku.localeCompare(b.sku)
-  )
+  const skus = buildSkus(detailRows)
 
   // Clean orders + resolved orders' chosen contributions make the headline total.
   const cleanGross = cleanRows.reduce((s, r) => s + r.gross, 0)
@@ -241,13 +318,10 @@ export async function GET(req: NextRequest) {
   const resolvedContribution = resolved.reduce((s, g) => s + g.contribution, 0)
   const resolvedCounts = resolved.filter((g) => g.counts_as_order).length
 
-  const uploadedAt = rows.reduce<string | null>(
-    (latest, r) => (!latest || r.uploaded_at > latest ? r.uploaded_at : latest), null
-  )
-
   return Response.json({
     month,
     months,
+    rule_set: ruleSet, // 'legacy'
     // Headline = clean orders + resolved flagged orders (by their chosen method).
     // Pending flagged orders are still excluded until a decision is saved.
     summary: {
@@ -269,6 +343,8 @@ export async function GET(req: NextRequest) {
       resolved_contribution: resolvedContribution,
       line_items: flaggedStored.length,
     },
+    // Simplified-only section; legacy months don't have it.
+    informational: null,
     upload: {
       uploaded_at: uploadedAt,
       source_filename: rows[0]?.source_filename ?? null,
