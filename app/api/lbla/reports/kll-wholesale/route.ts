@@ -18,7 +18,7 @@
 import { NextRequest } from 'next/server'
 import { createSupabaseServiceClient } from '@/lib/supabase'
 import { getDefaultMonth } from '@/lib/kll'
-import { orderContribution, type DiscountAction } from '@/lib/wholesaleDiscount'
+import { orderContribution, distributedLineGross, distributionDenominator, type DiscountAction } from '@/lib/wholesaleDiscount'
 
 export const maxDuration = 60
 
@@ -143,18 +143,6 @@ export async function GET(req: NextRequest) {
   const cleanRows = rows.filter((r) => !flaggedOrders.has(r.order_number)).map(toDetail)
   const flaggedStored = rows.filter((r) => flaggedOrders.has(r.order_number))
 
-  // CLEAN detail table + SKU totals + headline summary all derive from cleanRows,
-  // so they cannot drift apart.
-  const skuTotals = new Map<string, { sku: string; product_title: string; units_sold: number }>()
-  for (const r of cleanRows) {
-    const entry = skuTotals.get(r.sku)
-    if (entry) entry.units_sold += r.qty
-    else skuTotals.set(r.sku, { sku: r.sku, product_title: r.product_title, units_sold: r.qty })
-  }
-  const skus = [...skuTotals.values()].sort(
-    (a, b) => b.units_sold - a.units_sold || a.sku.localeCompare(b.sku)
-  )
-
   // FLAGGED orders, grouped: one entry per order with its discount, KLL lines, and
   // its decision (if any) applied.
   const flaggedMap = new Map<string, {
@@ -204,6 +192,49 @@ export async function GET(req: NextRequest) {
   const pending = flaggedGroups.filter((g) => !g.resolved)
   const resolved = flaggedGroups.filter((g) => g.resolved)
 
+  // Resolved orders (except ignore) merge into the main detail rows with their
+  // ADJUSTED per-line values, so the table, SKU totals and CSV reflect the chosen
+  // decision. full_price keeps the recorded lines; distribute spreads the amount
+  // across the full order and each KLL line keeps its share (same rule as the
+  // per-order contribution, so the merged gross reconciles to the headline total).
+  const resolvedRows: ReturnType<typeof toDetail>[] = []
+  for (const g of resolved) {
+    if (!g.counts_as_order || !g.decision) continue // ignore contributes nothing
+    if (g.decision.action === 'full_price') {
+      resolvedRows.push(...g.lines)
+      continue
+    }
+    const amount = g.decision.action === 'distribute_full'
+      ? (g.discount_amount ?? 0)
+      : (g.decision.custom_amount ?? 0)
+    const denom = distributionDenominator(g.gross, g.order_line_total)
+    for (const line of g.lines) {
+      const adjGross = distributedLineGross(line.gross, denom, amount)
+      resolvedRows.push({
+        ...line,
+        gross: adjGross,
+        unit_price: line.qty > 0 ? adjGross / line.qty : 0,
+      })
+    }
+  }
+
+  // The main detail table = clean lines + resolved lines, one deterministic order.
+  const detailRows = [...cleanRows, ...resolvedRows].sort(
+    (a, b) => a.order_number.localeCompare(b.order_number) || a.sku.localeCompare(b.sku)
+  )
+
+  // SKU totals over the merged rows (clean + resolved); qty is unchanged by a
+  // discount, so resolved orders add their full units (ignore excluded above).
+  const skuTotals = new Map<string, { sku: string; product_title: string; units_sold: number }>()
+  for (const r of detailRows) {
+    const entry = skuTotals.get(r.sku)
+    if (entry) entry.units_sold += r.qty
+    else skuTotals.set(r.sku, { sku: r.sku, product_title: r.product_title, units_sold: r.qty })
+  }
+  const skus = [...skuTotals.values()].sort(
+    (a, b) => b.units_sold - a.units_sold || a.sku.localeCompare(b.sku)
+  )
+
   // Clean orders + resolved orders' chosen contributions make the headline total.
   const cleanGross = cleanRows.reduce((s, r) => s + r.gross, 0)
   const cleanOrders = new Set(cleanRows.map((r) => r.order_number)).size
@@ -222,7 +253,7 @@ export async function GET(req: NextRequest) {
     summary: {
       gross_sales: cleanGross + resolvedContribution,
       total_orders: cleanOrders + resolvedCounts,
-      line_items: cleanRows.length,
+      line_items: detailRows.length,
       clean_gross: cleanGross,
       clean_orders: cleanOrders,
       resolved_contribution: resolvedContribution,
@@ -243,6 +274,6 @@ export async function GET(req: NextRequest) {
       source_filename: rows[0]?.source_filename ?? null,
     },
     skus,
-    rows: cleanRows,
+    rows: detailRows,
   })
 }

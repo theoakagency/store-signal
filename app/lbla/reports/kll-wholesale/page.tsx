@@ -618,7 +618,10 @@ export default function KllWholesalePage() {
         <div className="space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-sm font-medium text-ink">
-              {report.rows.length.toLocaleString()} clean line item{report.rows.length !== 1 ? 's' : ''}
+              {report.rows.length.toLocaleString()} line item{report.rows.length !== 1 ? 's' : ''}
+              {report.summary.resolved_orders > 0 && (
+                <span className="ml-1 font-normal text-ink-3">(clean + {report.summary.resolved_orders} resolved, adjusted)</span>
+              )}
               {report.upload.source_filename && (
                 <span className="ml-2 font-normal text-ink-3">from {report.upload.source_filename}</span>
               )}
@@ -671,8 +674,8 @@ export default function KllWholesalePage() {
                 </tbody>
                 <tfoot>
                   <tr className="border-t-2 border-cream-3 bg-cream">
-                    <td colSpan={5} className="px-3 py-3 text-xs font-semibold text-ink">Total (Clean)</td>
-                    <td className="px-3 py-3 text-right font-data text-xs font-semibold text-ink">{fmtCurrency(report.summary.clean_gross)}</td>
+                    <td colSpan={5} className="px-3 py-3 text-xs font-semibold text-ink">Total</td>
+                    <td className="px-3 py-3 text-right font-data text-xs font-semibold text-ink">{fmtCurrency(report.summary.gross_sales)}</td>
                   </tr>
                 </tfoot>
               </table>
