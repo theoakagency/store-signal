@@ -132,6 +132,40 @@ export async function GET(req: NextRequest) {
   const ruleSet: 'legacy' | 'simplified' =
     rows.length > 0 ? ((rows[0].rule_set ?? 'legacy') === 'simplified' ? 'simplified' : 'legacy') : 'simplified'
 
+  // Manual line items for this month (migration 044) — hand-entered, merged into
+  // the detail table / SKUs / totals for BOTH rule sets, and listed for audit.
+  // Kept in their own table so a re-upload can't wipe them; a missing table
+  // (pre-044) is tolerated as "no manual entries".
+  interface ManualEntry { id: string; order_number: string | null; sku: string; product_title: string | null; quantity: number; unit_price: number; gross: number; added_by: string | null; added_at: string; updated_at: string }
+  const manualEntries: ManualEntry[] = []
+  {
+    const { data, error } = await service
+      .from('wholesale_manual_line_items')
+      .select('*')
+      .eq('tenant_id', TENANT_ID)
+      .eq('month', month)
+      .order('added_at', { ascending: true })
+    if (!error) {
+      for (const m of data ?? []) {
+        manualEntries.push({
+          id: m.id, order_number: m.order_number ?? null, sku: m.sku, product_title: m.product_title ?? null,
+          quantity: Number(m.quantity), unit_price: Number(m.unit_price), gross: Number(m.gross),
+          added_by: m.added_by ?? null, added_at: m.added_at, updated_at: m.updated_at,
+        })
+      }
+    }
+  }
+  const manualRows = manualEntries.map((m) => ({
+    order_number: m.order_number ?? '', sku: m.sku, product_title: m.product_title ?? '',
+    qty: m.quantity, unit_price: m.unit_price, gross: m.gross,
+  }))
+  const manualGross = manualRows.reduce((s, r) => s + r.gross, 0)
+  const blankManualOrders = manualEntries.filter((m) => !(m.order_number && m.order_number.trim())).length
+  // Distinct orders across all counted detail rows (blank-order manual lines each
+  // count as their own order); non-blank manual orders merge with matching ones.
+  const countDistinctOrders = (detail: { order_number: string }[]) =>
+    new Set(detail.filter((r) => r.order_number).map((r) => r.order_number)).size + blankManualOrders
+
   // ── SIMPLIFIED (August onward): no decisions ───────────────────────────────
   // Line prices are the real paid prices, so every order counts at its line
   // price. Rule 2: a $0/blank order Total drops the whole order. Rule 3: a $0 KLL
@@ -169,14 +203,19 @@ export async function GET(req: NextRequest) {
     }
     const creditOrders = [...creditMap.values()].sort((a, b) => b.gross - a.gross || a.order_number.localeCompare(b.order_number))
 
-    const grossSales = countedRows.reduce((s, r) => s + r.gross, 0)
+    // Merge manual line items into the main table / SKUs / totals.
+    const allDetail = [...countedRows, ...manualRows].sort(
+      (a, b) => a.order_number.localeCompare(b.order_number) || a.sku.localeCompare(b.sku)
+    )
+    const grossSales = countedRows.reduce((s, r) => s + r.gross, 0) + manualGross
+    const totalOrders = countDistinctOrders(allDetail)
     return Response.json({
       month, months, rule_set: ruleSet,
       summary: {
         gross_sales: grossSales,
-        total_orders: new Set(countedRows.map((r) => r.order_number)).size,
-        line_items: countedRows.length,
-        clean_gross: grossSales, clean_orders: new Set(countedRows.map((r) => r.order_number)).size,
+        total_orders: totalOrders,
+        line_items: allDetail.length,
+        clean_gross: grossSales, clean_orders: totalOrders,
         resolved_contribution: 0, resolved_orders: 0,
       },
       // No flag/decide workflow under the simplified rules.
@@ -185,9 +224,10 @@ export async function GET(req: NextRequest) {
         excluded_orders: excludedOrders,
         credit_orders: creditOrders,
       },
+      manual_entries: manualEntries,
       upload: { uploaded_at: uploadedAt, source_filename: rows[0]?.source_filename ?? null },
-      skus: buildSkus(countedRows),
-      rows: countedRows,
+      skus: buildSkus(allDetail),
+      rows: allDetail,
     })
   }
 
@@ -303,33 +343,34 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // The main detail table = clean lines + resolved lines, one deterministic order.
-  const detailRows = [...cleanRows, ...resolvedRows].sort(
+  // The main detail table = clean lines + resolved lines + manual entries.
+  const detailRows = [...cleanRows, ...resolvedRows, ...manualRows].sort(
     (a, b) => a.order_number.localeCompare(b.order_number) || a.sku.localeCompare(b.sku)
   )
 
-  // SKU totals over the merged rows (clean + resolved); qty is unchanged by a
-  // discount, so resolved orders add their full units (ignore excluded above).
+  // SKU totals over the merged rows (clean + resolved + manual); qty is unchanged
+  // by a discount, so resolved orders add their full units (ignore excluded above).
   const skus = buildSkus(detailRows)
 
-  // Clean orders + resolved orders' chosen contributions make the headline total.
+  // Clean orders + resolved orders' chosen contributions + manual lines.
   const cleanGross = cleanRows.reduce((s, r) => s + r.gross, 0)
-  const cleanOrders = new Set(cleanRows.map((r) => r.order_number)).size
   const resolvedContribution = resolved.reduce((s, g) => s + g.contribution, 0)
   const resolvedCounts = resolved.filter((g) => g.counts_as_order).length
+  const grossSales = cleanGross + resolvedContribution + manualGross
+  const totalOrders = countDistinctOrders(detailRows)
 
   return Response.json({
     month,
     months,
     rule_set: ruleSet, // 'legacy'
-    // Headline = clean orders + resolved flagged orders (by their chosen method).
+    // Headline = clean orders + resolved flagged orders + manual line items.
     // Pending flagged orders are still excluded until a decision is saved.
     summary: {
-      gross_sales: cleanGross + resolvedContribution,
-      total_orders: cleanOrders + resolvedCounts,
+      gross_sales: grossSales,
+      total_orders: totalOrders,
       line_items: detailRows.length,
       clean_gross: cleanGross,
-      clean_orders: cleanOrders,
+      clean_orders: new Set(cleanRows.map((r) => r.order_number)).size,
       resolved_contribution: resolvedContribution,
       resolved_orders: resolvedCounts,
     },
@@ -345,6 +386,7 @@ export async function GET(req: NextRequest) {
     },
     // Simplified-only section; legacy months don't have it.
     informational: null,
+    manual_entries: manualEntries,
     upload: {
       uploaded_at: uploadedAt,
       source_filename: rows[0]?.source_filename ?? null,

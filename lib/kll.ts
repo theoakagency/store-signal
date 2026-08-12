@@ -18,6 +18,28 @@ export const TARGET_SKUS = new Set([
 // Kit SKUs carry a gift-with-purchase and are ineligible for most discount codes.
 export const KIT_SKUS = new Set(['MKLBKLLKT', 'MKLBKLLKTGWP'])
 
+// Canonical product title per target SKU, for the manual-entry form's auto-fill.
+// Derived from the stored wholesale data (MKLBKLLKTGWP has never sold wholesale,
+// so it carries its standard retail title). The user can override per entry.
+export const KLL_SKU_TITLES: Record<string, string> = {
+  MKLBKLLKT: 'Miko Korean Lash Lift System Starter Kit',
+  MKLBKLLKTGWP: 'Miko Korean Lash Lift System Starter Kit + FREE Mixing Palette',
+  KLLMXGPLT: 'Miko Korean Lash Lift Mixing Palette',
+  KLLFLTSHD: 'Miko Korean Lash Lift Precision Grip Flat Pads',
+  KLLRUSBEYEPD3: 'Miko Korean Lash Lift Reusable Under Eye Pads',
+  KLLBRSH3: 'Miko Korean Lash Lift Ultra Precision Brush (#3)',
+  KLLBRSH2: 'Miko Korean Lash Lift Feather Touch Brush (#2)',
+  KLLBRSH1: 'Miko Korean Lash Lift Bold Lift Brush (#1)',
+  KLLEYEPRCWP: 'Miko Korean Lash Lift Eye Processing Wraps',
+  KLLESN6: 'Miko Korean Lash Lift Essentials Shield Set',
+  KLLLBA: 'Miko Korean Lash Lift Balm Adhesive',
+  KLLVCG: 'Miko Korean Lash Lift Viscosity Gel Controller',
+  KLLST2NL: 'Miko Korean Lash Lift Step 2 — Lash Neutralizing Lotion',
+  KLLST1LSL: 'Miko Korean Lash Lift Step 1 — Lifting & Softening Lotion',
+  KLLPTPRM: 'Miko Korean Lash Lift Treatment Primer',
+  KLLST3TM: 'Miko Korean Lash Lift Step 3 Treatment Mask',
+}
+
 // Event/giveaway code. Orders carrying it are comped stock, not sales, and are
 // excluded from every KLL report entirely — no row, no contribution to any total.
 export const EVENT_CODE = 'KLLEVENT'
