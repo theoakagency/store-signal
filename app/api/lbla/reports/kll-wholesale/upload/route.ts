@@ -38,6 +38,7 @@ const COL = {
   financialStatus: 'Financial Status',
   discountCode: 'Discount Code',
   discountAmount: 'Discount Amount',
+  total: 'Total',
 } as const
 
 interface ParsedRow {
@@ -58,6 +59,11 @@ interface ParsedRow {
   // every KLL row. The distribution denominator for the discount-decision tool.
   order_line_total: number | null
   order_line_count: number | null
+  // Shopify "Total" (order grand total), forward-filled. A $0/blank Total drops
+  // the whole order under the simplified rules.
+  order_total: number | null
+  // 'legacy' | 'simplified' — the upload rule set, pinned per month (see below).
+  rule_set: string
   source_filename: string
 }
 
@@ -118,6 +124,7 @@ export async function POST(req: NextRequest) {
   const orderCreatedAt = new Map<string, string>()
   const orderDiscountCode = new Map<string, string>()
   const orderDiscountAmount = new Map<string, string>()
+  const orderTotal = new Map<string, string>()
   // Full order line value (sum of qty x price over EVERY line, all SKUs) and line
   // count — the distribution denominator. Accumulated across all lines, so this
   // pass must run over the whole file before the KLL filter.
@@ -135,6 +142,8 @@ export async function POST(req: NextRequest) {
     if (code && code.trim() && !orderDiscountCode.has(name)) orderDiscountCode.set(name, code.trim())
     const amount = r[COL.discountAmount]
     if (amount && amount.trim() && !orderDiscountAmount.has(name)) orderDiscountAmount.set(name, amount.trim())
+    const total = r[COL.total]
+    if (total && total.trim() && !orderTotal.has(name)) orderTotal.set(name, total.trim())
     // Every row is one line item; sum its gross into the order total, all SKUs.
     const q = parseInt(r[COL.qty], 10)
     const p = parseFloat(r[COL.price])
@@ -189,6 +198,12 @@ export async function POST(req: NextRequest) {
       discount_amount: discountAmount,
       order_line_total: Math.round((orderLineTotal.get(orderNumber) ?? 0) * 100) / 100,
       order_line_count: orderLineCount.get(orderNumber) ?? null,
+      order_total: (() => {
+        const raw = orderTotal.get(orderNumber)
+        const n = raw != null ? parseFloat(raw.replace(/[$,]/g, '')) : NaN
+        return Number.isFinite(n) ? n : null
+      })(),
+      rule_set: 'simplified', // provisional; corrected per month below
       source_filename: file.name,
     })
   }
@@ -201,6 +216,23 @@ export async function POST(req: NextRequest) {
 
   const service = createSupabaseServiceClient()
   const months = [...monthsSeen].sort()
+
+  // Pin each month's rule set. A month ALREADY in the system keeps its existing
+  // rule set (NULL — pre-043 June/July — counts as 'legacy'), so re-uploading it
+  // can never reinterpret it under the new rules. A month new to the system gets
+  // 'simplified'. This read happens BEFORE the replace below.
+  const ruleSetByMonth = new Map<string, string>()
+  for (const month of months) {
+    const { data, error } = await service
+      .from('wholesale_kll_orders')
+      .select('rule_set')
+      .eq('tenant_id', TENANT_ID)
+      .eq('month', month)
+      .limit(1)
+    if (error) return Response.json({ error: `Rule-set lookup failed for ${month}: ${error.message}` }, { status: 500 })
+    ruleSetByMonth.set(month, data && data.length > 0 ? (data[0].rule_set ?? 'legacy') : 'simplified')
+  }
+  for (const r of parsed) r.rule_set = ruleSetByMonth.get(r.month) ?? 'simplified'
 
   // Replace, don't merge: a corrected re-upload must not leave rows behind from
   // the version it supersedes. Scoped to the months this file actually covers, so
@@ -227,6 +259,9 @@ export async function POST(req: NextRequest) {
 
   return Response.json({
     months,
+    // Which rule set each uploaded month landed under, so the receipt can word
+    // itself correctly (legacy still speaks of flagged orders; simplified doesn't).
+    rule_sets: [...new Set([...ruleSetByMonth.values()])],
     line_items: parsed.length,
     orders: ordersSeen.size,
     gross: parsed.reduce((s, r) => s + r.gross, 0),

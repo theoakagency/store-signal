@@ -3,6 +3,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import CollapsibleCard from '@/app/lbla/_components/CollapsibleCard'
+import { KLL_SKU_TITLES } from '@/lib/kll'
+
+// The 16 KLL SKUs in a stable order for the manual-entry dropdown.
+const KLL_SKU_OPTIONS = Object.keys(KLL_SKU_TITLES)
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -44,9 +48,15 @@ interface FlaggedGroup {
   counts_as_order: boolean
 }
 
+interface ExcludedOrder { order_number: string; order_total: number | null; reason: string }
+interface CreditOrder { order_number: string; discount_code: string | null; discount_amount: number | null; gross: number; lines: DetailRow[] }
+
 interface ReportResponse {
   month: string
   months: string[]
+  // 'legacy' = the flag/decide/resolve workflow (June/July); 'simplified' = new
+  // months, where line price is the real price and credit needs no decision.
+  rule_set: 'legacy' | 'simplified'
   // Headline = clean orders + resolved flagged orders (by their chosen method).
   summary: {
     gross_sales: number; total_orders: number; line_items: number
@@ -59,9 +69,26 @@ interface ReportResponse {
     resolved_count: number; resolved_contribution: number
     line_items: number
   }
+  // Simplified months only: informational (no-action) lists.
+  informational: { excluded_orders: ExcludedOrder[]; credit_orders: CreditOrder[] } | null
+  // Hand-entered line items for this month (audit list; also merged into rows/skus/totals).
+  manual_entries: ManualEntry[]
   upload: { uploaded_at: string | null; source_filename: string | null }
   skus: SkuTotal[]
   rows: DetailRow[]
+}
+
+interface ManualEntry {
+  id: string
+  order_number: string | null
+  sku: string
+  product_title: string | null
+  quantity: number
+  unit_price: number
+  gross: number
+  added_by: string | null
+  added_at: string
+  updated_at: string
 }
 
 const ACTION_OPTIONS: { value: DiscountAction; label: string }[] = [
@@ -77,6 +104,7 @@ const ACTION_LABEL: Record<DiscountAction, string> = {
 
 interface UploadResult {
   months: string[]
+  rule_sets: string[]
   line_items: number
   orders: number
   gross: number
@@ -366,6 +394,169 @@ function FlaggedOrderCard({ g, onChanged }: { g: FlaggedGroup; onChanged: () => 
   )
 }
 
+// ── Manual line item form (add or edit) ───────────────────────────────────────
+
+function ManualEntryForm({ month, existing, onDone, onCancel }: {
+  month: string
+  existing?: ManualEntry
+  onDone: () => void
+  onCancel?: () => void
+}) {
+  const initChoice = existing ? (KLL_SKU_OPTIONS.includes(existing.sku) ? existing.sku : 'OTHER') : ''
+  const [orderNumber, setOrderNumber] = useState(existing?.order_number ?? '')
+  const [skuChoice, setSkuChoice] = useState(initChoice) // known SKU, 'OTHER', or ''
+  const [otherSku, setOtherSku] = useState(existing && initChoice === 'OTHER' ? existing.sku : '')
+  const [title, setTitle] = useState(existing?.product_title ?? (initChoice && initChoice !== 'OTHER' ? KLL_SKU_TITLES[initChoice] : ''))
+  const [editTitle, setEditTitle] = useState(false)
+  const [qty, setQty] = useState(existing ? String(existing.quantity) : '')
+  const [price, setPrice] = useState(existing ? String(existing.unit_price) : '')
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  const isOther = skuChoice === 'OTHER'
+  const qtyNum = qty.trim() !== '' ? parseInt(qty, 10) : NaN
+  const priceNum = price.trim() !== '' ? parseFloat(price) : NaN
+  const grossPreview = Number.isFinite(qtyNum) && Number.isFinite(priceNum) ? qtyNum * priceNum : null
+
+  function chooseSku(v: string) {
+    setSkuChoice(v)
+    if (v === 'OTHER') { setEditTitle(true); if (!existing) setTitle('') }
+    else if (v) { setEditTitle(false); setTitle(KLL_SKU_TITLES[v] ?? '') }
+  }
+
+  async function submit() {
+    const skuFinal = (isOther ? otherSku : skuChoice).trim().toUpperCase()
+    if (!skuFinal) { setErr('Choose a SKU (or Other and type one).'); return }
+    if (isOther && title.trim() === '') { setErr('Product Title is required for an "Other" SKU.'); return }
+    if (!Number.isInteger(qtyNum) || qtyNum <= 0) { setErr('Quantity must be a whole number greater than 0.'); return }
+    if (!Number.isFinite(priceNum) || priceNum < 0) { setErr('Unit Price must be a number of 0 or more.'); return }
+    setSaving(true); setErr(null)
+    const payload = {
+      ...(existing ? { id: existing.id } : { month }),
+      order_number: orderNumber.trim() || null,
+      sku: skuFinal,
+      product_title: title.trim() || null,
+      quantity: qtyNum,
+      unit_price: priceNum,
+    }
+    try {
+      const res = await fetch('/api/lbla/reports/kll-wholesale/manual', {
+        method: existing ? 'PATCH' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      const data = await res.json()
+      if (!res.ok) { setErr(data.error ?? 'Save failed'); return }
+      if (!existing) { setOrderNumber(''); setSkuChoice(''); setOtherSku(''); setTitle(''); setQty(''); setPrice('') }
+      onDone()
+    } catch { setErr('Network error') } finally { setSaving(false) }
+  }
+
+  const inputCls = 'rounded-lg border border-cream-3 bg-white px-2.5 py-1.5 text-xs text-ink focus:border-teal focus:outline-none focus:ring-2 focus:ring-teal/20 transition disabled:opacity-50'
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <label className="flex flex-col gap-1">
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-2">Order Number <span className="font-normal text-ink-3">(optional)</span></span>
+          <input value={orderNumber} onChange={(e) => setOrderNumber(e.target.value)} disabled={saving} placeholder="new or existing" className={inputCls} />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-2">SKU</span>
+          <select value={skuChoice} onChange={(e) => chooseSku(e.target.value)} disabled={saving} className={inputCls}>
+            <option value="">— Choose a SKU —</option>
+            {KLL_SKU_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
+            <option value="OTHER">Other / Not Listed</option>
+          </select>
+        </label>
+        {isOther && (
+          <label className="flex flex-col gap-1">
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-2">SKU (custom)</span>
+            <input value={otherSku} onChange={(e) => setOtherSku(e.target.value)} disabled={saving} placeholder="type a SKU" className={`${inputCls} font-data`} />
+          </label>
+        )}
+        <label className="flex flex-col gap-1 sm:col-span-2">
+          <span className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-ink-2">
+            Product Title
+            {!isOther && skuChoice && (
+              <button type="button" onClick={() => setEditTitle((v) => !v)} className="font-normal text-teal-deep hover:text-teal transition normal-case">
+                {editTitle ? 'use default' : 'edit title'}
+              </button>
+            )}
+          </span>
+          <input
+            value={title} onChange={(e) => setTitle(e.target.value)}
+            readOnly={!isOther && !editTitle} disabled={saving}
+            placeholder={isOther ? 'required for a custom SKU' : ''}
+            className={`${inputCls} ${!isOther && !editTitle ? 'bg-cream/50 text-ink-2' : ''}`}
+          />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-2">Quantity</span>
+          <input type="number" min="1" step="1" value={qty} onChange={(e) => setQty(e.target.value)} disabled={saving} className={`${inputCls} font-data`} />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-2">Unit Price</span>
+          <input type="number" min="0" step="0.01" value={price} onChange={(e) => setPrice(e.target.value)} disabled={saving} placeholder="0.00" className={`${inputCls} font-data`} />
+        </label>
+      </div>
+      <div className="flex flex-wrap items-center gap-3">
+        {grossPreview != null && <span className="text-xs text-ink-3">Gross: <span className="font-data font-semibold text-ink">{fmtCurrency(grossPreview)}</span></span>}
+        <div className="ml-auto flex items-center gap-2">
+          {onCancel && (
+            <button type="button" onClick={onCancel} disabled={saving} className="rounded-lg border border-cream-3 bg-white px-3 py-1.5 text-xs font-medium text-ink-3 transition hover:text-ink-2 disabled:opacity-50">Cancel</button>
+          )}
+          <button type="button" onClick={submit} disabled={saving} className="rounded-lg border border-teal/40 bg-teal/10 px-3 py-1.5 text-xs font-semibold text-teal-deep transition hover:bg-teal/20 disabled:opacity-40">
+            {saving ? 'Saving…' : existing ? 'Update line item' : 'Add line item'}
+          </button>
+        </div>
+        {err && <p className="w-full text-xs text-red-600">{err}</p>}
+      </div>
+    </div>
+  )
+}
+
+// ── Manually-added line items audit row ────────────────────────────────────────
+
+function ManualEntryRow({ m, month, onChanged }: { m: ManualEntry; month: string; onChanged: () => void }) {
+  const [editing, setEditing] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  async function del() {
+    if (!confirm(`Delete manual line item ${m.sku} (${m.quantity} × ${fmtCurrency(m.unit_price)})?`)) return
+    setBusy(true); setErr(null)
+    try {
+      const res = await fetch(`/api/lbla/reports/kll-wholesale/manual?id=${encodeURIComponent(m.id)}`, { method: 'DELETE' })
+      const data = await res.json()
+      if (!res.ok) { setErr(data.error ?? 'Delete failed'); return }
+      onChanged()
+    } catch { setErr('Network error') } finally { setBusy(false) }
+  }
+
+  if (editing) {
+    return (
+      <div className="px-4 py-3">
+        <ManualEntryForm month={month} existing={m} onDone={() => { setEditing(false); onChanged() }} onCancel={() => setEditing(false)} />
+      </div>
+    )
+  }
+  return (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-2.5 text-xs">
+      <span className="font-data text-ink">{m.order_number || <span className="text-ink-3">—</span>}</span>
+      <span className="font-data text-ink">{m.sku}</span>
+      <span className="min-w-0 flex-1 truncate text-ink-3" title={m.product_title ?? ''}>{m.product_title}</span>
+      <span className="font-data text-ink">{m.quantity} × {fmtCurrency(m.unit_price)}</span>
+      <span className="font-data font-semibold text-ink">{fmtCurrency(m.gross)}</span>
+      <span className="text-ink-3">{m.added_by ?? '—'}{m.added_at ? ` · ${fmtWhen(m.added_at)}` : ''}</span>
+      <span className="flex items-center gap-2">
+        <button type="button" onClick={() => setEditing(true)} disabled={busy} className="rounded border border-cream-3 bg-white px-2 py-1 font-medium text-ink-2 transition hover:text-ink disabled:opacity-50">Edit</button>
+        <button type="button" onClick={del} disabled={busy} className="rounded border border-red-200 bg-white px-2 py-1 font-medium text-red-600 transition hover:bg-red-50 disabled:opacity-50">{busy ? '…' : 'Delete'}</button>
+      </span>
+      {err && <span className="w-full text-red-600">{err}</span>}
+    </div>
+  )
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function KllWholesalePage() {
@@ -421,7 +612,9 @@ export default function KllWholesalePage() {
 
   const hasClean = !!report && report.rows.length > 0
   const hasFlagged = !!report && !!report.flagged && report.flagged.order_count > 0
-  const hasAnything = hasClean || hasFlagged
+  const info = report?.rule_set === 'simplified' ? report.informational : null
+  const hasInformational = !!info && (info.excluded_orders.length > 0 || info.credit_orders.length > 0)
+  const hasAnything = hasClean || hasFlagged || hasInformational
 
   return (
     <div className="mx-auto max-w-[1280px] px-4 py-8 sm:px-6 lg:px-8">
@@ -507,11 +700,19 @@ export default function KllWholesalePage() {
             item{uploadResult.line_items !== 1 ? 's' : ''} across{' '}
             <strong className="font-semibold text-ink">{uploadResult.orders.toLocaleString()}</strong> paid
             order{uploadResult.orders !== 1 ? 's' : ''} —{' '}
-            {uploadResult.months.map(displayMonth).join(', ')}.{' '}
-            <strong className="font-semibold text-ink">{uploadResult.clean_orders.toLocaleString()}</strong> clean
-            ({fmtCurrency(uploadResult.clean_gross)}),{' '}
-            <strong className="font-semibold text-ink">{uploadResult.flagged_orders.toLocaleString()}</strong> flagged for review
-            ({fmtCurrency(uploadResult.flagged_gross)}).
+            {uploadResult.months.map(displayMonth).join(', ')}.
+            {/* Legacy months still break out flagged orders; a purely-simplified
+                upload has no flag concept, so word it as all counted. */}
+            {uploadResult.rule_sets.includes('legacy') ? (
+              <>{' '}
+                <strong className="font-semibold text-ink">{uploadResult.clean_orders.toLocaleString()}</strong> clean
+                ({fmtCurrency(uploadResult.clean_gross)}),{' '}
+                <strong className="font-semibold text-ink">{uploadResult.flagged_orders.toLocaleString()}</strong> flagged for review
+                ({fmtCurrency(uploadResult.flagged_gross)}).
+              </>
+            ) : (
+              <> All counted at line price ({fmtCurrency(uploadResult.gross)}); credit/excluded orders are listed below for visibility only — no decisions needed.</>
+            )}
             {' '}Read {uploadResult.rows_in_file.toLocaleString()} rows from the file.
             {uploadResult.skipped_no_date > 0 && ` ${uploadResult.skipped_no_date} row(s) had no usable date and were skipped.`}
           </p>
@@ -541,6 +742,19 @@ export default function KllWholesalePage() {
 
       {error && (
         <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+      )}
+
+      {/* Add a manual line item — available for any month, counts immediately */}
+      {report && !error && (
+        <CollapsibleCard title={`Add a manual line item — ${displayMonth(report.month)}`} className="mb-6">
+          <div className="px-5 py-4">
+            <p className="mb-3 text-xs text-ink-3">
+              Hand-enter a KLL line item into <strong className="font-medium text-ink-2">{displayMonth(report.month)}</strong>.
+              It counts immediately in the totals below and appears in the audit list at the bottom — no review needed.
+            </p>
+            <ManualEntryForm month={report.month} onDone={() => fetchReport(month)} />
+          </div>
+        </CollapsibleCard>
       )}
 
       {/* Summary cards — clean orders + resolved flagged orders (by their chosen
@@ -721,6 +935,116 @@ export default function KllWholesalePage() {
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Informational-only (simplified months) — nothing here needs a decision */}
+      {hasInformational && info && (
+        <div className="mt-8 space-y-4">
+          <div>
+            <h2 className="font-display text-lg font-semibold text-ink">Orders with Credit Applied or Excluded — No Action Needed</h2>
+            <p className="mt-1 text-sm text-ink-3">
+              Line prices are the real paid prices, so these orders are already handled automatically — shown here
+              purely for visibility. <strong className="font-semibold text-ink">Nothing here changes the totals</strong> and
+              nothing needs a decision.
+            </p>
+          </div>
+
+          {/* Group A — auto-excluded for $0 total */}
+          {info.excluded_orders.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-ink-3">
+                Auto-Excluded ($0 Order Total) — {info.excluded_orders.length} order{info.excluded_orders.length !== 1 ? 's' : ''}
+              </p>
+              <div className="overflow-hidden rounded-2xl border border-cream-3 bg-white shadow-sm">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-cream-2 bg-cream">
+                      <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-ink-3">Order Number</th>
+                      <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-ink-3 whitespace-nowrap">Total</th>
+                      <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-ink-3">Reason</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-cream-2">
+                    {info.excluded_orders.map((o, i) => (
+                      <tr key={o.order_number} className={i % 2 === 0 ? 'bg-white' : 'bg-cream/40'}>
+                        <td className="px-3 py-2 font-data text-xs text-ink">{o.order_number}</td>
+                        <td className="px-3 py-2 text-right font-data text-xs text-ink">{o.order_total != null ? fmtCurrency(o.order_total) : '—'}</td>
+                        <td className="px-3 py-2 text-xs text-ink-3">{o.reason}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Group B — credit orders counted at full price */}
+          {info.credit_orders.length > 0 && (
+            <div className="space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-ink-3">
+                Credit Applied, Counted at Full Price — {info.credit_orders.length} order{info.credit_orders.length !== 1 ? 's' : ''}
+              </p>
+              {info.credit_orders.map((o) => (
+                <div key={o.order_number} className="overflow-hidden rounded-2xl border border-cream-3 bg-white shadow-sm">
+                  <div className="border-b border-cream-2 bg-cream/50 px-5 py-3">
+                    <p className="font-data text-sm font-semibold text-ink">{o.order_number}</p>
+                    <p className="mt-0.5 text-xs text-ink-2">
+                      <span className="font-medium text-ink">Credit:</span>{' '}
+                      {o.discount_code && o.discount_code.trim() !== '' ? o.discount_code : <span className="text-ink-3">(no code)</span>}
+                      {o.discount_amount != null && <> — <span className="font-data font-semibold text-ink">{fmtCurrency(o.discount_amount)}</span></>}
+                      <span className="ml-2 text-ink-3">· counted at full price {fmtCurrency(o.gross)}</span>
+                    </p>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full table-fixed text-sm">
+                      <colgroup><col className="w-[160px]" /><col /><col className="w-[55px]" /><col className="w-[100px]" /><col className="w-[100px]" /></colgroup>
+                      <tbody className="divide-y divide-cream-2">
+                        {o.lines.map((r, i) => (
+                          <tr key={`${o.order_number}-${r.sku}-${i}`} className="bg-white">
+                            <td className="px-3 py-2 font-data text-xs text-ink truncate">{r.sku}</td>
+                            <td className="px-3 py-2 text-xs text-ink-3 truncate" title={r.product_title}>{r.product_title}</td>
+                            <td className="px-3 py-2 text-right font-data text-xs text-ink">{r.qty}</td>
+                            <td className="px-3 py-2 text-right font-data text-xs text-ink">{fmtCurrency(r.unit_price)}</td>
+                            <td className="px-3 py-2 text-right font-data text-xs text-ink">{fmtCurrency(r.gross)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Manually Added Line Items — audit trail (also counted in the totals above) */}
+      {report && !error && report.manual_entries.length > 0 && (
+        <div className="mt-8 space-y-3">
+          <div>
+            <h2 className="font-display text-lg font-semibold text-ink">Manually Added Line Items</h2>
+            <p className="mt-1 text-sm text-ink-3">
+              {report.manual_entries.length} hand-entered line item{report.manual_entries.length !== 1 ? 's' : ''} for {displayMonth(report.month)},
+              already counted in the totals and SKUs above. Edit or delete any of them here.
+            </p>
+          </div>
+          <div className="overflow-hidden rounded-2xl border border-cream-3 bg-white shadow-sm">
+            <div className="hidden sm:flex items-center gap-x-4 border-b border-cream-2 bg-cream px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-ink-3">
+              <span className="w-[80px]">Order</span>
+              <span className="w-[130px]">SKU</span>
+              <span className="min-w-0 flex-1">Product</span>
+              <span>Qty × Unit</span>
+              <span>Gross</span>
+              <span>Added by</span>
+              <span className="w-[110px]" />
+            </div>
+            <div className="divide-y divide-cream-2">
+              {report.manual_entries.map((m) => (
+                <ManualEntryRow key={m.id} m={m} month={report.month} onChanged={() => fetchReport(month)} />
+              ))}
+            </div>
+          </div>
         </div>
       )}
     </div>
