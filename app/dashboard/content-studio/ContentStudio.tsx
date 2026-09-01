@@ -534,7 +534,8 @@ export default function ContentStudio({
     switch (contentType) {
       case 'product':
         if (form.topic) return form.topic
-        return productDisplayName ? `Promote ${productDisplayName}` : ''
+        if (productDisplayName) return `Promote ${productDisplayName}`
+        return form.productFocus.trim()
       case 'collection':
         return form.topic
       case 'landing-page':
@@ -575,6 +576,11 @@ export default function ContentStudio({
         break
       case 'event':
         if (!eventName.trim()) errs.eventName = 'Event name is required'
+        break
+      case 'promotion':
+        if (!discountAmount.trim() && !promoCode.trim() && !offerDetails.trim()) {
+          errs.offerDetails = 'Add a discount amount, promo code, or offer details so the copy has something to reference.'
+        }
         break
       case 'educational':
       case 'brand':
@@ -1075,7 +1081,15 @@ export default function ContentStudio({
                 </div>
                 <div>
                   <label className={labelCls}>Offer Type</label>
-                  <select value={offerType} onChange={(e) => setOfferType(e.target.value)} className={inputCls}>
+                  <select
+                    value={offerType}
+                    onChange={(e) => {
+                      const next = e.target.value
+                      setOfferType(next)
+                      if (next !== 'percent-off' && next !== 'dollar-off') setDiscountAmount('')
+                    }}
+                    className={inputCls}
+                  >
                     {OFFER_TYPE_OPTIONS.map((o) => (
                       <option key={o.value} value={o.value}>{o.label}</option>
                     ))}
@@ -1116,9 +1130,10 @@ export default function ContentStudio({
                     value={offerDetails}
                     onChange={(e) => setOfferDetails(e.target.value)}
                     placeholder="Any additional details about the promotion..."
-                    className={inputCls + ' resize-none'}
+                    className={inputCls + ' resize-none' + (validationErrors.offerDetails ? ' border-red-400' : '')}
                     style={{ minHeight: '72px' }}
                   />
+                  {validationErrors.offerDetails && <p className={errCls}>{validationErrors.offerDetails}</p>}
                 </div>
               </>
             )}
