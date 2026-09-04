@@ -372,13 +372,14 @@ export async function POST(req: NextRequest) {
     discountAmount?: string | null
     promoCode?: string | null
     length?: 'short' | 'long' | null
+    files?: { name: string; base64: string }[] | null
   }
 
   const {
     channel, subject, goal, historyLabel, products,
     audience, talkingPoints, pageUrl,
     offerType, discountAmount, promoCode,
-    length,
+    length, files,
   } = body
 
   if (!channel || !historyLabel) {
@@ -634,7 +635,16 @@ This is a constraint, not background. Every one of the three versions must be wr
     talkingPoints ? `Key Talking Points:\n${talkingPoints}` : '',
   ].filter(Boolean).join('\n')
 
-  const userPrompt = `Generate 3 versions of ${channel} content for LashBox LA.
+  // Reference PDFs are attached to the user message as document blocks. They are
+  // read for this generation only and never stored.
+  const attachments = (files ?? []).filter((f) => f?.base64 && f?.name)
+  const attachmentIntro = attachments.length
+    ? `REFERENCE FILES: ${attachments.length} document${attachments.length !== 1 ? 's' : ''} (${attachments.map((f) => f.name).join(', ')}) ${attachments.length !== 1 ? 'are' : 'is'} attached above. The user supplied ${attachments.length !== 1 ? 'them' : 'it'} as reference material for this specific campaign. Read ${attachments.length !== 1 ? 'them' : 'it'} and let the detail inform the copy: facts, positioning, product specifics, and anything the campaign hinges on. They do NOT override the style rules in the system prompt, which remain binding in full — if a reference file's own wording breaks a style rule, follow the style rule.
+
+`
+    : ''
+
+  const userPrompt = `${attachmentIntro}Generate 3 versions of ${channel} content for LashBox LA.
 
 ${briefLines}
 
@@ -646,12 +656,26 @@ Write 3 distinct versions, each taking a meaningfully different angle. Make the 
 
   let parsed: { versions: unknown[] }
 
+  // Documents first, then the text — the standard ordering for document blocks.
+  const userContent: Anthropic.ContentBlockParam[] = [
+    ...attachments.map((f) => ({
+      type: 'document' as const,
+      source: {
+        type: 'base64' as const,
+        media_type: 'application/pdf' as const,
+        data: f.base64,
+      },
+      title: f.name,
+    })),
+    { type: 'text' as const, text: userPrompt },
+  ]
+
   try {
     const message = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 2000,
       system: systemPrompt,
-      messages: [{ role: 'user', content: userPrompt }],
+      messages: [{ role: 'user', content: userContent }],
     })
 
     const text = message.content[0].type === 'text' ? message.content[0].text : ''
@@ -664,7 +688,16 @@ Write 3 distinct versions, each taking a meaningfully different angle. Make the 
 
     parsed = JSON.parse(cleaned) as { versions: unknown[] }
   } catch (err) {
-    return Response.json({ error: `Generation failed: ${(err as Error).message}` }, { status: 500 })
+    const detail = (err as Error).message
+    // Copy written from a brief that was never read is worse than an error, so
+    // say plainly that the attachments are implicated.
+    if (attachments.length) {
+      return Response.json({
+        error: `Generation failed and your reference files were not used: ${detail}`,
+        detail: `Attached: ${attachments.map((f) => f.name).join(', ')}. Nothing was generated. Remove or replace the files and try again.`,
+      }, { status: 500 })
+    }
+    return Response.json({ error: `Generation failed: ${detail}` }, { status: 500 })
   }
 
   // ── Section 4: Save to log ────────────────────────────────────────────────
@@ -679,6 +712,7 @@ Write 3 distinct versions, each taking a meaningfully different angle. Make the 
     product_focus:  focusEntries.length ? focusEntries.join(', ') : null,
     audience:       audienceText || null,
     talking_points: talkingPoints ?? null,
+    source_files:   attachments.length ? attachments.map((f) => f.name) : null,
     output:         parsed,
   })
 

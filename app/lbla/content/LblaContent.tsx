@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
+import { PDFDocument } from 'pdf-lib'
 import {
   SUBJECT_OPTIONS,
   GOAL_OPTIONS,
@@ -12,6 +13,17 @@ import {
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type Channel = 'email' | 'sms' | 'push'
+
+/** A PDF attached to this generation. Read, sent to the model, then discarded. */
+interface PdfAttachment {
+  name: string
+  pages: number
+  base64: string
+}
+
+const MAX_FILES = 4
+const MAX_PAGES = 15
+const MAX_BYTES = 10 * 1024 * 1024
 
 /** One selected product or collection, rendered as a removable chip. */
 interface FocusChip {
@@ -46,6 +58,7 @@ export interface GenerationLogRow {
   product_focus: string | null
   audience: string | null
   talking_points: string | null
+  source_files: string[] | null
   output: { versions: unknown[] }
   generated_at: string
 }
@@ -68,6 +81,76 @@ const CHANNEL_TABS: { id: Channel; label: string }[] = [
   { id: 'sms',   label: 'SMS' },
   { id: 'push',  label: 'Push' },
 ]
+
+// ── PDF attachments ───────────────────────────────────────────────────────────
+
+function formatMb(bytes: number): string {
+  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`
+}
+
+/**
+ * Real page count via pdf-lib.
+ *
+ * The previous byte-scanning approach looked for /Count and /Type /Page in the
+ * raw bytes, which PDF 1.5+ writers defeat by compressing the page tree into an
+ * object stream — including Google Docs exports, which is where the briefs come
+ * from. pdf-lib parses the document properly, so those files now count correctly.
+ *
+ * Returns null when the file cannot be parsed at all (encrypted, damaged, not a
+ * PDF). The caller rejects on null rather than accepting an unknown-length file.
+ */
+async function countPdfPages(buffer: ArrayBuffer): Promise<number | null> {
+  try {
+    const doc = await PDFDocument.load(buffer, { updateMetadata: false })
+    return doc.getPageCount()
+  } catch {
+    return null
+  }
+}
+
+function readAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = reader.result
+      if (typeof result !== 'string') return reject(new Error('Unexpected read result'))
+      const comma = result.indexOf(',')
+      if (comma === -1) return reject(new Error('Unexpected data URL'))
+      resolve(result.slice(comma + 1))
+    }
+    reader.onerror = () => reject(reader.error ?? new Error('Read failed'))
+    reader.readAsDataURL(file)
+  })
+}
+
+function PdfChips({ files, onRemove }: { files: PdfAttachment[]; onRemove: (name: string) => void }) {
+  if (!files.length) return null
+  return (
+    <div className="mt-2 flex flex-wrap gap-1.5">
+      {files.map((f) => (
+        <span
+          key={f.name}
+          className="inline-flex items-center gap-1.5 rounded-full border border-cream-3 bg-cream px-2.5 py-1 text-xs font-medium text-ink-2"
+        >
+          <svg className="h-3 w-3 shrink-0 text-ink-3" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
+            <path d="M3 1.5h4L9 4v6.5H3z" strokeLinejoin="round" />
+            <path d="M7 1.5V4h2" strokeLinejoin="round" />
+          </svg>
+          {f.name}
+          <span className="text-ink-3">({f.pages} {f.pages === 1 ? 'page' : 'pages'})</span>
+          <button
+            type="button"
+            onClick={() => onRemove(f.name)}
+            aria-label={`Remove ${f.name}`}
+            className="text-current opacity-50 hover:opacity-100 transition"
+          >
+            &times;
+          </button>
+        </span>
+      ))}
+    </div>
+  )
+}
 
 // ── Product / collection multi-select ─────────────────────────────────────────
 
@@ -507,6 +590,9 @@ export default function LblaContent({
     audience: '',
     talkingPoints: '',
   })
+  const [pdfFiles, setPdfFiles] = useState<PdfAttachment[]>([])
+  const [fileError, setFileError] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [productInput, setProductInput] = useState('')
   const [focusChips, setFocusChips] = useState<FocusChip[]>([])
   const [isLoading, setIsLoading] = useState(false)
@@ -556,6 +642,62 @@ export default function LblaContent({
   function addChip(chip: FocusChip) {
     setFocusChips((prev) => (prev.some((c) => c.value === chip.value) ? prev : [...prev, chip]))
     setProductInput('')   // input clears after each selection
+  }
+
+  // Every rejection names the file and the reason — a generic "invalid file"
+  // leaves the user guessing which of four uploads was the problem.
+  async function handleFilesSelected(selected: FileList | null) {
+    if (!selected?.length) return
+    setFileError(null)
+
+    const accepted: PdfAttachment[] = []
+    const problems: string[] = []
+
+    for (const file of Array.from(selected)) {
+      const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')
+      if (!isPdf) {
+        problems.push(`${file.name} is not a PDF. Only PDF files can be attached.`)
+        continue
+      }
+      if (file.size > MAX_BYTES) {
+        problems.push(`${file.name} is ${formatMb(file.size)}, the limit is ${formatMb(MAX_BYTES)}.`)
+        continue
+      }
+      if (pdfFiles.length + accepted.length >= MAX_FILES) {
+        problems.push(`${file.name} was not added — the limit is ${MAX_FILES} files per generation.`)
+        continue
+      }
+      if ([...pdfFiles, ...accepted].some((f) => f.name === file.name)) {
+        problems.push(`${file.name} is already attached.`)
+        continue
+      }
+
+      try {
+        const buffer = await file.arrayBuffer()
+        const pages = await countPdfPages(buffer)
+        if (pages === null) {
+          problems.push(`Could not read the page count of ${file.name}. It may be encrypted, damaged, or not a valid PDF.`)
+          continue
+        }
+        if (pages > MAX_PAGES) {
+          problems.push(`${file.name} is ${pages} pages, the limit is ${MAX_PAGES}.`)
+          continue
+        }
+        accepted.push({ name: file.name, pages, base64: await readAsBase64(file) })
+      } catch {
+        problems.push(`${file.name} could not be read.`)
+      }
+    }
+
+    if (accepted.length) setPdfFiles((prev) => [...prev, ...accepted])
+    if (problems.length) setFileError(problems.join(' '))
+    // Allow re-selecting the same filename after a removal.
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  function removePdf(name: string) {
+    setPdfFiles((prev) => prev.filter((f) => f.name !== name))
+    setFileError(null)
   }
 
   function removeChip(value: string) {
@@ -675,6 +817,7 @@ export default function LblaContent({
       products: subject === 'products' ? focusChips.map((c) => c.value) : [],
       audience: form.audience.trim() || null,
       talkingPoints: form.talkingPoints || null,
+      files: pdfFiles.map((f) => ({ name: f.name, base64: f.base64 })),
       length: form.channel === 'sms' ? null : contentLength,
     }
 
@@ -706,6 +849,10 @@ export default function LblaContent({
         setError(`Copy generated, but saving to Recent Generations failed: ${data.saveError}`)
       }
 
+      setPdfFiles([])
+      setFileError(null)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+
       // Style-rule editing pass, non-blocking. When it returns, the corrected
       // copy replaces what is on screen and the notes record what changed.
       setReviewsLoading(true)
@@ -733,6 +880,7 @@ export default function LblaContent({
         product_focus: focusChips.length ? focusChips.map((c) => c.value).join(', ') : null,
         audience: form.audience.trim() || null,
         talking_points: form.talkingPoints || null,
+        source_files: pdfFiles.map((f) => f.name),
         output: data.data as { versions: unknown[] },
         generated_at: new Date().toISOString(),
       }
@@ -955,6 +1103,28 @@ export default function LblaContent({
             />
           </div>
 
+          {/* Reference files */}
+          <div>
+            <label className={labelCls}>Reference files <span className="font-normal text-ink-3">(optional)</span></label>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="application/pdf,.pdf"
+              multiple
+              disabled={pdfFiles.length >= MAX_FILES}
+              onChange={(e) => void handleFilesSelected(e.target.files)}
+              className="block w-full text-xs text-ink-3 file:mr-3 file:rounded-lg file:border file:border-cream-3 file:bg-white file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-ink-2 hover:file:border-teal/50 hover:file:text-teal file:transition disabled:opacity-50"
+            />
+            <p className="mt-1 text-[11px] text-ink-3">
+              PDF only. Campaign briefs, product sheets, anything Claude should read for this generation. Not saved after.
+            </p>
+            <PdfChips files={pdfFiles} onRemove={removePdf} />
+            {pdfFiles.length >= MAX_FILES && (
+              <p className="mt-1 text-[11px] text-ink-3">Maximum of {MAX_FILES} files reached.</p>
+            )}
+            {fileError && <p className={errCls}>{fileError}</p>}
+          </div>
+
           {/* What should Claude know? */}
           <div>
             <label className={labelCls}>What should Claude know?</label>
@@ -1058,7 +1228,14 @@ export default function LblaContent({
                         {row.channel}
                       </span>
                     </td>
-                    <td className="px-5 py-3 text-ink max-w-[200px] truncate">{row.topic || row.product_focus || '—'}</td>
+                    <td className="px-5 py-3 text-ink max-w-[200px]">
+                      <span className="block truncate">{row.topic || row.product_focus || '—'}</span>
+                      {row.source_files && row.source_files.length > 0 && (
+                        <span className="mt-0.5 block truncate text-[11px] text-ink-3" title={row.source_files.join(', ')}>
+                          {row.source_files.length} file{row.source_files.length !== 1 ? 's' : ''}: {row.source_files.join(', ')}
+                        </span>
+                      )}
+                    </td>
                     <td className="px-5 py-3 text-ink-2 text-xs max-w-[150px] truncate">{row.audience ?? '—'}</td>
                     <td className="px-5 py-3">
                       <button

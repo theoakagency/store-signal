@@ -40,7 +40,7 @@ export default async function ContentPage() {
 
     service
       .from('lbla_generation_log')
-      .select('id, channel, subject, goal, topic, product_focus, audience, talking_points, output, generated_at')
+      .select('id, channel, subject, goal, topic, product_focus, audience, talking_points, source_files, output, generated_at')
       .eq('tenant_id', TENANT_ID)
       .order('generated_at', { ascending: false })
       .limit(20),
