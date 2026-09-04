@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createSupabaseServerClient, createSupabaseServiceClient } from '@/lib/supabase'
+import { contentTypeLabel, offerTypeLabel } from '@/lib/contentStudioOptions'
 
 // NO AI CALLS from cron — this is a user-triggered endpoint only
 
@@ -126,6 +127,7 @@ export async function POST(req: NextRequest) {
     channel,
     contentType,
     topic,
+    historyLabel,
     productFocus,
     audience,
     customAudience,
@@ -149,7 +151,8 @@ export async function POST(req: NextRequest) {
   } = body as {
     channel: 'email' | 'sms' | 'push'
     contentType?: string
-    topic: string
+    topic?: string | null
+    historyLabel?: string | null
     productFocus?: string | null
     audience?: string | null
     customAudience?: string | null
@@ -168,8 +171,8 @@ export async function POST(req: NextRequest) {
     collectionUrl?: string | null
   }
 
-  if (!channel || !topic) {
-    return Response.json({ error: 'channel and topic are required' }, { status: 400 })
+  if (!channel || !historyLabel) {
+    return Response.json({ error: 'channel and historyLabel are required' }, { status: 400 })
   }
 
   // ── Fetch live context ────────────────────────────────────────────────────
@@ -217,9 +220,10 @@ export async function POST(req: NextRequest) {
   ])
 
   // Resolve product/collection if a focus was provided
-  const resolvedProduct = productFocus
+  const focusToResolve = productFocus || (contentType === 'collection' ? collectionUrl : null)
+  const resolvedProduct = focusToResolve
     ? await resolveProduct(
-        productFocus,
+        focusToResolve,
         shopifyStoreRow?.shopify_domain ?? process.env.SHOPIFY_RETAIL_STORE ?? '',
         shopifyStoreRow?.shopify_access_token ?? '',
       )
@@ -282,7 +286,7 @@ export async function POST(req: NextRequest) {
     if (ct === 'promotion') {
       const lines = [
         'PROMOTION DETAILS:',
-        offerType ? `- Offer type: ${offerType}` : '',
+        offerType ? `- Offer type: ${offerTypeLabel(offerType)}` : '',
         discountAmount ? `- Discount: ${discountAmount}` : '',
         promoCode ? `- Promo code: ${promoCode}` : '',
         offerEndDate ? `- Offer ends: ${offerEndDate}` : '',
@@ -374,7 +378,8 @@ ${topProductLines || '  (no product data synced yet)'}
 ${emailPerfBlock}
 Customer segments:
 ${segmentLines || '  (no segment data synced yet)'}
-${contentContextBlock ? '\n' + contentContextBlock : ''}
+
+CONTENT TYPE: ${contentTypeLabel(contentType)}${contentContextBlock ? '\n\n' + contentContextBlock : ''}
 
 BRAND VOICE:
 - Educational and empowering — teach, don't just sell
@@ -416,14 +421,21 @@ ${channel === 'email' ? `{
 Each version must take a meaningfully different angle.`
 
   const toneList = (tones ?? []).join(', ') || 'Educational'
+
+  // Only the topic the user actually expressed goes here. Structured values
+  // (offer, event, landing page, collection) live once in the system context block.
+  const briefLines = [
+    `Channel: ${channel.toUpperCase()}`,
+    topic ? `Topic / Theme: ${topic}` : '',
+    productFocus ? `Product Focus: ${productFocus}` : '',
+    audience ? `Target Audience: ${audience}` : '',
+    `Tone / Angle: ${toneList}`,
+    talkingPoints ? `Key Talking Points: ${talkingPoints}` : '',
+  ].filter(Boolean).join('\n')
+
   const userPrompt = `Generate 3 versions of ${channel} content for LashBox LA.
 
-Channel: ${channel.toUpperCase()}
-Topic / Theme: ${topic}
-${productFocus ? `Product Focus: ${productFocus}` : ''}
-${audience ? `Target Audience: ${audience}` : ''}
-Tone / Angle: ${toneList}
-${talkingPoints ? `Key Talking Points: ${talkingPoints}` : ''}
+${briefLines}
 
 Write 3 distinct versions, each taking a different angle suited to the tone(s) requested. Make the copy feel specific to LashBox LA's brand — never generic beauty brand language.${channel === 'email' ? ' Email body should be 100-200 words, conversational but professional.' : channel === 'sms' ? ' Each SMS must be under 160 characters — tight, clear call to action.' : ' Push title under 40 chars, message under 100 chars. High urgency, direct.'}`
 
@@ -462,7 +474,7 @@ Write 3 distinct versions, each taking a different angle suited to the tone(s) r
       user_id:         user.id,
       channel,
       content_type:    contentType ?? 'product',
-      topic,
+      topic:           historyLabel,
       product_focus:   productFocus ?? null,
       audience:        audience ?? null,
       custom_audience: customAudience ?? null,

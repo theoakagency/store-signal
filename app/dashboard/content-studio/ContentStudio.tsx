@@ -2,6 +2,12 @@
 
 import { useState, useCallback, useMemo, useRef, useEffect } from 'react'
 import Link from 'next/link'
+import {
+  CONTENT_TYPE_OPTIONS,
+  OFFER_TYPE_OPTIONS,
+  CONTENT_TYPES_WITH_TOPIC_INPUT,
+  offerTypeLabel,
+} from '@/lib/contentStudioOptions'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -73,28 +79,6 @@ const PERSONA_OPTIONS = [
   { value: 'students',                 label: 'Students / Pre-Licensed (in training)' },
   { value: 'lapsed-customers',         label: 'Lapsed Customers (90+ days since last order)' },
   { value: 'subscribers',              label: 'Active Subscribers (Recharge, loyalty-focused)' },
-]
-
-const CONTENT_TYPE_OPTIONS = [
-  { value: 'product',      label: 'Product' },
-  { value: 'collection',   label: 'Collection' },
-  { value: 'landing-page', label: 'Landing Page' },
-  { value: 'event',        label: 'Event' },
-  { value: 'educational',  label: 'Educational' },
-  { value: 'brand',        label: 'Brand' },
-  { value: 'promotion',    label: 'Promotion' },
-  { value: 'other',        label: 'Other' },
-]
-
-const OFFER_TYPE_OPTIONS = [
-  { value: 'percent-off',    label: 'Percent Off' },
-  { value: 'dollar-off',     label: 'Dollar Off' },
-  { value: 'free-shipping',  label: 'Free Shipping' },
-  { value: 'bogo',           label: 'Buy One Get One' },
-  { value: 'bundle',         label: 'Bundle Deal' },
-  { value: 'flash-sale',     label: 'Flash Sale' },
-  { value: 'loyalty-reward', label: 'Loyalty Reward' },
-  { value: 'referral',       label: 'Referral Offer' },
 ]
 
 // ── Product focus input ───────────────────────────────────────────────────────
@@ -530,7 +514,16 @@ export default function ContentStudio({
     setShowTalkingPointSuggestions(false)
   }
 
-  function getEffectiveTopic(): string {
+  // The topic/angle the user actually typed. Empty for content types whose
+  // structured fields carry the meaning instead (promotion, event, landing-page).
+  // Only this reaches the "Topic / Theme" line of the prompt.
+  function getUserTopic(): string {
+    return CONTENT_TYPES_WITH_TOPIC_INPUT.has(contentType) ? form.topic.trim() : ''
+  }
+
+  // Display-only descriptor: names the generation in the History table and is
+  // stored as content_generations.topic. Never sent to the model as the topic.
+  function getHistoryLabel(): string {
     switch (contentType) {
       case 'product':
         if (form.topic) return form.topic
@@ -543,8 +536,11 @@ export default function ContentStudio({
       case 'event':
         return eventName ? `${eventName}${eventDate ? ` on ${eventDate}` : ''}` : ''
       case 'promotion': {
-        const offerLabel = OFFER_TYPE_OPTIONS.find((o) => o.value === offerType)?.label ?? offerType
-        const parts = [offerLabel, discountAmount, promoCode ? `Code: ${promoCode}` : ''].filter(Boolean)
+        const parts = [
+          offerTypeLabel(offerType),
+          discountAmount,
+          promoCode ? `Code: ${promoCode}` : '',
+        ].filter(Boolean)
         return parts.join(' - ') || 'Promotion'
       }
       default:
@@ -556,7 +552,6 @@ export default function ContentStudio({
     if (contentType === 'product' || contentType === 'educational' || contentType === 'promotion') {
       return form.productFocus
     }
-    if (contentType === 'collection') return collectionUrl
     return ''
   }
 
@@ -672,7 +667,9 @@ export default function ContentStudio({
   }
 
   async function fetchTalkingPointSuggestions() {
-    const effectiveTopic = getEffectiveTopic()
+    // Suggestions need something descriptive to work from, so they use the
+    // history label rather than the (often empty) user-typed topic.
+    const effectiveTopic = getHistoryLabel()
     if (!effectiveTopic) {
       setTopicRequiredMsg(true)
       setTimeout(() => setTopicRequiredMsg(false), 2500)
@@ -715,7 +712,9 @@ export default function ContentStudio({
     clearConditionalFields()
     setForm({
       channel: row.channel,
-      topic: row.topic,
+      // row.topic is a display label; only restore it into the topic input for
+      // content types that actually render one.
+      topic: CONTENT_TYPES_WITH_TOPIC_INPUT.has(ct) ? row.topic : '',
       productFocus: row.product_focus ?? '',
       audience: row.audience ?? 'all-lash-artists',
       talkingPoints: row.talking_points ?? '',
@@ -743,8 +742,8 @@ export default function ContentStudio({
     }
     setValidationErrors({})
 
-    const effectiveTopic = getEffectiveTopic()
-    if (!effectiveTopic) {
+    const historyLabel = getHistoryLabel()
+    if (!historyLabel) {
       setError('Please fill in the required fields above.')
       return
     }
@@ -756,7 +755,8 @@ export default function ContentStudio({
     const payload: Record<string, unknown> = {
       channel: form.channel,
       contentType,
-      topic: effectiveTopic,
+      topic: getUserTopic() || null,
+      historyLabel,
       productFocus: getEffectiveProductFocus() || null,
       audience: form.audience || null,
       customAudience: customAudience || null,
