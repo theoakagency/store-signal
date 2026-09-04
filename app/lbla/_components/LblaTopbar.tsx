@@ -14,7 +14,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/lbla/settings/discount-codes':      'Discount Codes',
 }
 
-export default function LblaTopbar() {
+export default function LblaTopbar({ userEmail }: { userEmail: string }) {
   const pathname = usePathname()
   const title = PAGE_TITLES[pathname] ?? ''
 
@@ -47,6 +47,20 @@ export default function LblaTopbar() {
           {title}
         </span>
       )}
+
+      {/* Right: identity + sign out. Same markup and POST action as the
+          dashboard topbar so behaviour stays consistent across both shells. */}
+      <div className="ml-auto flex items-center gap-3">
+        <span className="hidden sm:block text-xs text-ink-3">{userEmail}</span>
+        <form action="/api/auth/signout" method="POST">
+          <button
+            type="submit"
+            className="text-xs font-medium text-ink-3 hover:text-ink transition"
+          >
+            Sign out
+          </button>
+        </form>
+      </div>
     </header>
   )
 }

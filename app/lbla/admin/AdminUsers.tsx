@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { LBLA_TOOLS } from '@/lib/lblaTools'
+import { GRANTABLE_TOOLS } from '@/lib/lblaTools'
 import type { AdminUserRow } from '@/app/api/lbla/admin/route'
 
 export default function AdminUsers({ callerId }: { callerId: string }) {
@@ -138,7 +138,7 @@ export default function AdminUsers({ callerId }: { callerId: string }) {
                 ) : (
                   <div className="mt-3 border-t border-cream-2 pt-3">
                     <div className="flex flex-wrap gap-x-4 gap-y-2">
-                      {LBLA_TOOLS.map((tool) => (
+                      {GRANTABLE_TOOLS.map((tool) => (
                         <label
                           key={tool.key}
                           className="flex items-center gap-1.5 text-xs text-ink-2 cursor-pointer"

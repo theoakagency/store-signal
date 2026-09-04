@@ -24,6 +24,14 @@ export interface LblaTool {
    * covers /upload, /manual and /decision).
    */
   apiPrefixes: string[]
+  /**
+   * Whether this tool can be handed out via user_tenants.lbla_tools.
+   *
+   * Defaults to true. 'admin' is the exception: /lbla/admin is opened by the
+   * is_admin flag alone, so a grant would be inert. It stays in this list so the
+   * route is still mapped and gated, but the admin screen does not offer it.
+   */
+  grantable?: boolean
 }
 
 export const LBLA_TOOLS: LblaTool[] = [
@@ -85,10 +93,16 @@ export const LBLA_TOOLS: LblaTool[] = [
     label: 'User Access',
     prefix: '/lbla/admin',
     apiPrefixes: ['/api/lbla/admin'],
+    grantable: false,
   },
 ]
 
+/** Every tool key, grantable or not — use for route mapping and lookups. */
 export const LBLA_TOOL_KEYS = LBLA_TOOLS.map((t) => t.key)
+
+/** The tools the admin screen offers as checkboxes and will store as grants. */
+export const GRANTABLE_TOOLS = LBLA_TOOLS.filter((t) => t.grantable !== false)
+export const GRANTABLE_TOOL_KEYS = GRANTABLE_TOOLS.map((t) => t.key)
 
 export function toolLabel(key: string): string {
   return LBLA_TOOLS.find((t) => t.key === key)?.label ?? key

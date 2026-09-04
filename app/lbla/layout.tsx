@@ -13,7 +13,7 @@ export default async function LblaLayout({ children }: { children: React.ReactNo
   return (
     <LblaAccessProvider value={access}>
       <div className="flex min-h-screen flex-col bg-cream">
-        <LblaTopbar />
+        <LblaTopbar userEmail={access.email} />
         <main className="flex-1">
           {children}
         </main>

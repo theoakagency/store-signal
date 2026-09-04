@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server'
 import { createSupabaseServerClient, createSupabaseServiceClient } from '@/lib/supabase'
-import { LBLA_TOOL_KEYS } from '@/lib/lblaTools'
+import { GRANTABLE_TOOL_KEYS } from '@/lib/lblaTools'
 
 // Admin-only user access management. Middleware gates the path, but every
 // handler re-verifies the caller server-side — middleware is a convenience, not
@@ -102,8 +102,9 @@ export async function PATCH(req: NextRequest) {
     }, { status: 400 })
   }
 
-  if (tools && tools.some((t) => !LBLA_TOOL_KEYS.includes(t))) {
-    return Response.json({ error: 'Unknown tool key' }, { status: 400 })
+  // Rejects 'admin' too: it is not grantable, so storing it would be misleading.
+  if (tools && tools.some((t) => !GRANTABLE_TOOL_KEYS.includes(t))) {
+    return Response.json({ error: 'Unknown or non-grantable tool key' }, { status: 400 })
   }
 
   const service = createSupabaseServiceClient()
