@@ -31,9 +31,8 @@ export default async function LoginPage({
         {/* Logo */}
         <div className="mb-8 text-center">
           <span className="font-display text-3xl font-semibold text-cream">
-            Store<span className="text-teal">Signal</span>
+            LBLA
           </span>
-          <p className="mt-2 text-sm text-cream/50">Business intelligence for Shopify brands</p>
         </div>
 
         {/* Card */}
