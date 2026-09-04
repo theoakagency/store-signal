@@ -1,4 +1,6 @@
 import Link from 'next/link'
+import { getLblaAccess } from '@/lib/lblaAuth'
+import { toolForPagePath } from '@/lib/lblaTools'
 
 export const metadata = {
   title: 'Team Tools | LBLA',
@@ -92,9 +94,31 @@ const TOOLS = [
     description: 'Upload the wholesale Shopify export to see Korean Lash Lift sales by month.',
     cta: 'Open',
   },
+  {
+    href: '/lbla/admin',
+    icon: (
+      <svg className="h-8 w-8 text-teal" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+        <path d="M12 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM5 20a7 7 0 0 1 14 0" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    ),
+    title: 'User Access',
+    description: 'Grant or revoke access to each team tool, and manage who is an admin.',
+    cta: 'Manage',
+  },
 ]
 
-export default function LblaHome() {
+export default async function LblaHome() {
+  // Only surface tools this user can actually open. Middleware still enforces
+  // access; this keeps the landing page from advertising dead ends.
+  const access = await getLblaAccess()
+  const visibleTools = TOOLS.filter((tool) => {
+    const key = toolForPagePath(tool.href)?.key
+    // The admin screen is admin-only and never opened by a grant.
+    if (key === 'admin') return access.isAdmin
+    if (access.isAdmin) return true
+    return key ? access.tools.includes(key) : false
+  })
+
   return (
     <div className="mx-auto max-w-4xl px-4 py-12 sm:px-6">
       {/* Header */}
@@ -105,7 +129,7 @@ export default function LblaHome() {
 
       {/* Tool cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {TOOLS.map((tool) => (
+        {visibleTools.map((tool) => (
           <Link
             key={tool.href}
             href={tool.href}
@@ -127,6 +151,12 @@ export default function LblaHome() {
           </Link>
         ))}
       </div>
+
+      {visibleTools.length === 0 && (
+        <p className="rounded-2xl border border-cream-3 bg-white px-6 py-10 text-center text-sm text-ink-3">
+          You do not have access to any tools yet. Ask an admin to grant access.
+        </p>
+      )}
     </div>
   )
 }

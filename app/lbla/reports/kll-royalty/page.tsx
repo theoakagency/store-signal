@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import CollapsibleCard from '@/app/lbla/_components/CollapsibleCard'
+import { useHasTool } from '@/app/lbla/_components/LblaAccessProvider'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -205,6 +206,7 @@ function ColumnToggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
 // ── Main page ──────────────────────────────────────────────────────────────────
 
 export default function KllRoyaltyReportPage() {
+  const canManageDiscountCodes = useHasTool('discount-codes')
   const [month, setMonth] = useState(getDefaultMonth())
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -253,7 +255,10 @@ export default function KllRoyaltyReportPage() {
             <h1 className="font-display text-2xl font-semibold text-ink">KLL Royalty Report</h1>
             <p className="mt-1 text-sm text-ink-3">
               Korean Lash Lift items sold, lashboxla.com retail only.{' '}
-              <Link href="/lbla/settings/discount-codes" className="text-teal-deep hover:text-teal transition">Manage allowed discount codes →</Link>
+              {/* Hidden without the grant — following it would bounce to /lbla. */}
+              {canManageDiscountCodes && (
+                <Link href="/lbla/settings/discount-codes" className="text-teal-deep hover:text-teal transition">Manage allowed discount codes →</Link>
+              )}
             </p>
             {/* The two KLL reports answer different questions off the same orders,
                 so each links to the other rather than needing the URL typed. */}
