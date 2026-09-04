@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createSupabaseServiceClient } from '@/lib/supabase'
+import { subjectLabel, goalLabel, goalTone, offerTypeLabel } from '@/lib/contentStudioOptions'
 
 // Requires a signed-in user; /lbla + /api/lbla are gated behind Supabase login in proxy.ts (LBLA team tool)
 // Does NOT save generations to the authed content_generations table;
@@ -24,6 +25,12 @@ interface ShopifyProductData {
   variants: ShopifyVariant[]
   tags: string
   product_type: string
+}
+
+interface ShopifyCollectionData {
+  id: number
+  title: string
+  body_html: string
 }
 
 interface StyleRuleRow {
@@ -76,67 +83,171 @@ interface AffinityRow {
   lift: number
 }
 
-// ── Audience map (hardcoded descriptions) ─────────────────────────────────────
+// ── Section 1: Shopify product / collection resolver ─────────────────────────
+//
+// Ported from /api/content-studio/generate so collection URLs resolve instead of
+// falling through as a raw URL string. Products additionally carry variant
+// prices, and collections carry the products they contain (LBLA-specific).
 
-const AUDIENCE_MAP: Record<string, string> = {
-  'general-audience':  'Broad audience of working lash artists -- professional, licensed, actively seeing clients. Write peer-to-peer, assume they know the craft.',
-  'active-customers':  'Consistent reorder customers who are engaged but not yet top-tier. Respond well to product updates, restocking reminders, and messages that reinforce they are making smart choices.',
-  'new-customers':     'First-time or early buyers still forming their supplier habits. Building confidence, clientele, and systems. Price-aware, responsive to education, reassurance, and clear value props.',
-  'lapsed-customers':  'Have not ordered in 90+ days. May have switched suppliers or gone quiet. Lead with the product -- do not guilt or pressure. Give them a strong reason to return: something new, relevant, or of clear value.',
-  'vip-top-spenders':  'Highest-LTV customers -- Diamond and Gold tier, volume buyers, long-tenured. Already loyal. Respond to exclusives, early access, and premium quality signals. Discounts are less important than recognition and insider status.',
-}
+type ResolvedFocus =
+  | {
+      type: 'product'
+      title: string
+      description: string | null
+      variants: string | null
+      tags: string | null
+      productType: string | null
+    }
+  | {
+      type: 'collection'
+      title: string
+      description: string | null
+      products: string[]
+    }
+  | { type: 'text'; title: string }
 
-// ── Section 1: Shopify product fetch ─────────────────────────────────────────
+const SHOPIFY_TIMEOUT_MS = 5000
 
-async function fetchShopifyProduct(
-  storeRow: StoreRow | null,
-  productFocus: string,
-): Promise<ShopifyProductData | null> {
-  if (!storeRow?.shopify_domain || !storeRow?.shopify_access_token) return null
-
-  const match = productFocus.match(/\/products\/([^/?#]+)/)
-  if (!match) return null
-  const handle = match[1]
-
-  try {
-    const res = await fetch(
-      `https://${storeRow.shopify_domain}/admin/api/2024-10/products.json?handle=${handle}&fields=title,body_html,variants,tags,product_type`,
-      {
-        headers: { 'X-Shopify-Access-Token': storeRow.shopify_access_token },
-        signal: AbortSignal.timeout(5000),
-      },
-    )
-    if (!res.ok) return null
-    const data = await res.json() as { products?: ShopifyProductData[] }
-    return data.products?.[0] ?? null
-  } catch {
-    return null
-  }
-}
-
-function buildShopifyBlock(product: ShopifyProductData): string {
-  const desc = product.body_html
+function stripHtml(html: string | null | undefined, limit: number): string | null {
+  return html
     ?.replace(/<[^>]*>/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
-    .slice(0, 300) || ''
+    .slice(0, limit) || null
+}
 
-  const variantStr = (product.variants ?? [])
-    .map((v) => `${v.title}${v.price ? ` ($${v.price})` : ''}`)
-    .filter((t) => !t.startsWith('Default Title'))
-    .slice(0, 8)
-    .join(', ')
+async function resolveFocus(
+  storeRow: StoreRow | null,
+  productFocus: string,
+): Promise<ResolvedFocus | null> {
+  if (!productFocus.trim()) return null
 
-  const lines = [
-    `PRODUCT DETAILS (live from Shopify):`,
-    `- Title: ${product.title}`,
-    desc ? `- Description: ${desc}` : '',
-    variantStr ? `- Variants: ${variantStr}` : '',
-    product.tags ? `- Tags: ${product.tags}` : '',
-    product.product_type ? `- Product type: ${product.product_type}` : '',
-  ].filter(Boolean)
+  const isUrl =
+    productFocus.includes('lashboxla.com/products/') ||
+    productFocus.includes('lashboxla.com/collections/')
 
-  return lines.join('\n')
+  // A typed product name, not a URL — kept as free text, as before.
+  if (!isUrl) return { type: 'text', title: productFocus }
+
+  if (!storeRow?.shopify_domain || !storeRow?.shopify_access_token) {
+    return { type: 'text', title: productFocus }
+  }
+
+  const match = productFocus.match(/\/(products|collections)\/([^/?#]+)/)
+  if (!match) return { type: 'text', title: productFocus }
+
+  const [, kind, handle] = match
+  const store   = storeRow.shopify_domain
+  const headers = { 'X-Shopify-Access-Token': storeRow.shopify_access_token }
+  const get = (path: string) =>
+    fetch(`https://${store}/admin/api/2024-10/${path}`, {
+      headers,
+      signal: AbortSignal.timeout(SHOPIFY_TIMEOUT_MS),
+    })
+
+  try {
+    if (kind === 'products') {
+      const res = await get(`products.json?handle=${handle}&fields=title,body_html,variants,tags,product_type`)
+      if (!res.ok) return { type: 'text', title: productFocus }
+      const data = await res.json() as { products?: ShopifyProductData[] }
+      const product = data.products?.[0]
+      if (!product) return { type: 'text', title: productFocus }
+
+      // Variants keep their prices — the LBLA prompt has always shown these.
+      const variants = (product.variants ?? [])
+        .map((v) => `${v.title}${v.price ? ` ($${v.price})` : ''}`)
+        .filter((t) => !t.startsWith('Default Title'))
+        .slice(0, 8)
+        .join(', ') || null
+
+      return {
+        type: 'product',
+        title: product.title,
+        description: stripHtml(product.body_html, 300),
+        variants,
+        tags: product.tags || null,
+        productType: product.product_type || null,
+      }
+    }
+
+    // Collections: custom first, then smart. Both need the id to list products.
+    const [customRes, smartRes] = await Promise.all([
+      get(`custom_collections.json?handle=${handle}&fields=id,title,body_html`)
+        .then((r) => r.json() as Promise<{ custom_collections?: ShopifyCollectionData[] }>)
+        .catch(() => ({ custom_collections: undefined })),
+      get(`smart_collections.json?handle=${handle}&fields=id,title,body_html`)
+        .then((r) => r.json() as Promise<{ smart_collections?: ShopifyCollectionData[] }>)
+        .catch(() => ({ smart_collections: undefined })),
+    ])
+
+    const collection = customRes.custom_collections?.[0] ?? smartRes.smart_collections?.[0]
+    if (!collection) return { type: 'text', title: productFocus }
+
+    let productTitles: string[] = []
+    try {
+      const prodRes = await get(`products.json?collection_id=${collection.id}&fields=title&limit=20`)
+      if (prodRes.ok) {
+        const prodData = await prodRes.json() as { products?: { title: string }[] }
+        productTitles = (prodData.products ?? []).map((p) => p.title).filter(Boolean)
+      }
+    } catch {
+      // Collection still usable without its product list.
+    }
+
+    return {
+      type: 'collection',
+      title: collection.title,
+      description: stripHtml(collection.body_html, 500),
+      products: productTitles,
+    }
+  } catch {
+    // Timeout or network failure — fall back to the raw string.
+    return { type: 'text', title: productFocus }
+  }
+}
+
+function buildFocusItemLine(focus: ResolvedFocus): string {
+  if (focus.type === 'product') {
+    return [
+      `- ${focus.title}`,
+      focus.description ? `  Description: ${focus.description}` : '',
+      focus.variants    ? `  Variants: ${focus.variants}` : '',
+      focus.productType ? `  Type: ${focus.productType}` : '',
+    ].filter(Boolean).join('\n')
+  }
+  if (focus.type === 'collection') {
+    return [
+      `- ${focus.title} (collection)`,
+      focus.description     ? `  Description: ${focus.description}` : '',
+      focus.products.length ? `  Includes: ${focus.products.join(', ')}` : '',
+    ].filter(Boolean).join('\n')
+  }
+  return `- ${focus.title}`
+}
+
+function buildFocusBlock(focus: ResolvedFocus): string {
+  if (focus.type === 'product') {
+    return [
+      'PRODUCT DETAILS (live from Shopify):',
+      `- Title: ${focus.title}`,
+      focus.description ? `- Description: ${focus.description}` : '',
+      focus.variants    ? `- Variants: ${focus.variants}` : '',
+      focus.tags        ? `- Tags: ${focus.tags}` : '',
+      focus.productType ? `- Product type: ${focus.productType}` : '',
+    ].filter(Boolean).join('\n')
+  }
+
+  if (focus.type === 'collection') {
+    return [
+      'COLLECTION DETAILS (live from Shopify):',
+      `- Collection: ${focus.title}`,
+      focus.description       ? `- Description: ${focus.description}` : '',
+      focus.products.length   ? `- Products in this collection: ${focus.products.join(', ')}` : '',
+      'Write copy that speaks to the breadth of this collection.',
+    ].filter(Boolean).join('\n')
+  }
+
+  return ''
 }
 
 // ── Section 2: Klaviyo campaign history ───────────────────────────────────────
@@ -157,10 +268,12 @@ function buildCampaignsBlock(campaigns: KlaviyoCampaignRow[]): string {
   ].join('\n')
 }
 
-// ── Section 3: Audience stats ─────────────────────────────────────────────────
+// ── Section 3: Customer base context ─────────────────────────────────────────
+// Was persona-driven; the persona dropdown is gone, so this is now plain store
+// context (the equivalent of the dashboard route's "Customer segments" block).
+// It is store data, not the user's audience — those stay separate in the prompt.
 
-function buildAudienceStatsBlock(
-  persona: string,
+function buildCustomerBaseBlock(
   overlap: CustomerOverlapRow | null,
   recharge: RechargeMetricsRow | null,
 ): string {
@@ -170,66 +283,31 @@ function buildAudienceStatsBlock(
   const ltv   = overlap?.ltv_stats ?? {}
   const total = overlap?.total_customers ?? 0
 
-  const lines: string[] = []
+  const lines: string[] = ['CUSTOMER BASE (store context):']
 
-  const personaLabel: Record<string, string> = {
-    'general-audience':  'General Audience',
-    'active-customers':  'Active Customers',
-    'new-customers':     'New Customers',
-    'lapsed-customers':  'Lapsed Customers',
-    'vip-top-spenders':  'VIP / Top Spenders',
-  }
+  if (total > 0) lines.push(`- Total customer base: ${total.toLocaleString()} customers`)
 
-  lines.push(`AUDIENCE DATA (${personaLabel[persona] ?? persona}):`)
+  const activeCount = (seg['VIP'] ?? 0) + (seg['Active'] ?? 0)
+  if (activeCount > 0) lines.push(`- Active buyers: ${activeCount.toLocaleString()} (VIP + Active segments)`)
 
-  if (persona === 'general-audience') {
-    if (total > 0) lines.push(`- Total customer base: ${total.toLocaleString()} customers`)
-    const activeCount = (seg['VIP'] ?? 0) + (seg['Active'] ?? 0)
-    if (activeCount > 0) lines.push(`- Active buyers: ${activeCount.toLocaleString()} (VIP + Active segments)`)
-    if (ltv['Diamond']) {
-      const d = ltv['Diamond']
-      lines.push(`- Top-tier (Diamond) customers: ${d.count.toLocaleString()}, avg LTV $${Math.round(d.totalRevenue / Math.max(d.count, 1)).toLocaleString()}`)
-    }
+  const lapsedCount = (seg['Lapsed'] ?? 0) + (seg['At Risk'] ?? 0)
+  if (lapsedCount > 0) lines.push(`- Lapsed / At Risk: ${lapsedCount.toLocaleString()}`)
 
-  } else if (persona === 'new-customers') {
-    const newCount = seg['New'] ?? 0
-    if (newCount > 0) lines.push(`- New customers in base: ${newCount.toLocaleString()}`)
-    if (total > 0 && newCount > 0) lines.push(`- New as % of total: ${Math.round((newCount / total) * 100)}%`)
-    if (ltv['Bronze']) {
-      const b = ltv['Bronze']
-      lines.push(`- Bronze-tier avg LTV: $${Math.round(b.totalRevenue / Math.max(b.count, 1)).toLocaleString()} (lowest tier, typical for newer buyers)`)
-    }
+  const newCount = seg['New'] ?? 0
+  if (newCount > 0) lines.push(`- New customers: ${newCount.toLocaleString()}`)
 
-  } else if (persona === 'active-customers') {
-    const activeCount = seg['Active'] ?? 0
-    if (activeCount > 0) lines.push(`- Active customers: ${activeCount.toLocaleString()}`)
-    if (total > 0 && activeCount > 0) lines.push(`- Active share of base: ${Math.round((activeCount / total) * 100)}%`)
-    if (ltv['Silver']) {
-      const s = ltv['Silver']
-      lines.push(`- Silver-tier avg LTV: $${Math.round(s.totalRevenue / Math.max(s.count, 1)).toLocaleString()}`)
-    }
-
-  } else if (persona === 'lapsed-customers') {
-    const lapsedCount = (seg['Lapsed'] ?? 0) + (seg['At Risk'] ?? 0)
-    if (lapsedCount > 0) lines.push(`- Lapsed / At Risk customers: ${lapsedCount.toLocaleString()}`)
-    if (total > 0 && lapsedCount > 0) lines.push(`- Share of base: ${Math.round((lapsedCount / total) * 100)}%`)
-    lines.push('- These customers have not ordered in 90+ days and may have switched suppliers')
-
-  } else if (persona === 'vip-top-spenders') {
-    const vipCount = seg['VIP'] ?? 0
-    if (vipCount > 0) lines.push(`- VIP customers: ${vipCount.toLocaleString()}`)
-    if (ltv['Diamond']) {
-      const d = ltv['Diamond']
-      lines.push(`- Diamond-tier: ${d.count.toLocaleString()} customers, avg LTV $${Math.round(d.totalRevenue / Math.max(d.count, 1)).toLocaleString()}`)
-    }
-    if (ltv['Gold']) {
-      const g = ltv['Gold']
-      lines.push(`- Gold-tier: ${g.count.toLocaleString()} customers, avg LTV $${Math.round(g.totalRevenue / Math.max(g.count, 1)).toLocaleString()}`)
+  for (const tier of ['Diamond', 'Gold'] as const) {
+    const t = ltv[tier]
+    if (t?.count) {
+      lines.push(`- ${tier}-tier: ${t.count.toLocaleString()} customers, avg LTV $${Math.round(t.totalRevenue / Math.max(t.count, 1)).toLocaleString()}`)
     }
   }
 
-  if (lines.length <= 1) return '' // Only had header, no real stats
-  lines.push('Write content that speaks to this specific group\'s behavior and value to the business.')
+  if (recharge?.active_subscribers) {
+    lines.push(`- Active subscribers: ${recharge.active_subscribers.toLocaleString()}`)
+  }
+
+  if (lines.length <= 1) return ''
   return lines.join('\n')
 }
 
@@ -278,62 +356,40 @@ function buildProductPerformanceBlock(
   return lines.join('\n')
 }
 
-// ── Section 3: Email format instructions ─────────────────────────────────────
-
-function buildFormatBlock(fmt: string | null | undefined): string {
-  if (fmt === 'structured') {
-    return `EMAIL FORMAT: Structured
-- Start with one short punchy header line inside the body (not the subject line)
-- Follow with 1-2 short paragraphs of context
-- Include a bulleted list of 3-5 specific product benefits, features, or steps -- each bullet max 20 words, specific not generic
-- End with one clear CTA sentence
-- Maximum 220 words total body
-- Use **Header text** for the header line and - item for bullets in the body field so they render correctly`
-  }
-  if (fmt === 'short_punchy') {
-    return `EMAIL FORMAT: Short & Punchy
-- Two paragraphs maximum
-- Under 100 words total body
-- Get to the point in the first sentence -- no warm-up
-- No headers, no bullets
-- Every sentence earns its place -- cut anything that doesn't add meaning`
-  }
-  // conversational (default)
-  return `EMAIL FORMAT: Conversational
-- Flowing prose only -- no headers, no bullet points, no bold text
-- 2-4 short paragraphs
-- Maximum 180 words in the body
-- Should read like a knowledgeable colleague writing directly to another artist
-- No section breaks, no formatting symbols`
-}
-
 // ── Main handler ──────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
   const body = await req.json() as {
     channel: 'email' | 'sms' | 'push'
-    contentType?: string
-    topic: string
-    productFocus?: string | null
+    subject?: string
+    goal?: string
+    historyLabel?: string | null
+    products?: string[] | null
     audience?: string | null
-    customAudience?: string | null
-    tones?: string[]
     talkingPoints?: string | null
-    emailFormat?: 'conversational' | 'structured' | 'short_punchy' | null
-    collectionUrl?: string | null
+    pageUrl?: string | null
+    offerType?: string | null
+    discountAmount?: string | null
+    promoCode?: string | null
+    length?: 'short' | 'long' | null
   }
 
-  const { channel, contentType, topic, productFocus, audience, customAudience, tones, talkingPoints, emailFormat } = body
+  const {
+    channel, subject, goal, historyLabel, products,
+    audience, talkingPoints, pageUrl,
+    offerType, discountAmount, promoCode,
+    length,
+  } = body
 
-  if (!channel || !topic) {
-    return Response.json({ error: 'channel and topic are required' }, { status: 400 })
+  if (!channel || !historyLabel) {
+    return Response.json({ error: 'channel and historyLabel are required' }, { status: 400 })
   }
+
+  const focusEntries = subject === 'products' ? (products ?? []).filter((p) => p?.trim()) : []
 
   const service = createSupabaseServiceClient()
 
   // ── Phase 1: all Supabase queries in parallel ─────────────────────────────
-  const isProductUrl = productFocus?.includes('lashboxla.com/products/') ?? false
-
   const [
     { data: styleRulesData },
     { data: topProductsData },
@@ -387,44 +443,47 @@ export async function POST(req: NextRequest) {
       .single()) as unknown as Promise<{ data: RechargeMetricsRow | null; error: unknown }>,
   ])
 
-  // ── Phase 2: Shopify API (conditional, sequential) ────────────────────────
-  let shopifyProduct: ShopifyProductData | null = null
-  let resolvedProductTitle: string | null = null
+  // ── Phase 2: Shopify API — resolve every selected entry ───────────────────
+  const resolvedFocuses = (
+    await Promise.all(focusEntries.map((entry) => resolveFocus(storeData, entry)))
+  ).filter((f): f is ResolvedFocus => f != null)
 
-  if (productFocus) {
-    if (isProductUrl) {
-      shopifyProduct = await fetchShopifyProduct(storeData, productFocus)
-      resolvedProductTitle = shopifyProduct?.title ?? null
-    } else {
-      resolvedProductTitle = productFocus
-    }
-  }
+  // Only products (resolved or typed by name) drive the product_stats and
+  // product_affinities lookups. A collection title would never match a product
+  // row, and the raw URL that used to land here matched nothing at all.
+  const resolvedProductTitles = resolvedFocuses
+    .filter((f) => f.type === 'product' || f.type === 'text')
+    .map((f) => f.title)
 
-  // ── Phase 3: Product stats + affinity (if product known) ─────────────────
-  let productStatsRows: ProductStatRow[] = []
-  let topAffinity: AffinityRow | null = null
+  // ── Phase 3: Product stats + affinity, per resolved product ──────────────
+  const perfBlocks = (
+    await Promise.all(
+      resolvedProductTitles.map(async (title) => {
+        const [{ data: statsData }, { data: affinityData }] = await Promise.all([
+          (service
+            .from('product_stats')
+            .select('revenue_90d, total_quantity_sold, repeat_purchase_rate, avg_days_to_repurchase, subscription_conversion_rate, is_subscribable')
+            .eq('tenant_id', TENANT_ID)
+            .ilike('product_title', `%${title.slice(0, 40)}%`)
+            .limit(10)) as unknown as Promise<{ data: ProductStatRow[] | null; error: unknown }>,
 
-  if (resolvedProductTitle) {
-    const [{ data: statsData }, { data: affinityData }] = await Promise.all([
-      (service
-        .from('product_stats')
-        .select('revenue_90d, total_quantity_sold, repeat_purchase_rate, avg_days_to_repurchase, subscription_conversion_rate, is_subscribable')
-        .eq('tenant_id', TENANT_ID)
-        .ilike('product_title', `%${resolvedProductTitle.slice(0, 40)}%`)
-        .limit(10)) as unknown as Promise<{ data: ProductStatRow[] | null; error: unknown }>,
+          (service
+            .from('product_affinities')
+            .select('product_b, co_purchase_rate, lift')
+            .eq('tenant_id', TENANT_ID)
+            .ilike('product_a', `%${title.slice(0, 40)}%`)
+            .order('lift', { ascending: false })
+            .limit(1)) as unknown as Promise<{ data: AffinityRow[] | null; error: unknown }>,
+        ])
 
-      (service
-        .from('product_affinities')
-        .select('product_b, co_purchase_rate, lift')
-        .eq('tenant_id', TENANT_ID)
-        .ilike('product_a', `%${resolvedProductTitle.slice(0, 40)}%`)
-        .order('lift', { ascending: false })
-        .limit(1)) as unknown as Promise<{ data: AffinityRow[] | null; error: unknown }>,
-    ])
-
-    productStatsRows = statsData ?? []
-    topAffinity = affinityData?.[0] ?? null
-  }
+        const block = buildProductPerformanceBlock(statsData ?? [], affinityData?.[0] ?? null)
+        // Name the product when several are in play, so the numbers stay attributable.
+        return block && resolvedProductTitles.length > 1
+          ? block.replace('PRODUCT PERFORMANCE CONTEXT (from store data):', `PRODUCT PERFORMANCE — ${title}:`)
+          : block
+      }),
+    )
+  ).filter(Boolean)
 
   // ── Build prompt blocks ───────────────────────────────────────────────────
 
@@ -435,12 +494,16 @@ export async function POST(req: NextRequest) {
   const vocabRules   = rules.filter((r) => r.category === 'vocabulary')
   const exampleRules = rules.filter((r) => r.category === 'examples')
 
+  // Absolute requirements, not guidance. Mechanical rules (punctuation, banned
+  // phrases) must never reach the output — a downstream pass otherwise has to
+  // clean up after a rule the model was already given.
   const styleBlock = rules.length === 0 ? '' : [
-    'STYLE RULES — FOLLOW STRICTLY:',
-    avoidRules.length > 0   ? `Never do these:\n${avoidRules.map((r) => `- ${r.rule}`).join('\n')}`   : '',
-    enforceRules.length > 0 ? `Always do these:\n${enforceRules.map((r) => `- ${r.rule}`).join('\n')}` : '',
-    vocabRules.length > 0   ? `Vocabulary:\n${vocabRules.map((r) => `- ${r.rule}`).join('\n')}`        : '',
-    exampleRules.length > 0 ? `Write in the style of these examples:\n${exampleRules.map((r) => `- ${r.rule}`).join('\n')}` : '',
+    'STYLE RULES — THESE ARE HARD REQUIREMENTS, NOT PREFERENCES:',
+    'Every rule below applies to every one of the three versions, and to every field including subjects and preheaders. A version that breaks any of them is unusable. Check each version against this list before returning it.',
+    avoidRules.length > 0   ? `NEVER do these, without exception:\n${avoidRules.map((r) => `- ${r.rule}`).join('\n')}`   : '',
+    enforceRules.length > 0 ? `ALWAYS do these, without exception:\n${enforceRules.map((r) => `- ${r.rule}`).join('\n')}` : '',
+    vocabRules.length > 0   ? `Vocabulary — these are binding:\n${vocabRules.map((r) => `- ${r.rule}`).join('\n')}`        : '',
+    exampleRules.length > 0 ? `Match the style of these examples:\n${exampleRules.map((r) => `- ${r.rule}`).join('\n')}` : '',
   ].filter(Boolean).join('\n\n')
 
   // Top products (existing)
@@ -448,34 +511,70 @@ export async function POST(req: NextRequest) {
     .map((p) => `  - ${p.product_title}: $${Math.round(Number(p.total_revenue)).toLocaleString()} revenue`)
     .join('\n')
 
-  // Section 1: Shopify product details
-  const shopifyBlock = shopifyProduct ? buildShopifyBlock(shopifyProduct) : ''
+  // Section 1: resolved product / collection details.
+  // One item keeps the single-block shape exactly; several become a PRODUCTS list.
+  const focusBlock =
+    resolvedFocuses.length === 0 ? ''
+    : resolvedFocuses.length === 1 ? buildFocusBlock(resolvedFocuses[0])
+    : [
+        'PRODUCTS IN THIS SEND:',
+        ...resolvedFocuses.map((f) => buildFocusItemLine(f)),
+        'Give each item a real reason to be here. Do not treat the list as interchangeable.',
+      ].join('\n\n')
+
+  // Subject 'page' carries a URL instead of products.
+  const pageBlock = subject === 'page' && pageUrl
+    ? [
+        'PAGE DETAILS:',
+        `- URL: ${pageUrl}`,
+        'Drive clicks to this page. Copy should clearly communicate the value of visiting.',
+      ].join('\n')
+    : ''
+
+  // Offer block belongs to the goal, independent of subject.
+  const offerBlock = goal === 'promote'
+    ? [
+        'PROMOTION DETAILS:',
+        offerType ? `- Offer type: ${offerTypeLabel(offerType)}` : '',
+        discountAmount ? `- Discount: ${discountAmount}` : '',
+        promoCode ? `- Promo code: ${promoCode}` : '',
+        'Include the promo code prominently if provided.',
+      ].filter(Boolean).join('\n')
+    : ''
+
+  // Explicit word targets: generations were running 400+ words unprompted.
+  const LENGTH_TARGETS: Record<string, Record<string, string>> = {
+    email: {
+      short: 'LENGTH TARGET: 90-130 words in the body. This is a hard ceiling, not a suggestion. Cut anything that does not earn its place. Two to three short paragraphs.',
+      long:  'LENGTH TARGET: 200-260 words in the body. Use the extra room for specifics and detail, not for warm-up or restatement.',
+    },
+    push: {
+      short: 'LENGTH TARGET: 8-12 words in the message. One clear idea, nothing more.',
+      long:  'LENGTH TARGET: 13-18 words in the message, still inside the 100 character cap.',
+    },
+  }
+  const lengthBlock = LENGTH_TARGETS[channel]?.[length ?? 'short'] ?? ''
+
+  // Audience is a constraint, not context. Without the explicit "every version"
+  // wording the model honours it in one version and defaults to a general
+  // working artist in the other two. Omitted entirely when blank.
+  const audienceText = (audience ?? '').trim()
+  const audienceBlock = audienceText
+    ? `AUDIENCE: ${audienceText}
+This is a constraint, not background. Every one of the three versions must be written for this specific audience, with no exceptions. Frame the copy around their situation, what they already know, and what would actually move them: the assumptions you make, the concerns you name, and the reference points you reach for should all follow from who they are. Do not write for a general working artist in any version.`
+    : ''
 
   // Section 2: Klaviyo recent campaigns
   const campaignsBlock = buildCampaignsBlock((campaignsData ?? []) as KlaviyoCampaignRow[])
 
-  // Section 3: Audience stats
-  const audienceStatsBlock = buildAudienceStatsBlock(
-    audience ?? 'general-audience',
+  // Section 3: customer base (store context, not the requested audience)
+  const customerBaseBlock = buildCustomerBaseBlock(
     (overlapData ?? null) as CustomerOverlapRow | null,
     (rechargeData ?? null) as RechargeMetricsRow | null,
   )
 
-  // Section 6: Product performance
-  const productPerfBlock = buildProductPerformanceBlock(productStatsRows, topAffinity)
-
-  // Audience description (hardcoded + enhanced)
-  const audienceGuidance = AUDIENCE_MAP[audience ?? ''] ?? AUDIENCE_MAP['general-audience']
-
-  // Content type context
-  const ct = contentType ?? 'product'
-  let contentContextBlock = ''
-  if (productFocus?.trim()) {
-    contentContextBlock = `FOCUS:\n- ${productFocus}`
-  }
-  if (ct === 'promotion') {
-    contentContextBlock = `CONTENT TYPE: Promotion\n- Focus: ${productFocus || topic}`
-  }
+  // Section 6: Product performance, one block per resolved product
+  const productPerfBlock = perfBlocks.join('\n\n')
 
   // ── Assemble system prompt ────────────────────────────────────────────────
 
@@ -484,9 +583,13 @@ export async function POST(req: NextRequest) {
 
     `TOP PRODUCTS FOR CONTEXT:\n${topProductLines || '  (no product data available)'}`,
 
-    contentContextBlock || null,
+    `SUBJECT: ${subjectLabel(subject)}\nGOAL: ${goalLabel(goal)}\nTONE: ${goalTone(goal)}`,
 
-    shopifyBlock || null,
+    focusBlock || null,
+
+    pageBlock || null,
+
+    offerBlock || null,
 
     productPerfBlock || null,
 
@@ -498,15 +601,15 @@ export async function POST(req: NextRequest) {
 - Avoid: "game-changer", "elevate your business", "unlock your potential"
 - Write like someone who understands what it means to be behind the bed managing 6+ clients a day`,
 
-    `AUDIENCE CONTEXT:\n${audienceGuidance}${customAudience ? `\nAdditional specificity: ${customAudience}. Factor this into the tone and references used.` : ''}`,
-
-    audienceStatsBlock || null,
+    customerBaseBlock || null,
 
     campaignsBlock || null,
 
-    styleBlock || null,
+    audienceBlock || null,
 
-    channel === 'email' ? buildFormatBlock(emailFormat) : null,
+    lengthBlock || null,
+
+    styleBlock || null,
 
     `FORMATTING CONSTRAINTS -- APPLY TO EVERY FIELD INCLUDING SUBJECTS AND PREHEADERS:
 - Never use em dashes (--) or en dashes (-) anywhere. Use a comma, period, or rewrite the clause instead.
@@ -526,17 +629,16 @@ export async function POST(req: NextRequest) {
 
   // ── User prompt ───────────────────────────────────────────────────────────
 
-  const toneList = (tones ?? []).join(', ') || 'Educational'
+  const briefLines = [
+    `Channel: ${channel.toUpperCase()}`,
+    talkingPoints ? `Key Talking Points:\n${talkingPoints}` : '',
+  ].filter(Boolean).join('\n')
+
   const userPrompt = `Generate 3 versions of ${channel} content for LashBox LA.
 
-Channel: ${channel.toUpperCase()}
-Topic / Theme: ${topic}
-${productFocus ? `Product Focus: ${productFocus}` : ''}
-${audience ? `Target Audience: ${audience}` : ''}
-Tone / Angle: ${toneList}
-${talkingPoints ? `Key Talking Points:\n${talkingPoints}` : ''}
+${briefLines}
 
-Write 3 distinct versions, each taking a different angle suited to the tone(s) requested. Make the copy feel specific to LashBox LA's brand -- never generic beauty brand language.${channel === 'sms' ? ' Each SMS must be under 160 characters -- tight, clear call to action.' : channel === 'push' ? ' Push title under 40 chars, message under 100 chars. High urgency, direct.' : ''}`
+Write 3 distinct versions, each taking a meaningfully different angle. Make the copy feel specific to LashBox LA's brand -- never generic beauty brand language.${channel === 'sms' ? ' Each SMS must be under 160 characters -- tight, clear call to action.' : channel === 'push' ? ' Push title under 40 chars, message under 100 chars. High urgency, direct.' : ''}`
 
   // ── Call Claude ───────────────────────────────────────────────────────────
 
@@ -565,19 +667,24 @@ Write 3 distinct versions, each taking a different angle suited to the tone(s) r
     return Response.json({ error: `Generation failed: ${(err as Error).message}` }, { status: 500 })
   }
 
-  // ── Section 4: Save to log (fire and forget) ──────────────────────────────
-  void service.from('lbla_generation_log').insert({
+  // ── Section 4: Save to log ────────────────────────────────────────────────
+  // Awaited: a silent failure here meant generations vanished from history with
+  // no signal. The copy is still returned even when the save fails.
+  const { error: saveErr } = await service.from('lbla_generation_log').insert({
     tenant_id:      TENANT_ID,
     channel,
-    content_type:   ct,
-    topic,
-    product_focus:  productFocus ?? null,
-    audience:       audience ?? null,
-    custom_audience: customAudience ?? null,
-    tones:          tones ?? null,
+    subject:        subject ?? 'none',
+    goal:           goal ?? 'educate',
+    topic:          historyLabel,
+    product_focus:  focusEntries.length ? focusEntries.join(', ') : null,
+    audience:       audienceText || null,
     talking_points: talkingPoints ?? null,
     output:         parsed,
   })
+
+  if (saveErr) {
+    return Response.json({ success: true, data: parsed, saveError: saveErr.message })
+  }
 
   return Response.json({ success: true, data: parsed })
 }

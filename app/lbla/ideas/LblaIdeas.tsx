@@ -33,16 +33,72 @@ const SCORE_COLOR = (score: number) =>
 
 // ── URL builder ───────────────────────────────────────────────────────────────
 
+// The generator now takes subject + goal rather than a single content type, and
+// audience is free text rather than a persona slug. Ideas still describe
+// themselves in the old vocabulary, so translate here.
+
+const SUBJECT_FROM_CONTENT_TYPE: Record<string, string> = {
+  product:     'products',
+  collection:  'products',
+  educational: 'products',
+  promotion:   'products',
+}
+
+const GOAL_FROM_CONTENT_TYPE: Record<string, string> = {
+  promotion:   'promote',
+  educational: 'educate',
+}
+
+const GOAL_FROM_TONE: Record<string, string> = {
+  Educational:  'educate',
+  Promotional:  'promote',
+  Urgency:      'promote',
+  'Launch Hype': 'announce',
+}
+
+// Persona slugs become the plain-language audience the new field expects.
+const AUDIENCE_TEXT: Record<string, string> = {
+  'general-audience': '',   // no constraint — leave the field blank
+  'active-customers': 'active customers who reorder regularly',
+  'new-customers':    'new customers still forming their supplier habits',
+  'lapsed-customers': "customers who haven't ordered in 90+ days",
+  'vip-top-spenders': 'VIP and top-spending customers',
+}
+
 function buildContentUrl(idea: IdeaItem): string {
   const params = new URLSearchParams()
   params.set('channel', idea.prefill.channel)
-  params.set('contentType', idea.prefill.contentType)
-  if (idea.prefill.productFocus) params.set('productFocus', idea.prefill.productFocus)
-  params.set('audience', idea.prefill.audience)
-  params.set('tone', idea.prefill.tone)
-  if (idea.prefill.customAudienceDetail) params.set('customAudienceDetail', idea.prefill.customAudienceDetail)
-  if (idea.prefill.promotionDetails) params.set('promotionDetails', idea.prefill.promotionDetails)
-  if (idea.prefill.whatShouldClaudeKnow) params.set('whatShouldClaudeKnow', idea.prefill.whatShouldClaudeKnow)
+
+  // Subject: products only when there is actually a product to point at.
+  const subject = idea.prefill.productFocus
+    ? (SUBJECT_FROM_CONTENT_TYPE[idea.prefill.contentType] ?? 'products')
+    : 'none'
+  params.set('subject', subject)
+
+  // Goal: content type wins, tone decides the rest.
+  const goal =
+    GOAL_FROM_CONTENT_TYPE[idea.prefill.contentType] ??
+    GOAL_FROM_TONE[idea.prefill.tone] ??
+    'educate'
+  params.set('goal', goal)
+
+  if (idea.prefill.productFocus) params.append('productFocus', idea.prefill.productFocus)
+
+  // Audience is free text now; the custom detail is appended rather than split
+  // across two fields.
+  const audienceParts = [
+    AUDIENCE_TEXT[idea.prefill.audience] ?? '',
+    idea.prefill.customAudienceDetail ?? '',
+  ].filter(Boolean)
+  if (audienceParts.length) params.set('audience', audienceParts.join(', '))
+
+  // Promotion prose has no structured home any more, so it joins the notes.
+  const notesParts = [
+    idea.prefill.whatShouldClaudeKnow ?? '',
+    idea.prefill.promotionDetails ?? '',
+  ].filter(Boolean)
+  if (notesParts.length) params.set('whatShouldClaudeKnow', notesParts.join('\n\n'))
+
   return `/lbla/content?${params.toString()}`
 }
 

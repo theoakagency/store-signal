@@ -3,21 +3,33 @@ import Anthropic from '@anthropic-ai/sdk'
 import { createSupabaseServiceClient } from '@/lib/supabase'
 
 // Requires a signed-in user; /lbla + /api/lbla are gated behind Supabase login in proxy.ts (LBLA team tool)
-// Secondary Claude call for brand-voice scoring. Non-blocking from the caller's
-// perspective; generation does not wait for this result.
+// Secondary Claude call that CORRECTS style-rule violations rather than reporting
+// them. Non-blocking from the caller's perspective; generation does not wait for
+// this result. Only unambiguous fixes are applied — anything needing a genuine
+// rewrite is returned as a flag for a human to judge.
 
 export const maxDuration = 30
 
 const STORE_ID = '00000000-0000-0000-0000-000000000002'
 
-interface VersionScore {
-  score: number
-  violations: { rule: string; text: string; suggestion: string }[]
-  passed: boolean
+/** An edit the pass made on its own. */
+interface AppliedFix {
+  rule: string
+  before: string
+  after: string
 }
 
-interface ScoreResponse {
-  scores: VersionScore[]
+/** A violation left in place because fixing it would change the meaning. */
+interface FlaggedIssue {
+  rule: string
+  text: string
+  suggestion: string
+}
+
+interface VersionReview {
+  version: Record<string, string>
+  fixes: AppliedFix[]
+  flags: FlaggedIssue[]
 }
 
 export async function POST(req: NextRequest) {
@@ -55,6 +67,43 @@ export async function POST(req: NextRequest) {
     ...vocabRules.map((r) => `Vocabulary: ${r}`),
   ]
 
+  // Field shape per channel, so the model returns the same keys it was given.
+  const FIELD_SHAPE: Record<string, string> = {
+    email: '{ "subject": "...", "preheader": "...", "body": "..." }',
+    sms:   '{ "message": "..." }',
+    push:  '{ "title": "...", "message": "..." }',
+  }
+
+  const systemPrompt = `You are a copy editor for LashBox LA. You are given marketing copy that must comply with the brand rules below. Your job is to CORRECT violations, not to grade the copy.
+
+BRAND RULES:
+${BRAND_RULES.map((r) => `- ${r}`).join('\n')}
+
+HOW TO DECIDE WHAT TO CHANGE:
+
+Apply a fix yourself ONLY when the correction is unambiguous and does not change what the sentence means. These are the mechanical cases:
+- Punctuation: removing an Oxford comma, replacing an em dash or en dash with a comma, period, or rephrased clause
+- Swapping a banned word or phrase for a plain equivalent that carries the same meaning
+- Removing a surplus exclamation point
+- Casing, spelling, or vocabulary substitutions named directly by a rule
+
+Do NOT rewrite to fix anything else. If a violation is about tone, framing, structure, or claim, and correcting it would require you to change what the sentence actually says, LEAVE THE TEXT EXACTLY AS IT IS and report it as a flag instead. When in doubt, flag rather than edit. It is much worse to alter the writer's meaning than to leave a soft violation in place.
+
+Preserve everything you are not fixing, character for character. Do not improve, tighten, reorder, or restyle copy that does not break a rule.
+
+RESPONSE FORMAT: Return ONLY valid JSON, no markdown, no code fences, no preamble.
+{
+  "results": [
+    {
+      "version": ${FIELD_SHAPE[channel] ?? FIELD_SHAPE.email},
+      "fixes": [{ "rule": "which rule", "before": "exact original text, max 60 chars", "after": "the replacement, max 60 chars" }],
+      "flags": [{ "rule": "which rule", "text": "the offending text, max 60 chars", "suggestion": "what a human should consider" }]
+    }
+  ]
+}
+
+"version" must contain the corrected copy with every applied fix already in place, using exactly the field names shown. One entry per input version, in the same order. A version with nothing to change returns its original text with empty fixes and flags arrays.`
+
   function formatVersion(v: unknown, idx: number): string {
     const r = v as Record<string, string>
     const lines = [`Version ${idx + 1}:`]
@@ -72,49 +121,44 @@ export async function POST(req: NextRequest) {
   }
 
   const versionText = versions.map((v, i) => formatVersion(v, i)).join('\n\n')
-
-  const systemPrompt = `You are a brand-voice auditor for LashBox LA. Score each version of marketing copy against the brand rules below. Be honest and constructive.
-
-BRAND RULES:
-${BRAND_RULES.map((r) => `- ${r}`).join('\n')}
-
-For each version, return:
-- score: integer 0-100 (100 = perfect, subtract 5-15 per violation)
-- passed: true if score >= 75
-- violations: array of { rule (which rule was broken), text (the offending text, max 40 chars), suggestion (short fix) }
-
-Return ONLY valid JSON matching this exact schema (no markdown, no preamble):
-{
-  "scores": [
-    { "score": 90, "passed": true, "violations": [] },
-    { "score": 72, "passed": false, "violations": [{ "rule": "No em dashes", "text": "artists -- build", "suggestion": "artists, build" }] }
-  ]
-}
-
-One entry per version, in the same order as the input.`
-
-  const userPrompt = `Score these ${versions.length} ${channel} version(s):\n\n${versionText}`
+  const userPrompt = `Correct these ${versions.length} ${channel} version(s):\n\n${versionText}`
 
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
   try {
     const message = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 800,
+      // Sonnet rather than Haiku: this pass now rewrites user-facing copy, so
+      // fidelity to the original text matters more than the cost saving.
+      model: 'claude-sonnet-4-6',
+      max_tokens: 3000,
       system: systemPrompt,
       messages: [{ role: 'user', content: userPrompt }],
     })
 
     const text = message.content[0].type === 'text' ? message.content[0].text : '{}'
     const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim()
-    const parsed = JSON.parse(cleaned) as ScoreResponse
+    const parsed = JSON.parse(cleaned) as { results?: VersionReview[] }
 
-    if (!Array.isArray(parsed.scores)) {
-      return Response.json({ error: 'Invalid response shape from scoring model' }, { status: 500 })
+    if (!Array.isArray(parsed.results)) {
+      return Response.json({ error: 'Invalid response shape from editing model' }, { status: 500 })
     }
 
-    return Response.json({ scores: parsed.scores })
+    // Never let a malformed or truncated entry drop a version: fall back to the
+    // original copy whenever the corrected text is missing.
+    const results: VersionReview[] = versions.map((original, i) => {
+      const r = parsed.results?.[i]
+      const corrected = r?.version && Object.keys(r.version).length > 0
+        ? r.version
+        : (original as Record<string, string>)
+      return {
+        version: corrected,
+        fixes: Array.isArray(r?.fixes) ? r.fixes : [],
+        flags: Array.isArray(r?.flags) ? r.flags : [],
+      }
+    })
+
+    return Response.json({ results })
   } catch (err) {
-    return Response.json({ error: `Scoring failed: ${(err as Error).message}` }, { status: 500 })
+    return Response.json({ error: `Editing pass failed: ${(err as Error).message}` }, { status: 500 })
   }
 }
