@@ -3,10 +3,10 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from 'react'
 import Link from 'next/link'
 import {
-  CONTENT_TYPE_OPTIONS,
+  SUBJECT_OPTIONS,
+  GOAL_OPTIONS,
   OFFER_TYPE_OPTIONS,
-  CONTENT_TYPES_WITH_TOPIC_INPUT,
-  offerTypeLabel,
+  goalLabel,
 } from '@/lib/contentStudioOptions'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -37,48 +37,24 @@ export interface ContentGeneration {
   topic: string
   product_focus: string | null
   audience: string | null
-  custom_audience: string | null
-  tones: string[] | null
   talking_points: string | null
   versions: GenerationResult
   created_at: string
-  content_type?: string | null
+  subject?: string | null
+  goal?: string | null
 }
 
 interface FormState {
   channel: Channel
-  topic: string
   productFocus: string
   audience: string
   talkingPoints: string
 }
 
-const TONE_OPTIONS = [
-  'Educational',
-  'Launch Hype',
-  'Urgency / Scarcity',
-  'Community',
-  'Promotional',
-  'Storytelling',
-  'Results-Focused',
-]
-
 const CHANNEL_TABS: { id: Channel; label: string }[] = [
   { id: 'email', label: 'Email' },
   { id: 'sms',   label: 'SMS' },
   { id: 'push',  label: 'Push' },
-]
-
-const PERSONA_OPTIONS = [
-  { value: 'all-lash-artists',        label: 'All Lash Artists' },
-  { value: 'new-lash-artists',         label: 'New Lash Artists (0-2 years, building clientele)' },
-  { value: 'established-lash-artists', label: 'Established Lash Artists (3+ years, efficiency focused)' },
-  { value: 'volume-specialists',       label: 'Volume Specialists (high client load, speed and consistency)' },
-  { value: 'lash-lift-specialists',    label: 'Lash Lift Specialists (offering or exploring lift services)' },
-  { value: 'salon-owners',             label: 'Salon Owners (managing staff, buying in bulk)' },
-  { value: 'students',                 label: 'Students / Pre-Licensed (in training)' },
-  { value: 'lapsed-customers',         label: 'Lapsed Customers (90+ days since last order)' },
-  { value: 'subscribers',              label: 'Active Subscribers (Recharge, loyalty-focused)' },
 ]
 
 // ── Product focus input ───────────────────────────────────────────────────────
@@ -206,33 +182,6 @@ function ChannelTabs({
           }`}
         >
           {tab.label}
-        </button>
-      ))}
-    </div>
-  )
-}
-
-function TonePills({
-  selected,
-  onToggle,
-}: {
-  selected: Set<string>
-  onToggle: (tone: string) => void
-}) {
-  return (
-    <div className="flex flex-wrap gap-1.5">
-      {TONE_OPTIONS.map((tone) => (
-        <button
-          key={tone}
-          type="button"
-          onClick={() => onToggle(tone)}
-          className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
-            selected.has(tone)
-              ? 'border-teal bg-teal/10 text-teal-deep'
-              : 'border-cream-3 bg-white text-ink-3 hover:border-teal/40 hover:text-ink-2'
-          }`}
-        >
-          {tone}
         </button>
       ))}
     </div>
@@ -405,41 +354,6 @@ function SuggestButton({ onClick, loading, label }: { onClick: () => void; loadi
   )
 }
 
-function TopicSuggestionPills({
-  suggestions,
-  onSelect,
-  onDismiss,
-}: {
-  suggestions: string[]
-  onSelect: (s: string) => void
-  onDismiss: () => void
-}) {
-  if (!suggestions.length) return null
-  return (
-    <div className="mt-2 space-y-2">
-      <div className="flex flex-wrap gap-1.5">
-        {suggestions.map((s, i) => (
-          <button
-            key={i}
-            type="button"
-            onClick={() => onSelect(s)}
-            className="rounded-full border border-cream-3 bg-cream px-3 py-1 text-xs text-ink hover:bg-teal hover:text-white hover:border-teal transition cursor-pointer"
-          >
-            {s}
-          </button>
-        ))}
-      </div>
-      <button
-        type="button"
-        onClick={onDismiss}
-        className="text-[10px] text-ink-3 hover:text-ink-2 transition"
-      >
-        Dismiss
-      </button>
-    </div>
-  )
-}
-
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function ContentStudio({
@@ -451,39 +365,25 @@ export default function ContentStudio({
 }) {
   const [form, setForm] = useState<FormState>({
     channel: 'email',
-    topic: '',
     productFocus: '',
-    audience: 'all-lash-artists',
+    audience: '',
     talkingPoints: '',
   })
   const [productDisplayName, setProductDisplayName] = useState('')
-  const [customAudience, setCustomAudience] = useState('')
-  const [selectedTones, setSelectedTones] = useState<Set<string>>(new Set(['Educational']))
   const [isLoading, setIsLoading] = useState(false)
   const [result, setResult] = useState<GenerationResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null)
   const [liveHistory, setLiveHistory] = useState<ContentGeneration[]>(history)
 
-  // ── Content type + conditional fields ─────────────────────────────────────
-  const [contentType, setContentType] = useState('product')
-  const [collectionUrl, setCollectionUrl] = useState('')
-  const [landingPageUrl, setLandingPageUrl] = useState('')
-  const [landingPageDescription, setLandingPageDescription] = useState('')
-  const [eventName, setEventName] = useState('')
-  const [eventDate, setEventDate] = useState('')
-  const [eventUrl, setEventUrl] = useState('')
+  // ── Subject + goal + conditional fields ───────────────────────────────────
+  const [subject, setSubject] = useState('products')
+  const [goal, setGoal] = useState('educate')
+  const [pageUrl, setPageUrl] = useState('')
   const [offerType, setOfferType] = useState('percent-off')
   const [discountAmount, setDiscountAmount] = useState('')
   const [promoCode, setPromoCode] = useState('')
-  const [offerEndDate, setOfferEndDate] = useState('')
-  const [offerDetails, setOfferDetails] = useState('')
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({})
-
-  // ── Topic suggestions ─────────────────────────────────────────────────────
-  const [topicSuggestions, setTopicSuggestions] = useState<string[]>([])
-  const [topicSuggestionsLoading, setTopicSuggestionsLoading] = useState(false)
-  const [showTopicSuggestions, setShowTopicSuggestions] = useState(false)
 
   // ── Talking point suggestions ─────────────────────────────────────────────
   const [talkingPointSuggestions, setTalkingPointSuggestions] = useState<string[]>([])
@@ -495,93 +395,50 @@ export default function ContentStudio({
 
   // ── Helpers ───────────────────────────────────────────────────────────────
 
-  function clearConditionalFields() {
-    setForm((f) => ({ ...f, topic: '', productFocus: '' }))
+  // Clears the fields tied to the subject axis. Offer fields belong to the goal
+  // axis and are cleared separately so switching one does not wipe the other.
+  function clearSubjectFields() {
+    setForm((f) => ({ ...f, productFocus: '' }))
     setProductDisplayName('')
-    setCollectionUrl('')
-    setLandingPageUrl('')
-    setLandingPageDescription('')
-    setEventName('')
-    setEventDate('')
-    setEventUrl('')
-    setOfferType('percent-off')
-    setDiscountAmount('')
-    setPromoCode('')
-    setOfferEndDate('')
-    setOfferDetails('')
+    setPageUrl('')
     setValidationErrors({})
-    setShowTopicSuggestions(false)
     setShowTalkingPointSuggestions(false)
   }
 
-  // The topic/angle the user actually typed. Empty for content types whose
-  // structured fields carry the meaning instead (promotion, event, landing-page).
-  // Only this reaches the "Topic / Theme" line of the prompt.
-  function getUserTopic(): string {
-    return CONTENT_TYPES_WITH_TOPIC_INPUT.has(contentType) ? form.topic.trim() : ''
+  function clearGoalFields() {
+    setOfferType('percent-off')
+    setDiscountAmount('')
+    setPromoCode('')
+    setValidationErrors({})
   }
 
   // Display-only descriptor: names the generation in the History table and is
-  // stored as content_generations.topic. Never sent to the model as the topic.
+  // stored as content_generations.topic. Never sent to the model as a topic.
   function getHistoryLabel(): string {
-    switch (contentType) {
-      case 'product':
-        if (form.topic) return form.topic
-        if (productDisplayName) return `Promote ${productDisplayName}`
-        return form.productFocus.trim()
-      case 'collection':
-        return form.topic
-      case 'landing-page':
-        return landingPageDescription ? landingPageDescription.slice(0, 120) : ''
-      case 'event':
-        return eventName ? `${eventName}${eventDate ? ` on ${eventDate}` : ''}` : ''
-      case 'promotion': {
-        const parts = [
-          offerTypeLabel(offerType),
-          discountAmount,
-          promoCode ? `Code: ${promoCode}` : '',
-        ].filter(Boolean)
-        return parts.join(' - ') || 'Promotion'
-      }
-      default:
-        return form.topic
-    }
+    const gLabel = goalLabel(goal)
+    let base = ''
+    if (subject === 'products') base = productDisplayName || form.productFocus.trim()
+    else if (subject === 'page') base = pageUrl.trim()
+    // 'Nothing specific' has no subject of its own, so the goal names it outright
+    // rather than reading as "Educate (Educate)".
+    if (!base) return gLabel
+    return `${base} (${gLabel})`
   }
 
   function getEffectiveProductFocus(): string {
-    if (contentType === 'product' || contentType === 'educational' || contentType === 'promotion') {
-      return form.productFocus
-    }
-    return ''
+    return subject === 'products' ? form.productFocus : ''
   }
 
   function validateForm(): Record<string, string> {
     const errs: Record<string, string> = {}
-    switch (contentType) {
-      case 'product':
-        if (!form.productFocus.trim()) errs.productFocus = 'Product is required'
-        break
-      case 'collection':
-        if (!collectionUrl.trim()) errs.collectionUrl = 'Collection URL is required'
-        if (!form.topic.trim()) errs.topic = 'Topic is required'
-        break
-      case 'landing-page':
-        if (!landingPageUrl.trim()) errs.landingPageUrl = 'Landing page URL is required'
-        if (!landingPageDescription.trim()) errs.landingPageDescription = 'Description is required'
-        break
-      case 'event':
-        if (!eventName.trim()) errs.eventName = 'Event name is required'
-        break
-      case 'promotion':
-        if (!discountAmount.trim() && !promoCode.trim() && !offerDetails.trim()) {
-          errs.offerDetails = 'Add a discount amount, promo code, or offer details so the copy has something to reference.'
-        }
-        break
-      case 'educational':
-      case 'brand':
-      case 'other':
-        if (!form.topic.trim()) errs.topic = 'Topic is required'
-        break
+    if (subject === 'products' && !form.productFocus.trim()) {
+      errs.productFocus = 'Product is required'
+    }
+    if (subject === 'page' && !pageUrl.trim()) {
+      errs.pageUrl = 'URL is required'
+    }
+    if (goal === 'promote' && !discountAmount.trim() && !promoCode.trim()) {
+      errs.promoCode = 'Add a discount amount or promo code so the copy has something to reference.'
     }
     return errs
   }
@@ -589,7 +446,7 @@ export default function ContentStudio({
   // ── Auto-trigger talking points when product selected (product type only) ──
   const lastAutoTriggerKey = useRef('')
   useEffect(() => {
-    if (contentType !== 'product') return
+    if (subject !== 'products') return
     const key = productDisplayName || ''
     if (
       key &&
@@ -621,23 +478,10 @@ export default function ContentStudio({
       lastAutoTriggerKey.current = ''
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [productDisplayName, showTalkingPointSuggestions, talkingPointSuggestionsLoading, contentType])
+  }, [productDisplayName, showTalkingPointSuggestions, talkingPointSuggestionsLoading, subject])
 
   function setField<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((f) => ({ ...f, [key]: value }))
-  }
-
-  function toggleTone(tone: string) {
-    setSelectedTones((prev) => {
-      const next = new Set(prev)
-      if (next.has(tone)) {
-        if (next.size === 1) return prev
-        next.delete(tone)
-      } else {
-        next.add(tone)
-      }
-      return next
-    })
   }
 
   const handleCopy = useCallback((text: string, idx: number) => {
@@ -646,25 +490,6 @@ export default function ContentStudio({
       setTimeout(() => setCopiedIdx(null), 2000)
     })
   }, [])
-
-  async function fetchTopicSuggestions() {
-    setTopicSuggestionsLoading(true)
-    setShowTopicSuggestions(false)
-    try {
-      const res = await fetch('/api/content-studio/suggest-topics', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ productFocus: getEffectiveProductFocus() || null, contentType }),
-      })
-      const data = await res.json() as { topics?: string[] }
-      if (data.topics?.length) {
-        setTopicSuggestions(data.topics)
-        setShowTopicSuggestions(true)
-      }
-    } catch { /* ignore */ } finally {
-      setTopicSuggestionsLoading(false)
-    }
-  }
 
   async function fetchTalkingPointSuggestions() {
     // Suggestions need something descriptive to work from, so they use the
@@ -707,22 +532,17 @@ export default function ContentStudio({
   }
 
   function loadFromHistory(row: ContentGeneration) {
-    const ct = row.content_type ?? 'product'
-    setContentType(ct)
-    clearConditionalFields()
+    setSubject(row.subject ?? 'products')
+    setGoal(row.goal ?? 'educate')
+    clearSubjectFields()
+    clearGoalFields()
     setForm({
       channel: row.channel,
-      // row.topic is a display label; only restore it into the topic input for
-      // content types that actually render one.
-      topic: CONTENT_TYPES_WITH_TOPIC_INPUT.has(ct) ? row.topic : '',
       productFocus: row.product_focus ?? '',
-      audience: row.audience ?? 'all-lash-artists',
+      audience: row.audience ?? '',
       talkingPoints: row.talking_points ?? '',
     })
     setProductDisplayName('')
-    setCustomAudience(row.custom_audience ?? '')
-    setSelectedTones(new Set(row.tones ?? ['Educational']))
-    setShowTopicSuggestions(false)
     setShowTalkingPointSuggestions(false)
     setSelectedTalkingPoints(new Set())
     lastAutoTriggerKey.current = ''
@@ -733,7 +553,6 @@ export default function ContentStudio({
 
   async function handleGenerate(e: React.FormEvent) {
     e.preventDefault()
-    if (selectedTones.size === 0) return
 
     const errs = validateForm()
     if (Object.keys(errs).length > 0) {
@@ -754,34 +573,21 @@ export default function ContentStudio({
 
     const payload: Record<string, unknown> = {
       channel: form.channel,
-      contentType,
-      topic: getUserTopic() || null,
+      subject,
+      goal,
       historyLabel,
       productFocus: getEffectiveProductFocus() || null,
-      audience: form.audience || null,
-      customAudience: customAudience || null,
-      tones: Array.from(selectedTones),
+      audience: form.audience.trim() || null,
       talkingPoints: form.talkingPoints || null,
     }
 
-    if (contentType === 'promotion') {
+    if (subject === 'page') {
+      payload.pageUrl = pageUrl
+    }
+    if (goal === 'promote') {
       payload.offerType = offerType
       payload.discountAmount = discountAmount || null
       payload.promoCode = promoCode || null
-      payload.offerEndDate = offerEndDate || null
-      payload.offerDetails = offerDetails || null
-    }
-    if (contentType === 'event') {
-      payload.eventName = eventName
-      payload.eventDate = eventDate || null
-      payload.eventUrl = eventUrl || null
-    }
-    if (contentType === 'landing-page') {
-      payload.landingPageUrl = landingPageUrl
-      payload.landingPageDescription = landingPageDescription
-    }
-    if (contentType === 'collection') {
-      payload.collectionUrl = collectionUrl
     }
 
     try {
@@ -842,243 +648,81 @@ export default function ContentStudio({
               />
             </div>
 
-            {/* Content Type */}
+            {/* Subject */}
             <div>
-              <label className={labelCls}>Content Type</label>
+              <label className={labelCls}>Subject</label>
               <select
-                value={contentType}
+                value={subject}
                 onChange={(e) => {
-                  setContentType(e.target.value)
-                  clearConditionalFields()
+                  setSubject(e.target.value)
+                  clearSubjectFields()
                   setResult(null)
                 }}
                 className={inputCls}
               >
-                {CONTENT_TYPE_OPTIONS.map((o) => (
+                {SUBJECT_OPTIONS.map((o) => (
                   <option key={o.value} value={o.value}>{o.label}</option>
                 ))}
               </select>
             </div>
 
-            {/* ── Conditional fields ── */}
+            {/* Goal */}
+            <div>
+              <label className={labelCls}>Goal</label>
+              <select
+                value={goal}
+                onChange={(e) => {
+                  setGoal(e.target.value)
+                  clearGoalFields()
+                  setResult(null)
+                }}
+                className={inputCls}
+              >
+                {GOAL_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </div>
 
-            {/* product */}
-            {contentType === 'product' && (
-              <>
-                <div>
-                  <label className={labelCls}>Product <span className="text-red-400">*</span></label>
-                  <ProductFocusInput
-                    value={form.productFocus}
-                    onChange={(v) => { setField('productFocus', v); setProductDisplayName(''); setField('topic', '') }}
-                    onSelect={(url, name) => { setField('productFocus', url); setProductDisplayName(name); setField('topic', '') }}
-                    displayName={productDisplayName}
-                    products={products}
-                    className={inputCls + (validationErrors.productFocus ? ' border-red-400' : '')}
-                    placeholder="Paste a product URL or type a product name"
-                  />
-                  {validationErrors.productFocus && <p className={errCls}>{validationErrors.productFocus}</p>}
-                </div>
-                {form.productFocus && (
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <label className="text-xs font-medium text-ink-2">
-                        Content Angle <span className="font-normal text-ink-3">(optional)</span>
-                      </label>
-                      <SuggestButton
-                        onClick={fetchTopicSuggestions}
-                        loading={topicSuggestionsLoading}
-                        label="Suggest angles"
-                      />
-                    </div>
-                    {showTopicSuggestions && (
-                      <TopicSuggestionPills
-                        suggestions={topicSuggestions}
-                        onSelect={(s) => { setField('topic', s); setShowTopicSuggestions(false) }}
-                        onDismiss={() => setShowTopicSuggestions(false)}
-                      />
-                    )}
-                  </div>
-                )}
-              </>
-            )}
+            {/* ── Subject-driven fields ── */}
 
-            {/* collection */}
-            {contentType === 'collection' && (
-              <>
-                <div>
-                  <label className={labelCls}>Collection URL <span className="text-red-400">*</span></label>
-                  <input
-                    type="text"
-                    value={collectionUrl}
-                    onChange={(e) => setCollectionUrl(e.target.value)}
-                    placeholder="https://lashboxla.com/collections/..."
-                    className={inputCls + (validationErrors.collectionUrl ? ' border-red-400' : '')}
-                  />
-                  {validationErrors.collectionUrl && <p className={errCls}>{validationErrors.collectionUrl}</p>}
-                </div>
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="text-xs font-medium text-ink-2">Topic / Angle <span className="text-red-400">*</span></label>
-                    <SuggestButton onClick={fetchTopicSuggestions} loading={topicSuggestionsLoading} label="Suggest topics" />
-                  </div>
-                  <input
-                    value={form.topic}
-                    onChange={(e) => setField('topic', e.target.value)}
-                    placeholder="e.g. Best sellers for spring volume sets"
-                    className={inputCls + (validationErrors.topic ? ' border-red-400' : '')}
-                  />
-                  {validationErrors.topic && <p className={errCls}>{validationErrors.topic}</p>}
-                  {showTopicSuggestions && (
-                    <TopicSuggestionPills
-                      suggestions={topicSuggestions}
-                      onSelect={(s) => { setField('topic', s); setShowTopicSuggestions(false) }}
-                      onDismiss={() => setShowTopicSuggestions(false)}
-                    />
-                  )}
-                </div>
-              </>
-            )}
-
-            {/* landing-page */}
-            {contentType === 'landing-page' && (
-              <>
-                <div>
-                  <label className={labelCls}>Landing Page URL <span className="text-red-400">*</span></label>
-                  <input
-                    type="text"
-                    value={landingPageUrl}
-                    onChange={(e) => setLandingPageUrl(e.target.value)}
-                    placeholder="https://lashboxla.com/pages/..."
-                    className={inputCls + (validationErrors.landingPageUrl ? ' border-red-400' : '')}
-                  />
-                  {validationErrors.landingPageUrl && <p className={errCls}>{validationErrors.landingPageUrl}</p>}
-                </div>
-                <div>
-                  <label className={labelCls}>What is this page about? <span className="text-red-400">*</span></label>
-                  <textarea
-                    value={landingPageDescription}
-                    onChange={(e) => setLandingPageDescription(e.target.value)}
-                    placeholder="Describe the page goal, offer, or content — Claude will use this as the topic"
-                    className={inputCls + ' resize-none' + (validationErrors.landingPageDescription ? ' border-red-400' : '')}
-                    style={{ minHeight: '72px' }}
-                  />
-                  {validationErrors.landingPageDescription && <p className={errCls}>{validationErrors.landingPageDescription}</p>}
-                </div>
-              </>
-            )}
-
-            {/* event */}
-            {contentType === 'event' && (
-              <>
-                <div>
-                  <label className={labelCls}>Event Name <span className="text-red-400">*</span></label>
-                  <input
-                    value={eventName}
-                    onChange={(e) => setEventName(e.target.value)}
-                    placeholder="e.g. Spring Lash Summit, Miko Live Webinar"
-                    className={inputCls + (validationErrors.eventName ? ' border-red-400' : '')}
-                  />
-                  {validationErrors.eventName && <p className={errCls}>{validationErrors.eventName}</p>}
-                </div>
-                <div>
-                  <label className={labelCls}>Event Date <span className="font-normal text-ink-3">(optional)</span></label>
-                  <input
-                    type="date"
-                    value={eventDate}
-                    onChange={(e) => setEventDate(e.target.value)}
-                    className={inputCls}
-                  />
-                </div>
-                <div>
-                  <label className={labelCls}>Event URL <span className="font-normal text-ink-3">(optional)</span></label>
-                  <input
-                    type="text"
-                    value={eventUrl}
-                    onChange={(e) => setEventUrl(e.target.value)}
-                    placeholder="https://..."
-                    className={inputCls}
-                  />
-                </div>
-              </>
-            )}
-
-            {/* educational */}
-            {contentType === 'educational' && (
-              <>
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="text-xs font-medium text-ink-2">Topic <span className="text-red-400">*</span></label>
-                    <SuggestButton onClick={fetchTopicSuggestions} loading={topicSuggestionsLoading} label="Suggest topics" />
-                  </div>
-                  <input
-                    value={form.topic}
-                    onChange={(e) => setField('topic', e.target.value)}
-                    placeholder="e.g. How to troubleshoot retention issues in humid climates"
-                    className={inputCls + (validationErrors.topic ? ' border-red-400' : '')}
-                  />
-                  {validationErrors.topic && <p className={errCls}>{validationErrors.topic}</p>}
-                  {showTopicSuggestions && (
-                    <TopicSuggestionPills
-                      suggestions={topicSuggestions}
-                      onSelect={(s) => { setField('topic', s); setShowTopicSuggestions(false) }}
-                      onDismiss={() => setShowTopicSuggestions(false)}
-                    />
-                  )}
-                </div>
-                <div>
-                  <label className={labelCls}>Optional Product Tie-in</label>
-                  <ProductFocusInput
-                    value={form.productFocus}
-                    onChange={(v) => { setField('productFocus', v); setProductDisplayName('') }}
-                    onSelect={(url, name) => { setField('productFocus', url); setProductDisplayName(name) }}
-                    displayName={productDisplayName}
-                    products={products}
-                    className={inputCls}
-                    placeholder="Search for a product to reference, or paste a URL"
-                  />
-                </div>
-              </>
-            )}
-
-            {/* brand */}
-            {contentType === 'brand' && (
+            {subject === 'products' && (
               <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-xs font-medium text-ink-2">Topic <span className="text-red-400">*</span></label>
-                  <SuggestButton onClick={fetchTopicSuggestions} loading={topicSuggestionsLoading} label="Suggest topics" />
-                </div>
-                <input
-                  value={form.topic}
-                  onChange={(e) => setField('topic', e.target.value)}
-                  placeholder="e.g. Why LashBox LA has been the #1 choice for artists for 10 years"
-                  className={inputCls + (validationErrors.topic ? ' border-red-400' : '')}
+                <label className={labelCls}>Product <span className="text-red-400">*</span></label>
+                <ProductFocusInput
+                  value={form.productFocus}
+                  onChange={(v) => { setField('productFocus', v); setProductDisplayName('') }}
+                  onSelect={(url, name) => { setField('productFocus', url); setProductDisplayName(name) }}
+                  displayName={productDisplayName}
+                  products={products}
+                  className={inputCls + (validationErrors.productFocus ? ' border-red-400' : '')}
+                  placeholder="Paste a product URL or type a product name"
                 />
-                {validationErrors.topic && <p className={errCls}>{validationErrors.topic}</p>}
-                {showTopicSuggestions && (
-                  <TopicSuggestionPills
-                    suggestions={topicSuggestions}
-                    onSelect={(s) => { setField('topic', s); setShowTopicSuggestions(false) }}
-                    onDismiss={() => setShowTopicSuggestions(false)}
-                  />
-                )}
+                {validationErrors.productFocus && <p className={errCls}>{validationErrors.productFocus}</p>}
               </div>
             )}
 
-            {/* promotion */}
-            {contentType === 'promotion' && (
+            {subject === 'page' && (
+              <div>
+                <label className={labelCls}>URL <span className="text-red-400">*</span></label>
+                <input
+                  type="text"
+                  value={pageUrl}
+                  onChange={(e) => setPageUrl(e.target.value)}
+                  placeholder="https://lashboxla.com/pages/..."
+                  className={inputCls + (validationErrors.pageUrl ? ' border-red-400' : '')}
+                />
+                {validationErrors.pageUrl && <p className={errCls}>{validationErrors.pageUrl}</p>}
+                <p className="mt-1 text-[11px] text-ink-3">
+                  Event names, dates, and any other specifics go in the notes box below.
+                </p>
+              </div>
+            )}
+
+            {/* ── Goal-driven fields ── */}
+
+            {goal === 'promote' && (
               <>
-                <div>
-                  <label className={labelCls}>Product <span className="font-normal text-ink-3">(optional)</span></label>
-                  <ProductFocusInput
-                    value={form.productFocus}
-                    onChange={(v) => { setField('productFocus', v); setProductDisplayName('') }}
-                    onSelect={(url, name) => { setField('productFocus', url); setProductDisplayName(name) }}
-                    displayName={productDisplayName}
-                    products={products}
-                    className={inputCls}
-                    placeholder="Paste a product URL or type a product name"
-                  />
-                </div>
                 <div>
                   <label className={labelCls}>Offer Type</label>
                   <select
@@ -1112,88 +756,25 @@ export default function ContentStudio({
                     value={promoCode}
                     onChange={(e) => setPromoCode(e.target.value)}
                     placeholder="e.g. SPRING20"
-                    className={inputCls}
+                    className={inputCls + (validationErrors.promoCode ? ' border-red-400' : '')}
                   />
-                </div>
-                <div>
-                  <label className={labelCls}>Offer End Date <span className="font-normal text-ink-3">(optional)</span></label>
-                  <input
-                    type="date"
-                    value={offerEndDate}
-                    onChange={(e) => setOfferEndDate(e.target.value)}
-                    className={inputCls}
-                  />
-                </div>
-                <div>
-                  <label className={labelCls}>Offer Details <span className="font-normal text-ink-3">(optional)</span></label>
-                  <textarea
-                    value={offerDetails}
-                    onChange={(e) => setOfferDetails(e.target.value)}
-                    placeholder="Any additional details about the promotion..."
-                    className={inputCls + ' resize-none' + (validationErrors.offerDetails ? ' border-red-400' : '')}
-                    style={{ minHeight: '72px' }}
-                  />
-                  {validationErrors.offerDetails && <p className={errCls}>{validationErrors.offerDetails}</p>}
+                  {validationErrors.promoCode && <p className={errCls}>{validationErrors.promoCode}</p>}
                 </div>
               </>
             )}
 
-            {/* other */}
-            {contentType === 'other' && (
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-xs font-medium text-ink-2">Topic <span className="text-red-400">*</span></label>
-                  <SuggestButton onClick={fetchTopicSuggestions} loading={topicSuggestionsLoading} label="Suggest topics" />
-                </div>
-                <input
-                  value={form.topic}
-                  onChange={(e) => setField('topic', e.target.value)}
-                  placeholder="Describe what this content is about"
-                  className={inputCls + (validationErrors.topic ? ' border-red-400' : '')}
-                />
-                {validationErrors.topic && <p className={errCls}>{validationErrors.topic}</p>}
-                {showTopicSuggestions && (
-                  <TopicSuggestionPills
-                    suggestions={topicSuggestions}
-                    onSelect={(s) => { setField('topic', s); setShowTopicSuggestions(false) }}
-                    onDismiss={() => setShowTopicSuggestions(false)}
-                  />
-                )}
-              </div>
-            )}
-
             {/* ── Fixed bottom fields ── */}
 
-            {/* Target Audience */}
+            {/* Audience */}
             <div>
-              <label className={labelCls}>Target Audience</label>
-              <select
-                value={form.audience}
-                onChange={(e) => setField('audience', e.target.value)}
-                className={inputCls}
-              >
-                {PERSONA_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Custom Audience Detail */}
-            <div>
-              <label className={labelCls}>Custom Audience Detail <span className="font-normal text-ink-3">(optional)</span></label>
+              <label className={labelCls}>Audience <span className="font-normal text-ink-3">(optional)</span></label>
               <input
                 type="text"
-                value={customAudience}
-                onChange={(e) => setCustomAudience(e.target.value)}
-                placeholder="e.g. Artists who attended the Miko webinar, CC curl early adopters, Texas-based artists"
+                value={form.audience}
+                onChange={(e) => setField('audience', e.target.value)}
+                placeholder="e.g. customers who haven't ordered in 6 months, new subscribers, Korean lash lift customers"
                 className={inputCls}
               />
-            </div>
-
-            {/* Tone / Angle */}
-            <div>
-              <label className={labelCls}>Tone / Angle <span className="text-ink-3">(select at least one)</span></label>
-              <TonePills selected={selectedTones} onToggle={toggleTone} />
             </div>
 
             {/* What should Claude know? */}
@@ -1208,9 +789,9 @@ export default function ContentStudio({
               <textarea
                 value={form.talkingPoints}
                 onChange={(e) => setField('talkingPoints', e.target.value)}
-                placeholder="Optional. Add any facts, specs, or angles Claude should include."
+                placeholder="Paste a campaign brief, product notes, or any specifics Claude should work from. Include who this is going to if it matters, for example lapsed customers or new subscribers."
                 className={inputCls + ' resize-none'}
-                style={{ minHeight: '80px' }}
+                style={{ minHeight: '240px' }}
               />
               {showTalkingPointSuggestions && talkingPointSuggestions.length > 0 && (
                 <div className="mt-2 rounded-lg border border-cream-3 bg-cream p-3 space-y-2">
@@ -1264,7 +845,7 @@ export default function ContentStudio({
 
             <button
               type="submit"
-              disabled={isLoading || selectedTones.size === 0}
+              disabled={isLoading}
               className="w-full rounded-lg bg-teal px-4 py-2.5 text-sm font-semibold text-white hover:bg-teal-dark disabled:opacity-60 disabled:cursor-not-allowed transition"
             >
               {isLoading ? (

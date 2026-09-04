@@ -1,20 +1,27 @@
 // Shared Content Studio option lists — single source of truth for the values the
 // form renders and the labels the generate route prints into the prompt.
+//
+// Content is described by two independent axes:
+//   SUBJECT — what the content is about (drives which fields render)
+//   GOAL    — what the content is for (drives tone)
+// All subject/goal pairings are valid.
 
 export interface SelectOption {
   value: string
   label: string
 }
 
-export const CONTENT_TYPE_OPTIONS: SelectOption[] = [
-  { value: 'product',      label: 'Product' },
-  { value: 'collection',   label: 'Collection' },
-  { value: 'landing-page', label: 'Landing Page' },
-  { value: 'event',        label: 'Event' },
-  { value: 'educational',  label: 'Educational' },
-  { value: 'brand',        label: 'Brand' },
-  { value: 'promotion',    label: 'Promotion' },
-  { value: 'other',        label: 'Other' },
+export const SUBJECT_OPTIONS: SelectOption[] = [
+  { value: 'products', label: 'Products or Collection' },
+  { value: 'page',     label: 'Page or Event' },
+  { value: 'none',     label: 'Nothing specific' },
+]
+
+export const GOAL_OPTIONS: SelectOption[] = [
+  { value: 'educate',  label: 'Educate' },
+  { value: 'promote',  label: 'Promote an offer' },
+  { value: 'announce', label: 'Announce or launch' },
+  { value: 'brand',    label: 'Brand story' },
 ]
 
 export const OFFER_TYPE_OPTIONS: SelectOption[] = [
@@ -28,19 +35,26 @@ export const OFFER_TYPE_OPTIONS: SelectOption[] = [
   { value: 'referral',       label: 'Referral Offer' },
 ]
 
-/** Content types that render a free-text topic/angle input in the form. */
-export const CONTENT_TYPES_WITH_TOPIC_INPUT = new Set([
-  'product',
-  'collection',
-  'educational',
-  'brand',
-  'other',
-])
+// Tonal guidance printed into the system prompt, derived from goal alone.
+export const GOAL_TONE: Record<string, string> = {
+  educate:  'Teach first and sell softly, leading with what the reader walks away knowing.',
+  promote:  'Create urgency without desperation, and lead with the offer.',
+  announce: 'Stay energetic and forward-looking, focused on what is new and why it matters.',
+  brand:    'Tell a story and speak to the community, with no hard sell.',
+}
 
-export function contentTypeLabel(value: string | null | undefined): string {
-  return CONTENT_TYPE_OPTIONS.find((o) => o.value === value)?.label ?? 'Product'
+export function subjectLabel(value: string | null | undefined): string {
+  return SUBJECT_OPTIONS.find((o) => o.value === value)?.label ?? 'Nothing specific'
+}
+
+export function goalLabel(value: string | null | undefined): string {
+  return GOAL_OPTIONS.find((o) => o.value === value)?.label ?? 'Educate'
 }
 
 export function offerTypeLabel(value: string | null | undefined): string {
   return OFFER_TYPE_OPTIONS.find((o) => o.value === value)?.label ?? value ?? ''
+}
+
+export function goalTone(value: string | null | undefined): string {
+  return GOAL_TONE[value ?? ''] ?? GOAL_TONE.educate
 }

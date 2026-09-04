@@ -32,7 +32,7 @@ export default async function ContentStudioPage() {
   const [{ data: history }, { data: productRows }] = await Promise.all([
     service
       .from('content_generations')
-      .select('id, channel, topic, product_focus, audience, custom_audience, tones, talking_points, versions, created_at')
+      .select('id, channel, subject, goal, topic, product_focus, audience, talking_points, versions, created_at')
       .eq('store_id', STORE_ID)
       .order('created_at', { ascending: false })
       .limit(20),
